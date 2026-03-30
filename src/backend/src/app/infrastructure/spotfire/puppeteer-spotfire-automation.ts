@@ -153,6 +153,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           return normalize(value).toLowerCase();
         }
 
+        function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+          if (!element) {
+            return false;
+          }
+
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+        }
+
         function dispatchClick(target: HTMLElement, ctrlKey = false): void {
           target.scrollIntoView({ block: 'center', inline: 'center' });
 
@@ -171,6 +181,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, milliseconds); });
         }
 
+        function getFilterPanelScrollContainer(): HTMLElement | null {
+          return document.querySelector<HTMLElement>('.FilterPanelScroll .Container')
+            ?? document.querySelector<HTMLElement>('.StyledScrollbar.FilterPanelScroll .Container')
+            ?? document.querySelector<HTMLElement>('.sfc-filter-panel .Container')
+            ?? null;
+        }
+
         function findFilterElement(filterTitle: string): HTMLElement | null {
           const requestedTitle = normalizedLower(filterTitle);
           const filters = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter'));
@@ -180,6 +197,103 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             const title = normalizedLower(titleElement?.getAttribute('title') ?? titleElement?.textContent);
             return title === requestedTitle;
           }) ?? null;
+        }
+
+        async function findFilterElementByScrolling(filterTitle: string): Promise<HTMLElement | null> {
+          const existing = findFilterElement(filterTitle);
+
+          if (existing) {
+            return existing;
+          }
+
+          const scrollContainer = getFilterPanelScrollContainer();
+
+          if (!scrollContainer) {
+            return null;
+          }
+
+          const maxScrollTop = Math.max(scrollContainer.scrollHeight - scrollContainer.clientHeight, 0);
+          const step = Math.max(Math.floor(scrollContainer.clientHeight * 0.75), 180);
+
+          for (let offset = 0; offset <= maxScrollTop; offset += step) {
+            scrollContainer.scrollTop = offset;
+            scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+            await wait(140);
+
+            const candidate = findFilterElement(filterTitle);
+            if (candidate) {
+              return candidate;
+            }
+          }
+
+          scrollContainer.scrollTop = maxScrollTop;
+          scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(180);
+
+          return findFilterElement(filterTitle);
+        }
+
+        function getFilterOptionScrollContainer(filterElement: HTMLElement): HTMLElement | null {
+          return filterElement.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+            ?? filterElement.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+            ?? filterElement.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+            ?? null;
+        }
+
+        function matchesOptionLabel(candidateLabel: string, requestedLabel: string): boolean {
+          if (candidateLabel === requestedLabel) {
+            return true;
+          }
+
+          if (requestedLabel === '(all)') {
+            return candidateLabel.startsWith('(all)');
+          }
+
+          return false;
+        }
+
+        function findVisibleListItem(filterElement: HTMLElement, itemLabel: string): HTMLElement | null {
+          const requested = normalizedLower(itemLabel);
+          const items = Array.from(filterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+
+          return items.find(function (candidate) {
+            const label = normalizedLower(candidate.getAttribute('title') ?? candidate.textContent);
+            return matchesOptionLabel(label, requested);
+          }) ?? null;
+        }
+
+        async function findListItemByScrolling(filterElement: HTMLElement, itemLabel: string): Promise<HTMLElement | null> {
+          const existing = findVisibleListItem(filterElement, itemLabel);
+
+          if (existing) {
+            return existing;
+          }
+
+          const scrollContainer = getFilterOptionScrollContainer(filterElement);
+
+          if (!scrollContainer) {
+            return null;
+          }
+
+          const maxScrollTop = Math.max(scrollContainer.scrollHeight - scrollContainer.clientHeight, 0);
+          const step = Math.max(Math.floor(scrollContainer.clientHeight * 0.75), 30);
+
+          for (let offset = 0; offset <= maxScrollTop; offset += step) {
+            scrollContainer.scrollTop = offset;
+            scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+            await wait(100);
+
+            const candidate = findVisibleListItem(filterElement, itemLabel);
+            if (candidate) {
+              return candidate;
+            }
+          }
+
+          scrollContainer.scrollTop = maxScrollTop;
+          scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(140);
+
+          return findVisibleListItem(filterElement, itemLabel);
         }
 
         async function applyTextFilter(filterElement: HTMLElement, textValue: string): Promise<boolean> {
@@ -201,22 +315,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         async function clickListItem(filterElement: HTMLElement, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
-          const searchInput = filterElement.querySelector<HTMLInputElement>('input.SearchInput');
-
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.value = itemLabel;
-            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-            searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-            await wait(180);
-          }
-
-          const requested = normalizedLower(itemLabel);
-          const items = Array.from(filterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
-          const item = items.find(function (candidate) {
-            const label = normalizedLower(candidate.getAttribute('title') ?? candidate.textContent);
-            return label === requested || label.includes(requested);
-          });
+          const item = await findListItemByScrolling(filterElement, itemLabel);
 
           if (!item) {
             return false;
@@ -245,13 +344,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           for (let index = 0; index < normalizedSelections.length; index += 1) {
             const applied = await clickListItem(filterElement, normalizedSelections[index], index > 0);
             appliedAny = appliedAny || applied;
-          }
-
-          const searchInput = filterElement.querySelector<HTMLInputElement>('input.SearchInput');
-          if (searchInput) {
-            searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-            searchInput.dispatchEvent(new Event('change', { bubbles: true }));
           }
 
           return appliedAny;
@@ -325,7 +417,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           return true;
         }
 
-        const filterElement = findFilterElement(selection.title);
+        const filterElement = await findFilterElementByScrolling(selection.title);
 
         if (!filterElement) {
           return { applied: false, reason: 'filter not found in DOM' };
@@ -683,124 +775,240 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       timeout: 60000,
     });
 
-    this.log('scrolling filter panel to force Spotfire to load all filters');
+    this.log('scrolling filter panel and extracting virtualized filters incrementally');
 
-    await page.evaluate(async function () {
-      const scrollContainer = document.querySelector('.FilterPanelScroll .Container')
-        ?? document.querySelector('.StyledScrollbar.FilterPanelScroll .Container')
-        ?? document.querySelector('.VerticalScrollbarContainer')?.parentElement;
-
-      if (!scrollContainer) {
-        return;
-      }
-
-      const target = scrollContainer as HTMLElement;
-      const totalHeight = Math.max(target.scrollHeight, 6000);
-
-      for (let offset = 0; offset <= totalHeight; offset += 300) {
-        target.scrollTop = offset;
-        await new Promise(function (resolveScroll) { return window.setTimeout(resolveScroll, 80); });
-      }
-
-      target.scrollTop = totalHeight;
-      await new Promise(function (resolveScroll) { return window.setTimeout(resolveScroll, 200); });
-      target.scrollTop = 0;
-    });
-
-    this.log('finished scrolling filter panel, starting filter extraction');
-
-    const filters = await page.evaluate(function () {
+    const filters = await page.evaluate(async function () {
       function normalize(value: string | null | undefined): string {
         return (value ?? '').replace(/\s+/g, ' ').trim();
       }
 
-      const extractedFilters = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter'))
-        .map(function (filterElement) {
-          const titleElement = filterElement.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-          const title = normalize(titleElement?.getAttribute('title') ?? titleElement?.textContent);
+      function getPanelScrollContainer(): HTMLElement | null {
+        return document.querySelector<HTMLElement>('.FilterPanelScroll .Container')
+          ?? document.querySelector<HTMLElement>('.StyledScrollbar.FilterPanelScroll .Container')
+          ?? document.querySelector<HTMLElement>('.sfc-filter-panel .Container')
+          ?? null;
+      }
 
-          if (!title) {
-            return null;
+      function getListScrollContainer(filterElement: HTMLElement): HTMLElement | null {
+        return filterElement.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+          ?? filterElement.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+          ?? filterElement.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+          ?? null;
+      }
+
+      async function wait(milliseconds: number): Promise<void> {
+        await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, milliseconds); });
+      }
+
+      function mergeFilterOptionMaps(target: Map<string, boolean>, options: Array<{ label: string; selected: boolean }>): void {
+        for (const option of options) {
+          if (!option.label) {
+            continue;
           }
 
-          const listOptions = Array.from(filterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-            .map(function (option) { return ({
-              label: normalize(option.getAttribute('title') ?? option.textContent),
-              selected: option.classList.contains('sfpc-selected'),
-            }); })
-            .filter(function (option) { return option.label.length > 0; });
+          const existingSelected = target.get(option.label) ?? false;
+          target.set(option.label, existingSelected || option.selected);
+        }
+      }
 
-          if (listOptions.length > 0) {
-            return {
-              title,
-              kind: 'list' as const,
-              selectedValues: listOptions.filter(function (option) { return option.selected; }).map(function (option) { return option.label; }),
-              options: listOptions,
-            };
-          }
+      async function collectListOptions(filterElement: HTMLElement): Promise<Array<{ label: string; selected: boolean }>> {
+        const collectedOptions = new Map<string, boolean>();
 
-          const textInput = filterElement.querySelector<HTMLInputElement>('input[placeholder*="Type to filter by text"], input.SearchInput');
-          if (textInput) {
-            const textValue = normalize(textInput.value);
-            return {
-              title,
-              kind: 'text' as const,
-              selectedValues: textValue ? [textValue] : [],
-              textValue,
-            };
-          }
-
-          const rangeLabels = Array.from(filterElement.querySelectorAll<HTMLElement>('.ValueLabel'))
-            .map(function (label) { return normalize(label.getAttribute('title') ?? label.textContent); })
-            .filter(function (value) { return value.length > 0; });
-
-          if (rangeLabels.length >= 2) {
-            return {
-              title,
-              kind: 'range' as const,
-              selectedValues: rangeLabels.slice(0, 2),
-              range: {
-                min: rangeLabels[0],
-                max: rangeLabels[1],
-                selectedMin: rangeLabels[0],
-                selectedMax: rangeLabels[1],
-              },
-            };
-          }
-
-          const toggleOptions = Array.from(filterElement.querySelectorAll<HTMLElement>('.ColumnFilter .sf-element-filter-item'))
+        function collectVisibleOptions(): void {
+          const visibleOptions = Array.from(filterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
             .map(function (option) {
-              const labelElement = option.querySelector<HTMLElement>('.sf-element-text-box');
-              const checkbox = option.querySelector<HTMLElement>('.sf-element-check-box');
-
               return {
-                label: normalize(labelElement?.getAttribute('title') ?? labelElement?.textContent),
-                selected: checkbox?.classList.contains('sfpc-checked') ?? false,
+                label: normalize(option.getAttribute('title') ?? option.textContent),
+                selected: option.classList.contains('sfpc-selected'),
               };
             })
             .filter(function (option) { return option.label.length > 0; });
 
-          if (toggleOptions.length > 0) {
+          mergeFilterOptionMaps(collectedOptions, visibleOptions);
+        }
+
+        collectVisibleOptions();
+
+        const scrollContainer = getListScrollContainer(filterElement);
+
+        if (!scrollContainer) {
+          return Array.from(collectedOptions.entries()).map(function ([label, selected]) {
+            return { label, selected };
+          });
+        }
+
+        const maxScrollTop = Math.max(scrollContainer.scrollHeight - scrollContainer.clientHeight, 0);
+        const step = Math.max(Math.floor(scrollContainer.clientHeight * 0.75), 30);
+
+        for (let offset = 0; offset <= maxScrollTop; offset += step) {
+          scrollContainer.scrollTop = offset;
+          scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(70);
+          collectVisibleOptions();
+        }
+
+        scrollContainer.scrollTop = maxScrollTop;
+        scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(100);
+        collectVisibleOptions();
+
+        return Array.from(collectedOptions.entries()).map(function ([label, selected]) {
+          return { label, selected };
+        });
+      }
+
+      async function extractFilter(filterElement: HTMLElement): Promise<SpotfireFilter | null> {
+        const titleElement = filterElement.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        const title = normalize(titleElement?.getAttribute('title') ?? titleElement?.textContent);
+
+        if (!title) {
+          return null;
+        }
+
+        const rangeLabels = Array.from(filterElement.querySelectorAll<HTMLElement>('.ValueLabel'))
+          .map(function (label) { return normalize(label.getAttribute('title') ?? label.textContent); })
+          .filter(function (value) { return value.length > 0; });
+
+        if (rangeLabels.length >= 2) {
+          return {
+            title,
+            kind: 'range',
+            selectedValues: rangeLabels.slice(0, 2),
+            range: {
+              min: rangeLabels[0],
+              max: rangeLabels[1],
+              selectedMin: rangeLabels[0],
+              selectedMax: rangeLabels[1],
+            },
+          };
+        }
+
+        const toggleOptions = Array.from(filterElement.querySelectorAll<HTMLElement>('.ColumnFilter .sf-element-filter-item'))
+          .map(function (option) {
+            const labelElement = option.querySelector<HTMLElement>('.sf-element-text-box');
+            const checkbox = option.querySelector<HTMLElement>('.sf-element-check-box');
+
             return {
-              title,
-              kind: 'toggle-group' as const,
-              selectedValues: toggleOptions.filter(function (option) { return option.selected; }).map(function (option) { return option.label; }),
-              options: toggleOptions,
+              label: normalize(labelElement?.getAttribute('title') ?? labelElement?.textContent),
+              selected: checkbox?.classList.contains('sfpc-checked') ?? false,
             };
-          }
+          })
+          .filter(function (option) { return option.label.length > 0; });
+
+        if (toggleOptions.length > 0) {
+          return {
+            title,
+            kind: 'toggle-group',
+            selectedValues: toggleOptions.filter(function (option) { return option.selected; }).map(function (option) { return option.label; }),
+            options: toggleOptions,
+          };
+        }
+
+        const listRootExists = filterElement.querySelector('.VirtualListBox, .ListContainer, .sf-element-list-box-item') !== null;
+
+        if (listRootExists) {
+          const listOptions = await collectListOptions(filterElement);
 
           return {
             title,
-            kind: 'unknown' as const,
-            selectedValues: [],
+            kind: 'list',
+            selectedValues: listOptions.filter(function (option) { return option.selected; }).map(function (option) { return option.label; }),
+            options: listOptions,
           };
-        })
-        .filter(function (filter) { return filter !== null; });
+        }
 
-      return extractedFilters
-        .filter(function (filter, index, list) {
-          return list.findIndex(function (candidate) { return candidate.title === filter.title; }) === index;
+        const textInput = filterElement.querySelector<HTMLInputElement>('input[placeholder*="Type to filter by text"]');
+        if (textInput) {
+          const textValue = normalize(textInput.value);
+          return {
+            title,
+            kind: 'text',
+            selectedValues: textValue ? [textValue] : [],
+            textValue,
+          };
+        }
+
+        return {
+          title,
+          kind: 'unknown',
+          selectedValues: [],
+        };
+      }
+
+      function mergeFilters(target: Map<string, SpotfireFilter>, nextFilter: SpotfireFilter): void {
+        const existing = target.get(nextFilter.title);
+
+        if (!existing) {
+          target.set(nextFilter.title, nextFilter);
+          return;
+        }
+
+        if ((existing.kind === 'list' || existing.kind === 'toggle-group') && nextFilter.options) {
+          const mergedOptions = new Map<string, boolean>();
+
+          for (const option of existing.options ?? []) {
+            mergedOptions.set(option.label, option.selected);
+          }
+
+          for (const option of nextFilter.options) {
+            const currentSelected = mergedOptions.get(option.label) ?? false;
+            mergedOptions.set(option.label, currentSelected || option.selected);
+          }
+
+          const normalizedOptions = Array.from(mergedOptions.entries()).map(function ([label, selected]) {
+            return { label, selected };
+          });
+
+          target.set(nextFilter.title, {
+            ...existing,
+            ...nextFilter,
+            options: normalizedOptions,
+            selectedValues: normalizedOptions.filter(function (option) { return option.selected; }).map(function (option) { return option.label; }),
+          });
+          return;
+        }
+
+        target.set(nextFilter.title, {
+          ...existing,
+          ...nextFilter,
         });
+      }
+
+      const collectedFilters = new Map<string, SpotfireFilter>();
+      const panelScrollContainer = getPanelScrollContainer();
+
+      async function collectVisibleFilters(): Promise<void> {
+        const visibleFilters = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter'));
+
+        for (const filterElement of visibleFilters) {
+          const extractedFilter = await extractFilter(filterElement);
+
+          if (extractedFilter) {
+            mergeFilters(collectedFilters, extractedFilter);
+          }
+        }
+      }
+
+      await collectVisibleFilters();
+
+      if (panelScrollContainer) {
+        const maxScrollTop = Math.max(panelScrollContainer.scrollHeight - panelScrollContainer.clientHeight, 0);
+        const step = Math.max(Math.floor(panelScrollContainer.clientHeight * 0.75), 180);
+
+        for (let offset = 0; offset <= maxScrollTop; offset += step) {
+          panelScrollContainer.scrollTop = offset;
+          panelScrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(120);
+          await collectVisibleFilters();
+        }
+
+        panelScrollContainer.scrollTop = maxScrollTop;
+        panelScrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(160);
+        await collectVisibleFilters();
+      }
+
+      return Array.from(collectedFilters.values());
     });
 
     this.log('filter extraction from DOM finished', {

@@ -126,36 +126,25 @@ import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.m
             <div class="editor-block" *ngIf="filter.kind === 'list' || filter.kind === 'toggle-group'">
               <label class="editor-label">
                 Valores para aplicar
-                <input
-                  [value]="joinSelectedValues(filter)"
-                  (input)="updateSelectedValues(filter.title, inputValue($event))"
-                  placeholder="Digite valores separados por vírgula" />
+                <select
+                  multiple
+                  class="multi-select"
+                  (change)="updateSelectedOptions(filter.title, selectElementValues($event))">
+                  <option
+                    *ngFor="let option of filter.options ?? []"
+                    [value]="option.label"
+                    [selected]="isValueSelected(filter, option.label)">
+                    {{ option.label }}
+                  </option>
+                </select>
               </label>
 
               <div class="action-row">
+                <button type="button" class="mini-button" (click)="selectAllFilterValues(filter.title)">Selecionar (All)</button>
                 <button type="button" class="mini-button" (click)="restoreFilterDefaults(filter.title)">Restaurar padrão</button>
                 <button type="button" class="mini-button" (click)="clearFilterSelection(filter.title)">Limpar</button>
               </div>
-
-              <div class="option-list" *ngIf="filter.options?.length">
-                <button
-                  *ngFor="let option of visibleOptions(filter)"
-                  type="button"
-                  class="option-pill option-button"
-                  [class.option-selected]="isValueSelected(filter, option.label)"
-                  (click)="toggleSuggestedValue(filter.title, option.label)">
-                  {{ option.label }}
-                </button>
-              </div>
             </div>
-
-            <label class="editor-label" *ngIf="filter.kind === 'text'">
-              Texto para aplicar
-              <input
-                [value]="filter.textValue ?? ''"
-                (input)="updateTextFilter(filter.title, inputValue($event))"
-                placeholder="Digite o texto do filtro" />
-            </label>
 
             <div class="range-editor" *ngIf="filter.kind === 'range' && filter.range">
               <label class="editor-label">
@@ -426,6 +415,12 @@ import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.m
         gap: 8px;
       }
 
+      .multi-select {
+        min-height: 180px;
+        border-radius: 16px;
+        background: var(--surface-strong);
+      }
+
       .option-pill {
         display: inline-flex;
         padding: 7px 12px;
@@ -533,19 +528,11 @@ export class DashboardComponent implements OnInit {
       return `Intervalo detectado de ${filter.range.min} até ${filter.range.max}`;
     }
 
-    if (filter.kind === 'text') {
-      return 'Filtro textual livre';
-    }
-
     if (filter.options?.length) {
       return `${filter.options.length} opções detectadas no catálogo`;
     }
 
     return filter.selectedValues.length ? `${filter.selectedValues.length} valores atuais detectados` : 'Sem valores detectados no catálogo';
-  }
-
-  protected visibleOptions(filter: SpotfireFilter) {
-    return (filter.options ?? []).slice(0, 12);
   }
 
   protected previewValues(values: string[]): string {
@@ -570,36 +557,42 @@ export class DashboardComponent implements OnInit {
     return this.getChangedFilters().length;
   }
 
-  protected joinSelectedValues(filter: SpotfireFilter): string {
-    return filter.selectedValues.join(', ');
-  }
-
   protected inputValue(event: Event): string {
     return (event.target as HTMLInputElement | null)?.value ?? '';
   }
 
-  protected updateSelectedValues(title: string, rawValue: string): void {
-    const parsedValues = rawValue
-      .split(',')
-      .map((value) => value.trim())
+  protected selectElementValues(event: Event): string[] {
+    const target = event.target as HTMLSelectElement | null;
+
+    if (!target) {
+      return [];
+    }
+
+    return Array.from(target.selectedOptions)
+      .map((option) => option.value.trim())
       .filter((value, index, list) => value.length > 0 && list.indexOf(value) === index);
+  }
+
+  protected updateSelectedOptions(title: string, selectedValues: string[]): void {
+    const normalizedValues = selectedValues.filter((value, index, list) => value.length > 0 && list.indexOf(value) === index);
 
     this.updateFilter(title, (filter) => ({
       ...filter,
-      selectedValues: parsedValues,
+      selectedValues: normalizedValues,
     }));
   }
 
-  protected toggleSuggestedValue(title: string, label: string): void {
+  protected selectAllFilterValues(title: string): void {
     this.updateFilter(title, (filter) => {
-      const exists = filter.selectedValues.some((value) => value.toLowerCase() === label.toLowerCase());
-      const selectedValues = exists
-        ? filter.selectedValues.filter((value) => value.toLowerCase() !== label.toLowerCase())
-        : [...filter.selectedValues, label];
+      const allOption = filter.options?.find((option) => option.label.toLowerCase().startsWith('(all)'));
+
+      if (!allOption) {
+        return filter;
+      }
 
       return {
         ...filter,
-        selectedValues,
+        selectedValues: [allOption.label],
       };
     });
   }
@@ -618,7 +611,6 @@ export class DashboardComponent implements OnInit {
     this.updateFilter(title, (filter) => ({
       ...filter,
       selectedValues: [],
-      textValue: '',
       range: filter.range
         ? {
           ...filter.range,
@@ -626,13 +618,6 @@ export class DashboardComponent implements OnInit {
           selectedMax: '',
         }
         : undefined,
-    }));
-  }
-
-  protected updateTextFilter(title: string, value: string): void {
-    this.updateFilter(title, (filter) => ({
-      ...filter,
-      textValue: value,
     }));
   }
 
@@ -658,10 +643,6 @@ export class DashboardComponent implements OnInit {
   }
 
   protected currentSelectionLabel(filter: SpotfireFilter): string {
-    if (filter.kind === 'text') {
-      return filter.textValue?.trim() ? `Texto escolhido: ${filter.textValue}` : '';
-    }
-
     if (filter.kind === 'range' && filter.range) {
       return filter.range.selectedMin || filter.range.selectedMax
         ? `Intervalo escolhido: ${filter.range.selectedMin || 'vazio'} -> ${filter.range.selectedMax || 'vazio'}`
@@ -728,7 +709,6 @@ export class DashboardComponent implements OnInit {
       return {
         ...this.cloneFilter(filter),
         selectedValues: [...existing.selectedValues],
-        textValue: existing.textValue ?? filter.textValue,
         range: filter.range
           ? {
             ...filter.range,
@@ -767,10 +747,6 @@ export class DashboardComponent implements OnInit {
       return true;
     }
 
-    if (current.kind === 'text') {
-      return (current.textValue ?? '').trim() !== (baseline.textValue ?? '').trim();
-    }
-
     if (current.kind === 'range') {
       return (current.range?.selectedMin ?? '').trim() !== (baseline.range?.selectedMin ?? '').trim()
         || (current.range?.selectedMax ?? '').trim() !== (baseline.range?.selectedMax ?? '').trim();
@@ -780,10 +756,6 @@ export class DashboardComponent implements OnInit {
   }
 
   private hasMeaningfulSelection(filter: SpotfireFilter): boolean {
-    if (filter.kind === 'text') {
-      return Boolean(filter.textValue?.trim());
-    }
-
     if (filter.kind === 'range') {
       return Boolean(filter.range?.selectedMin?.trim() || filter.range?.selectedMax?.trim());
     }
