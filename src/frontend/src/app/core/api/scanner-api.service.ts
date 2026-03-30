@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -14,6 +14,7 @@ export interface ScannerJob {
     analysisTab?: string;
     reportTitle: string;
     tableTitle?: string;
+    selectedFilters?: SpotfireFilter[];
   };
   filters: SpotfireFilter[];
   availableTabs: string[];
@@ -27,7 +28,12 @@ export class ScannerApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  public startExecution(payload: { analysisTab?: string; reportTitle?: string; tableTitle?: string }): Observable<ScannerJob> {
+  public startExecution(payload: {
+    analysisTab?: string;
+    reportTitle?: string;
+    tableTitle?: string;
+    selectedFilters?: SpotfireFilter[];
+  }): Observable<ScannerJob> {
     return this.http.post<ScannerJob>(`${this.baseUrl}/scanner/executions`, payload);
   }
 
@@ -36,10 +42,43 @@ export class ScannerApiService {
   }
 
   public getCatalog(): Observable<SpotfireCatalog> {
-    return this.http.get<SpotfireCatalog>(`${this.baseUrl}/scanner/catalog`);
+    return this.http.get<unknown>(`${this.baseUrl}/scanner/catalog`).pipe(
+      map((payload) => this.normalizeCatalog(payload)),
+    );
   }
 
   public getExportDownloadUrl(jobId: string): string {
     return `${this.baseUrl}/scanner/executions/${jobId}/export`;
+  }
+
+  private normalizeCatalog(payload: unknown): SpotfireCatalog {
+    const source = (payload ?? {}) as Record<string, unknown>;
+    const filters = Array.isArray(source['filters']) ? source['filters'] as SpotfireFilter[] : [];
+    const availableTabs = this.normalizeStringArray(source['availableTabs'] ?? source['tabs']);
+    const availableTables = this.normalizeStringArray(source['availableTables'] ?? source['tables']);
+    const status = source['status'];
+
+    return {
+      status: status === 'ready' || status === 'failed' ? status : 'loading',
+      reportTitle: typeof source['reportTitle'] === 'string' && source['reportTitle'].trim().length > 0
+        ? source['reportTitle']
+        : 'Scanner 4.0 - CE',
+      filters,
+      availableTabs,
+      availableTables,
+      updatedAt: typeof source['updatedAt'] === 'string' ? source['updatedAt'] : undefined,
+      errorMessage: typeof source['errorMessage'] === 'string' ? source['errorMessage'] : undefined,
+    };
+  }
+
+  private normalizeStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
   }
 }

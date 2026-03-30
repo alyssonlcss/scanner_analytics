@@ -60,6 +60,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         await this.ensureFiltersPanel(page);
         await this.resetVisibleFilters(page);
+
+        if (request.selectedFilters?.length) {
+          await this.applySelectedFilters(page, request.selectedFilters);
+        }
+
         const filters = await this.loadAllFilters(page);
         this.logFiltersSummary(filters);
         const availableTables = await this.loadAvailableTables(page);
@@ -113,6 +118,265 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       count: filters.length,
       filters: summaries,
     });
+  }
+
+  private async applySelectedFilters(page: Page, filters: SpotfireFilter[]): Promise<void> {
+    this.log('applying selected filters from request', {
+      count: filters.length,
+      filters: filters.map((filter) => ({
+        title: filter.title,
+        kind: filter.kind,
+        selectedValues: filter.selectedValues,
+        textValue: filter.textValue ?? null,
+        range: filter.range
+          ? {
+            selectedMin: filter.range.selectedMin,
+            selectedMax: filter.range.selectedMax,
+          }
+          : null,
+      })),
+    });
+
+    for (const filter of filters) {
+      if (!this.hasRequestedFilterValue(filter)) {
+        continue;
+      }
+
+      await this.ensureFiltersPanel(page);
+
+      const applied = await page.evaluate(async function (selection) {
+        function normalize(value: string | null | undefined): string {
+          return (value ?? '').replace(/\s+/g, ' ').trim();
+        }
+
+        function normalizedLower(value: string | null | undefined): string {
+          return normalize(value).toLowerCase();
+        }
+
+        function dispatchClick(target: HTMLElement, ctrlKey = false): void {
+          target.scrollIntoView({ block: 'center', inline: 'center' });
+
+          for (const eventName of ['mousedown', 'mouseup', 'click']) {
+            target.dispatchEvent(new MouseEvent(eventName, {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              ctrlKey,
+              metaKey: ctrlKey,
+            }));
+          }
+        }
+
+        async function wait(milliseconds: number): Promise<void> {
+          await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, milliseconds); });
+        }
+
+        function findFilterElement(filterTitle: string): HTMLElement | null {
+          const requestedTitle = normalizedLower(filterTitle);
+          const filters = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter'));
+
+          return filters.find(function (filterElement) {
+            const titleElement = filterElement.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+            const title = normalizedLower(titleElement?.getAttribute('title') ?? titleElement?.textContent);
+            return title === requestedTitle;
+          }) ?? null;
+        }
+
+        async function applyTextFilter(filterElement: HTMLElement, textValue: string): Promise<boolean> {
+          const input = filterElement.querySelector<HTMLInputElement>('input[placeholder*="Type to filter by text"], input.SearchInput');
+
+          if (!input) {
+            return false;
+          }
+
+          input.focus();
+          input.value = textValue;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+          input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+          input.blur();
+          await wait(250);
+          return true;
+        }
+
+        async function clickListItem(filterElement: HTMLElement, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
+          const searchInput = filterElement.querySelector<HTMLInputElement>('input.SearchInput');
+
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.value = itemLabel;
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+            await wait(180);
+          }
+
+          const requested = normalizedLower(itemLabel);
+          const items = Array.from(filterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+          const item = items.find(function (candidate) {
+            const label = normalizedLower(candidate.getAttribute('title') ?? candidate.textContent);
+            return label === requested || label.includes(requested);
+          });
+
+          if (!item) {
+            return false;
+          }
+
+          dispatchClick(item, ctrlKey);
+          await wait(180);
+          return true;
+        }
+
+        async function applyListFilter(filterElement: HTMLElement, selectedValues: string[]): Promise<boolean> {
+          const normalizedSelections = selectedValues
+            .map(function (value) { return normalize(value); })
+            .filter(function (value) { return value.length > 0; });
+
+          if (!normalizedSelections.length) {
+            return true;
+          }
+
+          if (normalizedSelections.some(function (value) { return normalizedLower(value).startsWith('(all)'); })) {
+            return clickListItem(filterElement, '(All)', false);
+          }
+
+          let appliedAny = false;
+
+          for (let index = 0; index < normalizedSelections.length; index += 1) {
+            const applied = await clickListItem(filterElement, normalizedSelections[index], index > 0);
+            appliedAny = appliedAny || applied;
+          }
+
+          const searchInput = filterElement.querySelector<HTMLInputElement>('input.SearchInput');
+          if (searchInput) {
+            searchInput.value = '';
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          return appliedAny;
+        }
+
+        async function applyToggleGroup(filterElement: HTMLElement, selectedValues: string[]): Promise<boolean> {
+          const desired = new Set(selectedValues.map(function (value) { return normalizedLower(value); }));
+          const options = Array.from(filterElement.querySelectorAll<HTMLElement>('.ColumnFilter .sf-element-filter-item'));
+          let touched = false;
+
+          for (const option of options) {
+            const labelElement = option.querySelector<HTMLElement>('.sf-element-text-box');
+            const checkbox = option.querySelector<HTMLElement>('.sf-element-check-box');
+            const label = normalizedLower(labelElement?.getAttribute('title') ?? labelElement?.textContent);
+
+            if (!checkbox || !label) {
+              continue;
+            }
+
+            const shouldBeSelected = desired.has(label);
+            const isSelected = checkbox.classList.contains('sfpc-checked');
+
+            if (shouldBeSelected !== isSelected) {
+              dispatchClick(option);
+              await wait(120);
+              touched = true;
+            }
+          }
+
+          return touched || desired.size === 0;
+        }
+
+        async function applyRangeFilter(filterElement: HTMLElement, selectedMin: string, selectedMax: string): Promise<boolean> {
+          const labels = Array.from(filterElement.querySelectorAll<HTMLElement>('.EditableLabel'));
+
+          if (labels.length < 2) {
+            return false;
+          }
+
+          const requestedValues = [selectedMin, selectedMax];
+
+          for (let index = 0; index < 2; index += 1) {
+            const targetLabel = labels[index];
+            const requestedValue = requestedValues[index];
+
+            if (!requestedValue) {
+              continue;
+            }
+
+            targetLabel.scrollIntoView({ block: 'center', inline: 'center' });
+            dispatchClick(targetLabel);
+            await wait(120);
+
+            const input = filterElement.querySelector<HTMLInputElement>('input:not(.SearchInput)')
+              ?? (document.activeElement instanceof HTMLInputElement ? document.activeElement : null);
+
+            if (!input) {
+              return false;
+            }
+
+            input.focus();
+            input.value = requestedValue;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+            input.blur();
+            await wait(200);
+          }
+
+          return true;
+        }
+
+        const filterElement = findFilterElement(selection.title);
+
+        if (!filterElement) {
+          return { applied: false, reason: 'filter not found in DOM' };
+        }
+
+        filterElement.scrollIntoView({ block: 'center', inline: 'nearest' });
+        await wait(180);
+
+        if (selection.kind === 'text') {
+          const applied = await applyTextFilter(filterElement, normalize(selection.textValue));
+          return { applied, reason: applied ? 'text filter applied' : 'text input not found' };
+        }
+
+        if (selection.kind === 'list') {
+          const applied = await applyListFilter(filterElement, selection.selectedValues ?? []);
+          return { applied, reason: applied ? 'list filter applied' : 'list items not found' };
+        }
+
+        if (selection.kind === 'toggle-group') {
+          const applied = await applyToggleGroup(filterElement, selection.selectedValues ?? []);
+          return { applied, reason: applied ? 'toggle group applied' : 'toggle items not found' };
+        }
+
+        if (selection.kind === 'range' && selection.range) {
+          const applied = await applyRangeFilter(filterElement, normalize(selection.range.selectedMin), normalize(selection.range.selectedMax));
+          return { applied, reason: applied ? 'range filter applied' : 'range editor not found' };
+        }
+
+        return { applied: false, reason: `unsupported filter kind: ${selection.kind}` };
+      }, filter);
+
+      this.log('filter application result', {
+        title: filter.title,
+        kind: filter.kind,
+        result: applied,
+      });
+    }
+
+    await this.waitForSpotfireIdle(page);
+  }
+
+  private hasRequestedFilterValue(filter: SpotfireFilter): boolean {
+    if (filter.kind === 'text') {
+      return Boolean(filter.textValue?.trim());
+    }
+
+    if (filter.kind === 'range') {
+      return Boolean(filter.range?.selectedMin?.trim() || filter.range?.selectedMax?.trim());
+    }
+
+    return filter.selectedValues.some((value) => value.trim().length > 0);
   }
 
   private async runSerialized<T>(task: () => Promise<T>): Promise<T> {

@@ -9,6 +9,7 @@ export interface ScannerJob {
     analysisTab?: string;
     reportTitle: string;
     tableTitle?: string;
+    selectedFilters?: SpotfireFilter[];
   };
   createdAt: string;
   updatedAt: string;

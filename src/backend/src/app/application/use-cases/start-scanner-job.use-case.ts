@@ -21,6 +21,7 @@ export class StartScannerJobUseCase {
         analysisTab: request.analysisTab,
         reportTitle: request.reportTitle ?? 'Scanner 4.0 - CE',
         tableTitle: request.tableTitle,
+        selectedFilters: request.selectedFilters,
       },
       createdAt: now,
       updatedAt: now,
@@ -48,6 +49,7 @@ export class StartScannerJobUseCase {
         analysisTab: runningJob.request.analysisTab,
         reportTitle: runningJob.request.reportTitle,
         tableTitle: runningJob.request.tableTitle,
+        selectedFilters: runningJob.request.selectedFilters,
       });
 
       await this.jobStore.update({

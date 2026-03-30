@@ -14,10 +14,28 @@ import { InMemoryJobStore } from '../../infrastructure/runtime/in-memory-job-sto
 import { InMemorySpotfireCatalogStore } from '../../infrastructure/runtime/in-memory-spotfire-catalog-store.js';
 import { PuppeteerSpotfireAutomation } from '../../infrastructure/spotfire/puppeteer-spotfire-automation.js';
 
+const filterSchema = z.object({
+  title: z.string().trim().min(1),
+  kind: z.enum(['list', 'range', 'text', 'toggle-group', 'unknown']),
+  selectedValues: z.array(z.string()).default([]),
+  options: z.array(z.object({
+    label: z.string(),
+    selected: z.boolean(),
+  })).optional(),
+  range: z.object({
+    min: z.string(),
+    max: z.string(),
+    selectedMin: z.string(),
+    selectedMax: z.string(),
+  }).optional(),
+  textValue: z.string().optional(),
+});
+
 const createExecutionSchema = z.object({
   analysisTab: z.string().trim().min(1).optional(),
   reportTitle: z.string().optional(),
   tableTitle: z.string().trim().min(1).optional(),
+  selectedFilters: z.array(filterSchema).optional(),
 });
 
 export async function createServer() {
