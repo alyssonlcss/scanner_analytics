@@ -18,6 +18,8 @@ ENV/
 build/
 dist/
 *.egg-info/
+node_modules/
+.angular/
 
 # Output directory
 /result/
