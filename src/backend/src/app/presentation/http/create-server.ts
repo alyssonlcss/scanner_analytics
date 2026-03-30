@@ -124,7 +124,31 @@ export async function createServer() {
     catalogStatus: server.getSpotfireCatalog().status,
   }));
 
-  server.get('/api/scanner/catalog', async () => server.getSpotfireCatalog());
+  server.get('/api/scanner/catalog', async (request) => {
+    const query = z.object({
+      analysisTab: z.string().trim().min(1).optional(),
+      reportTitle: z.string().trim().min(1).optional(),
+    }).parse(request.query);
+
+    if (!query.analysisTab && !query.reportTitle) {
+      return server.getSpotfireCatalog();
+    }
+
+    const reportTitle = query.reportTitle ?? environment.spotfire.defaultReportTitle;
+    const catalog = await automation.runExtraction({
+      reportTitle,
+      analysisTab: query.analysisTab,
+    });
+
+    return {
+      status: 'ready',
+      reportTitle,
+      filters: catalog.filters,
+      availableTabs: catalog.availableTabs,
+      availableTables: catalog.availableTables,
+      updatedAt: new Date().toISOString(),
+    } satisfies SpotfireCatalog;
+  });
 
   server.post('/api/scanner/executions', async (request, reply) => {
     const payload = createExecutionSchema.parse(request.body);

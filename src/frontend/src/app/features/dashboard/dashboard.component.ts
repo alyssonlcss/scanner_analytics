@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { interval, startWith, switchMap, takeWhile } from 'rxjs';
+import { distinctUntilChanged, interval, startWith, switchMap, takeWhile } from 'rxjs';
 
 import { ScannerApiService, ScannerJob } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -480,6 +480,16 @@ export class DashboardComponent implements OnInit {
   });
 
   public ngOnInit(): void {
+    this.form.controls.analysisTab.valueChanges
+      .pipe(
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((analysisTab) => {
+        this.form.controls.tableTitle.setValue('', { emitEvent: false });
+        this.loadCatalog(analysisTab || undefined);
+      });
+
     this.loadCatalog();
   }
 
@@ -512,7 +522,7 @@ export class DashboardComponent implements OnInit {
   }
 
   protected refreshCatalog(): void {
-    this.loadCatalog();
+    this.loadCatalog(this.form.controls.analysisTab.value || undefined);
   }
 
   protected selectedTabLabel(): string {
@@ -665,11 +675,20 @@ export class DashboardComponent implements OnInit {
       });
   }
 
-  private loadCatalog(): void {
+  private loadCatalog(analysisTab?: string): void {
     this.catalogLoading.set(true);
     this.catalogRequestError.set(null);
 
-    this.api.getCatalog()
+    const currentReportTitle = this.form.controls.reportTitle.value.trim();
+    const currentCatalog = this.catalog();
+    const shouldRequestReportTitle = currentReportTitle.length > 0
+      && currentReportTitle !== 'Scanner 4.0 - CE'
+      && currentReportTitle !== (currentCatalog?.reportTitle ?? '');
+
+    this.api.getCatalog({
+      analysisTab,
+      reportTitle: shouldRequestReportTitle ? currentReportTitle : undefined,
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (catalog) => {
@@ -678,15 +697,15 @@ export class DashboardComponent implements OnInit {
           this.editableFilters.set(this.mergeEditableFilters(catalog.filters));
 
           if (!this.form.controls.reportTitle.value || this.form.controls.reportTitle.value === 'Scanner 4.0 - CE') {
-            this.form.controls.reportTitle.setValue(catalog.reportTitle);
+            this.form.controls.reportTitle.setValue(catalog.reportTitle, { emitEvent: false });
           }
 
           if (!catalog.availableTabs.includes(this.form.controls.analysisTab.value)) {
-            this.form.controls.analysisTab.setValue('');
+            this.form.controls.analysisTab.setValue('', { emitEvent: false });
           }
 
           if (!catalog.availableTables.includes(this.form.controls.tableTitle.value)) {
-            this.form.controls.tableTitle.setValue('');
+            this.form.controls.tableTitle.setValue('', { emitEvent: false });
           }
         },
         error: (error) => {

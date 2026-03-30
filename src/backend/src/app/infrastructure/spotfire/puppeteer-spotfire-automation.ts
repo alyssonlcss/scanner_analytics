@@ -48,6 +48,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         await page.setViewport({ width: 1600, height: 1000 });
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
+        await this.ensureNoMaximizedVisualization(page);
         const availableTabs = await this.loadAvailableTabs(page);
         this.log('collected available tabs', {
           count: availableTabs.length,
@@ -56,6 +57,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         if (request.analysisTab) {
           await this.openAnalysisTab(page, request.analysisTab);
+          await this.ensureNoMaximizedVisualization(page);
         }
 
         await this.ensureFiltersPanel(page);
@@ -667,7 +669,72 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
 
     await this.clickByText(page, tabLabel, true);
+    this.log('analysis tab clicked, waiting for Spotfire to refresh dependent tables', {
+      tabLabel,
+    });
     await this.waitForSpotfireIdle(page);
+  }
+
+  private async ensureNoMaximizedVisualization(page: Page): Promise<void> {
+    this.log('checking whether any visualization is maximized before reading tabs or filters');
+
+    const restoredAnyVisualization = await page.evaluate(async function () {
+      function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+        if (!element) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      function normalize(value: string | null | undefined): string {
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+      }
+
+      async function wait(milliseconds: number): Promise<void> {
+        await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, milliseconds); });
+      }
+
+      let restoredAny = false;
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const restoreButton = document.querySelector<HTMLElement>('.sfc-maximize-visual-button[title="Restore visualization layout"]')
+          ?? Array.from(document.querySelectorAll<HTMLElement>('[title], button, div'))
+            .filter(function (element) { return isVisible(element); })
+            .find(function (element) {
+              const title = normalize(element.getAttribute('title'));
+              const text = normalize(element.textContent);
+
+              return title === 'restore visualization layout'
+                || title === 'minimize visualization'
+                || title === 'restore visualization'
+                || text === 'restore visualization layout'
+                || text === 'minimize visualization'
+                || text === 'restore visualization';
+            })
+          ?? null;
+
+        if (!restoreButton) {
+          break;
+        }
+
+        restoreButton.click();
+        restoredAny = true;
+        await wait(250);
+      }
+
+      return restoredAny;
+    });
+
+    if (restoredAnyVisualization) {
+      this.log('a maximized visualization was restored before continuing');
+      await this.waitForSpotfireIdle(page);
+      return;
+    }
+
+    this.log('no maximized visualization detected');
   }
 
   private async loadAvailableTabs(page: Page): Promise<string[]> {

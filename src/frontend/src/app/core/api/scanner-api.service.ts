@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 
@@ -41,8 +41,18 @@ export class ScannerApiService {
     return this.http.get<ScannerJob>(`${this.baseUrl}/scanner/executions/${jobId}`);
   }
 
-  public getCatalog(): Observable<SpotfireCatalog> {
-    return this.http.get<unknown>(`${this.baseUrl}/scanner/catalog`).pipe(
+  public getCatalog(options?: { analysisTab?: string; reportTitle?: string }): Observable<SpotfireCatalog> {
+    let params = new HttpParams();
+
+    if (options?.analysisTab) {
+      params = params.set('analysisTab', options.analysisTab);
+    }
+
+    if (options?.reportTitle) {
+      params = params.set('reportTitle', options.reportTitle);
+    }
+
+    return this.http.get<unknown>(`${this.baseUrl}/scanner/catalog`, { params }).pipe(
       map((payload) => this.normalizeCatalog(payload)),
     );
   }
