@@ -38,6 +38,10 @@ export async function createServer() {
 
   server.decorate('getSpotfireCatalog', () => catalogStore.get());
   server.decorate('warmupSpotfireCatalog', async () => {
+    server.log.info({
+      reportTitle: environment.spotfire.defaultReportTitle,
+    }, 'starting Spotfire catalog warmup');
+
     catalogStore.set({
       status: 'loading',
       reportTitle: environment.spotfire.defaultReportTitle,
@@ -59,6 +63,21 @@ export async function createServer() {
         availableTables: catalog.availableTables,
         updatedAt: new Date().toISOString(),
       });
+
+      server.log.info({
+        reportTitle: environment.spotfire.defaultReportTitle,
+        tabCount: catalog.availableTabs.length,
+        tabs: catalog.availableTabs,
+        tableCount: catalog.availableTables.length,
+        tables: catalog.availableTables,
+        filterCount: catalog.filters.length,
+        filters: catalog.filters.map((filter) => ({
+          title: filter.title,
+          kind: filter.kind,
+          selectedValues: filter.selectedValues,
+          optionCount: filter.options?.length ?? 0,
+        })),
+      }, 'Spotfire catalog warmup completed');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown catalog warmup error';
 
@@ -71,6 +90,11 @@ export async function createServer() {
         updatedAt: new Date().toISOString(),
         errorMessage: message,
       });
+
+      server.log.error({
+        reportTitle: environment.spotfire.defaultReportTitle,
+        errorMessage: message,
+      }, 'Spotfire catalog warmup failed');
 
       throw error;
     }

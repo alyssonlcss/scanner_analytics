@@ -18,9 +18,29 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   public constructor(private readonly environment: Environment) {}
 
+  private log(message: string, details?: Record<string, unknown>): void {
+    const prefix = '[spotfire]';
+
+    if (details) {
+      console.info(prefix, message, details);
+      return;
+    }
+
+    console.info(prefix, message);
+  }
+
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
     return this.runSerialized(async () => {
       const outputDirectory = await this.prepareOutputDirectory();
+      this.log('starting extraction run', {
+        reportTitle: request.reportTitle ?? this.environment.spotfire.defaultReportTitle,
+        analysisTab: request.analysisTab ?? null,
+        tableTitle: request.tableTitle ?? null,
+        headless: this.environment.spotfire.headless,
+        keepOpen: this.environment.spotfire.keepOpen,
+        outputDirectory,
+      });
+
       const browser = await this.launchBrowser();
 
       try {
@@ -29,6 +49,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
         const availableTabs = await this.loadAvailableTabs(page);
+        this.log('collected available tabs', {
+          count: availableTabs.length,
+          tabs: availableTabs,
+        });
 
         if (request.analysisTab) {
           await this.openAnalysisTab(page, request.analysisTab);
@@ -37,7 +61,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         await this.ensureFiltersPanel(page);
         await this.resetVisibleFilters(page);
         const filters = await this.loadAllFilters(page);
+        this.logFiltersSummary(filters);
         const availableTables = await this.loadAvailableTables(page);
+        this.log('collected available tables', {
+          count: availableTables.length,
+          tables: availableTables,
+        });
 
         let exportFilePath: string | undefined;
         if (request.tableTitle) {
@@ -53,9 +82,36 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         };
       } finally {
         if (!this.environment.spotfire.keepOpen) {
+          this.log('closing browser because keepOpen=false');
           await browser.close();
+        } else {
+          this.log('keeping browser open because keepOpen=true');
         }
       }
+    });
+  }
+
+  private logFiltersSummary(filters: SpotfireFilter[]): void {
+    const summaries = filters.map((filter) => ({
+      title: filter.title,
+      kind: filter.kind,
+      selectedValues: filter.selectedValues,
+      optionCount: filter.options?.length ?? 0,
+      sampleOptions: filter.options?.slice(0, 5).map((option) => option.label) ?? [],
+      textValue: filter.textValue ?? null,
+      range: filter.range
+        ? {
+          min: filter.range.min,
+          max: filter.range.max,
+          selectedMin: filter.range.selectedMin,
+          selectedMax: filter.range.selectedMax,
+        }
+        : null,
+    }));
+
+    this.log('collected filters from right panel', {
+      count: filters.length,
+      filters: summaries,
     });
   }
 
@@ -78,6 +134,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async launchBrowser(): Promise<Browser> {
+    this.log('launching browser', {
+      headless: this.environment.spotfire.headless,
+      browserPath: this.environment.spotfire.browserPath || null,
+    });
+
     return puppeteer.launch({
       headless: this.environment.spotfire.headless,
       executablePath: this.environment.spotfire.browserPath || undefined,
@@ -87,9 +148,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async openAnalysis(page: Page, reportTitle: string): Promise<void> {
+    this.log('opening Spotfire analysis URL', {
+      reportTitle,
+      analysisUrl: this.environment.spotfire.analysisUrl,
+    });
+
     await page.goto(this.environment.spotfire.analysisUrl, {
       waitUntil: 'networkidle2',
       timeout: 120000,
+    });
+
+    this.log('analysis URL loaded', {
+      currentUrl: page.url(),
     });
 
     await this.completeLoginIfRequired(page);
@@ -99,6 +169,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
 
     if (!page.url().includes('/analysis')) {
+      this.log('current URL is not an analysis page, reloading configured analysis URL', {
+        currentUrl: page.url(),
+      });
+
       await page.goto(this.environment.spotfire.analysisUrl, {
         waitUntil: 'networkidle2',
         timeout: 120000,
@@ -109,10 +183,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.waitForSpotfireIdle(page);
 
     if (await this.isAnalysisReady(page)) {
+      this.log('analysis is ready without needing report-title click', {
+        currentUrl: page.url(),
+      });
       return;
     }
 
     const clicked = await this.tryClickByText(page, reportTitle, false);
+    this.log('attempted to click report title by text', {
+      reportTitle,
+      clicked,
+    });
 
     if (clicked) {
       await this.waitForSpotfireIdle(page);
@@ -125,15 +206,31 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   private async completeLoginIfRequired(page: Page): Promise<void> {
     if (!await this.isLoginPage(page)) {
+      this.log('login step skipped because page is already authenticated', {
+        currentUrl: page.url(),
+      });
       return;
     }
+
+    this.log('login page detected, filling credentials', {
+      currentUrl: page.url(),
+      loginUrl: this.environment.spotfire.loginUrl,
+    });
 
     await page.locator("input[type='text']").fill(this.environment.spotfire.username);
     await page.locator("input[type='password']").fill(this.environment.spotfire.password);
 
     await this.submitLogin(page);
 
+    this.log('login submit completed, checking resulting page', {
+      currentUrl: page.url(),
+    });
+
     if (await this.isLoginPage(page)) {
+      this.log('still on login page after submit, retrying by navigating back to analysis URL', {
+        currentUrl: page.url(),
+      });
+
       await page.goto(this.environment.spotfire.analysisUrl, {
         waitUntil: 'networkidle2',
         timeout: 120000,
@@ -162,6 +259,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         continue;
       }
 
+      this.log('submitting login using selector', {
+        selector,
+      });
+
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; }),
         element.click(),
@@ -174,6 +275,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const passwordInput = await page.$("input[type='password']");
 
     if (passwordInput) {
+      this.log('submitting login by pressing Enter on password field');
+
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; }),
         passwordInput.press('Enter'),
@@ -183,6 +286,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return;
     }
 
+    this.log('submitting login by pressing Enter on page');
     await page.keyboard.press('Enter');
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; });
     await page.waitForNetworkIdle({ idleTime: 1000, timeout: 120000 }).catch(function () { return undefined; });
@@ -202,6 +306,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async openAnalysisTab(page: Page, tabLabel: string): Promise<void> {
+    this.log('opening analysis tab by text', {
+      tabLabel,
+    });
+
     await this.clickByText(page, tabLabel, true);
     await this.waitForSpotfireIdle(page);
   }
@@ -234,6 +342,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }, this.environment.spotfire.filterPanelLabel);
 
     if (panelIsOpen) {
+      this.log('filters panel is already open on the right side', {
+        panelLabel: this.environment.spotfire.filterPanelLabel,
+      });
       return;
     }
 
@@ -268,14 +379,26 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return true;
     }, this.environment.spotfire.filterPanelLabel);
 
+    this.log('attempted to open filters panel by text', {
+      panelLabel: this.environment.spotfire.filterPanelLabel,
+      openedFromToolbar: opened,
+    });
+
     if (!opened) {
       await this.clickByText(page, this.environment.spotfire.filterPanelLabel, true);
+      this.log('opened filters panel using generic text click fallback', {
+        panelLabel: this.environment.spotfire.filterPanelLabel,
+      });
     }
 
     await this.waitForSpotfireIdle(page);
   }
 
   private async resetVisibleFilters(page: Page): Promise<void> {
+    this.log('searching for reset visible filters button by title text', {
+      title: 'Reset Visible Filters',
+    });
+
     const resetButton = await page.$("[title='Reset Visible Filters']");
 
     if (!resetButton) {
@@ -283,13 +406,20 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
 
     await resetButton.click();
+    this.log('clicked reset visible filters button');
     await this.waitForSpotfireIdle(page);
   }
 
   private async loadAllFilters(page: Page): Promise<SpotfireFilter[]> {
+    this.log('waiting for filter titles in the right panel', {
+      selector: 'span.sf-element-filter-content.sf-element-filter-title[title]',
+    });
+
     await page.waitForSelector('span.sf-element-filter-content.sf-element-filter-title[title]', {
       timeout: 60000,
     });
+
+    this.log('scrolling filter panel to force Spotfire to load all filters');
 
     await page.evaluate(async function () {
       const scrollContainer = document.querySelector('.FilterPanelScroll .Container')
@@ -312,6 +442,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await new Promise(function (resolveScroll) { return window.setTimeout(resolveScroll, 200); });
       target.scrollTop = 0;
     });
+
+    this.log('finished scrolling filter panel, starting filter extraction');
 
     const filters = await page.evaluate(function () {
       function normalize(value: string | null | undefined): string {
@@ -407,11 +539,15 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         });
     });
 
+    this.log('filter extraction from DOM finished', {
+      count: filters.length,
+    });
+
     return filters;
   }
 
   private async loadAvailableTables(page: Page): Promise<string[]> {
-    return page.evaluate(function () {
+    const tables = await page.evaluate(function () {
       function normalize(value: string | null | undefined): string {
         return (value ?? '').replace(/\s+/g, ' ').trim();
       }
@@ -421,6 +557,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         .filter(function (title) { return title.length > 0; })
         .filter(function (title, index, list) { return list.indexOf(title) === index; });
     });
+
+      return tables;
   }
 
   private async maximizeTable(page: Page, tableTitle: string): Promise<void> {
