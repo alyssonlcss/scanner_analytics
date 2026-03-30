@@ -15,6 +15,8 @@ const DOWNLOAD_EXTENSIONS = new Set(['.csv', '.txt', '.xlsx', '.xls']);
 
 export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   private activeQueue: Promise<void> = Promise.resolve();
+  private persistentBrowser?: Browser;
+  private persistentPage?: Page;
 
   public constructor(private readonly environment: Environment) {}
 
@@ -41,11 +43,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         outputDirectory,
       });
 
-      const browser = await this.launchBrowser();
+      const { browser, page, createdNewPage } = await this.getAutomationSession();
 
       try {
-        const page = await browser.newPage();
-        await page.setViewport({ width: 1600, height: 1000 });
+        if (createdNewPage) {
+          await page.setViewport({ width: 1600, height: 1000 });
+        }
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
         await this.ensureNoMaximizedVisualization(page);
@@ -90,9 +93,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       } finally {
         if (!this.environment.spotfire.keepOpen) {
           this.log('closing browser because keepOpen=false');
-          await browser.close();
+          await this.disposeAutomationSession();
         } else {
-          this.log('keeping browser open because keepOpen=true');
+          this.log('keeping browser and page open because keepOpen=true');
         }
       }
     });
@@ -473,6 +476,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     return filter.selectedValues.some((value) => value.trim().length > 0);
   }
 
+  private async getAutomationSession(): Promise<{ browser: Browser; page: Page; createdNewPage: boolean }> {
+    let browser = this.persistentBrowser;
+
+    if (!browser || !browser.connected) {
+      browser = await this.launchBrowser();
+      this.persistentBrowser = browser;
+      this.persistentPage = undefined;
+    }
+
+    let page = this.persistentPage;
+    let createdNewPage = false;
+
+    if (!page || page.isClosed()) {
+      page = await browser.newPage();
+      this.persistentPage = page;
+      createdNewPage = true;
+    }
+
+    return { browser, page, createdNewPage };
+  }
+
+  private async disposeAutomationSession(): Promise<void> {
+    const browser = this.persistentBrowser;
+
+    this.persistentPage = undefined;
+    this.persistentBrowser = undefined;
+
+    if (browser && browser.connected) {
+      await browser.close();
+    }
+  }
+
   private async runSerialized<T>(task: () => Promise<T>): Promise<T> {
     let release: (() => void) | undefined;
     const waiter = new Promise<void>((resolveWaiter) => {
@@ -506,6 +541,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async openAnalysis(page: Page, reportTitle: string): Promise<void> {
+    if (!page.isClosed()) {
+      await this.waitForSpotfireIdle(page).catch(function () { return undefined; });
+
+      if (page.url().includes('/analysis') && await this.isAnalysisReady(page)) {
+        this.log('reusing existing Spotfire analysis page', {
+          reportTitle,
+          currentUrl: page.url(),
+        });
+        return;
+      }
+    }
+
     this.log('opening Spotfire analysis URL', {
       reportTitle,
       analysisUrl: this.environment.spotfire.analysisUrl,
