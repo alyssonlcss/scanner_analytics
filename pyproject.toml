@@ -1,0 +1,89 @@
+[project]
+name = "displacement-analysis"
+version = "1.0.0"
+description = "Sistema de análise de deslocamento de equipes operacionais"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Alysson", email = "alyssonlcss@gmail.com"}
+]
+requires-python = ">=3.10"
+keywords = ["displacement", "analysis", "teams", "metrics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "python-docx>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+displacement-analysis = "src.main:main"
+
+[project.urls]
+Homepage = "https://github.com/alyssonlcss/compute_and_analyze_displacement"
+Repository = "https://github.com/alyssonlcss/compute_and_analyze_displacement.git"
+Issues = "https://github.com/alyssonlcss/compute_and_analyze_displacement/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312', 'py313']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | __pycache__
+    | result
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["src"]
+skip = [".venv", "__pycache__", "result"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    ".venv",
+    "__pycache__",
+    "result",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=term-missing"
