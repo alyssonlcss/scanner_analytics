@@ -197,9 +197,17 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   styles: [
     `
       .shell {
+        --accent: #c1121f;
+        --accent-strong: #7a0912;
+        --surface: rgba(255, 255, 255, 0.98);
+        --surface-strong: rgba(245, 245, 245, 0.96);
+        --text: #101010;
+        --line: rgba(16, 16, 16, 0.12);
+        --muted-strong: rgba(16, 16, 16, 0.58);
         min-height: 100vh;
         position: relative;
         overflow: hidden;
+        background: linear-gradient(180deg, #ffffff 0%, #f3f3f3 100%);
       }
 
       .shell::before,
@@ -216,7 +224,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         height: 360px;
         top: -80px;
         right: -140px;
-        background: radial-gradient(circle, rgba(232, 105, 61, 0.16), transparent 70%);
+        background: radial-gradient(circle, rgba(193, 18, 31, 0.18), transparent 70%);
       }
 
       .shell::after {
@@ -224,7 +232,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         height: 320px;
         left: -120px;
         bottom: -60px;
-        background: radial-gradient(circle, rgba(30, 123, 122, 0.14), transparent 72%);
+        background: radial-gradient(circle, rgba(16, 16, 16, 0.12), transparent 72%);
       }
 
       .workspace-stage {
@@ -257,7 +265,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         position: fixed;
         inset: 0;
         z-index: 1000;
-        background: rgba(28, 21, 17, 0.28);
+        background: rgba(0, 0, 0, 0.34);
         backdrop-filter: blur(8px);
       }
 
@@ -275,7 +283,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         background: var(--surface);
         border-radius: 24px;
         padding: 28px 24px;
-        box-shadow: 0 24px 60px rgba(34, 24, 18, 0.16);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
       }
 
       .loading-spinner {
@@ -283,7 +291,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         height: 48px;
         margin: 0 auto 14px;
         border-radius: 50%;
-        border: 4px solid rgba(232, 105, 61, 0.14);
+        border: 4px solid rgba(193, 18, 31, 0.14);
         border-top-color: var(--accent);
         animation: loading-spin 0.9s linear infinite;
       }
@@ -304,9 +312,9 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         padding: 0;
         display: grid;
         place-items: center;
-        background: linear-gradient(145deg, rgba(255, 252, 247, 0.96), rgba(247, 239, 230, 0.92));
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(237, 237, 237, 0.94));
         border: 1px solid rgba(23, 26, 31, 0.08);
-        box-shadow: 0 14px 30px rgba(34, 24, 18, 0.16);
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
         color: var(--accent-strong);
         cursor: pointer;
         transition: transform 0.18s ease, width 0.2s ease, padding 0.2s ease, border-radius 0.2s ease, opacity 0.18s ease;
@@ -337,10 +345,10 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         height: 100vh;
         padding: 40px 18px 18px;
         background:
-          linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(244, 238, 229, 0.96)),
-          radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 240, 240, 0.96)),
+          radial-gradient(circle at top right, rgba(193, 18, 31, 0.12), transparent 38%);
         border-left: 1px solid rgba(23, 26, 31, 0.08);
-        box-shadow: -24px 0 60px rgba(34, 24, 18, 0.18);
+        box-shadow: -24px 0 60px rgba(0, 0, 0, 0.18);
         transform: translateX(100%);
         transition: transform 0.24s ease;
         overflow: auto;
@@ -366,7 +374,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: white;
-        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
+        background: linear-gradient(135deg, var(--accent) 0%, #7a0912 100%);
         cursor: pointer;
       }
 
@@ -385,7 +393,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         padding: 9px 10px;
         border-radius: 16px;
         border: 1px solid rgba(23, 26, 31, 0.08);
-        background: rgba(255, 255, 255, 0.66);
+        background: rgba(255, 255, 255, 0.84);
         display: grid;
         gap: 3px;
       }
@@ -480,7 +488,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         width: 100%;
         border: 1px solid rgba(23, 26, 31, 0.08);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.68);
+        background: rgba(255, 255, 255, 0.92);
         color: var(--text);
         padding: 5px 7px;
         font: inherit;
@@ -492,13 +500,13 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       }
 
       .option-item:hover {
-        border-color: rgba(18, 93, 58, 0.28);
-        background: rgba(232, 244, 237, 0.92);
+        border-color: rgba(193, 18, 31, 0.34);
+        background: rgba(255, 238, 239, 0.96);
       }
 
       .option-item-active {
-        border-color: rgba(18, 93, 58, 0.38);
-        background: rgba(217, 239, 227, 0.96);
+        border-color: rgba(193, 18, 31, 0.44);
+        background: rgba(255, 226, 229, 0.98);
         color: var(--accent);
         font-weight: 600;
       }
@@ -555,8 +563,8 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
           90deg,
           rgba(23, 26, 31, 0.12) 0%,
           rgba(23, 26, 31, 0.12) var(--range-start),
-          rgba(18, 93, 58, 0.82) var(--range-start),
-          rgba(18, 93, 58, 0.82) var(--range-end),
+          rgba(193, 18, 31, 0.82) var(--range-start),
+          rgba(193, 18, 31, 0.82) var(--range-end),
           rgba(23, 26, 31, 0.12) var(--range-end),
           rgba(23, 26, 31, 0.12) 100%
         );
@@ -591,7 +599,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         margin-top: -4px;
         border-radius: 50%;
         border: 2px solid var(--accent);
-        background: #fff7f1;
+        background: #ffffff;
         box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
         pointer-events: auto;
         cursor: pointer;
@@ -602,7 +610,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         height: 14px;
         border-radius: 50%;
         border: 2px solid var(--accent);
-        background: #fff7f1;
+        background: #ffffff;
         box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
         pointer-events: auto;
         cursor: pointer;
