@@ -1,38 +1,63 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { distinctUntilChanged, interval, startWith, switchMap, takeWhile } from 'rxjs';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { forkJoin } from 'rxjs';
 
-import { ScannerApiService, ScannerJob } from '../../core/api/scanner-api.service';
+import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'tipoEquipe' | 'base';
+type ReportTypeValue = 'completo';
 
 type SelectFilterState = {
   key: FilterKey;
   title: string;
-  subtitle: string;
   value: string;
   options: string[];
 };
 
+type ReportTarget = {
+  analysisTab: string;
+  tableTitle: string;
+};
+
+type ReportTypeOption = {
+  value: ReportTypeValue;
+  label: string;
+  targets: ReportTarget[];
+};
+
+const DEFAULT_REPORT_TITLE = 'Scanner 4.0 - CE';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ATUACAO_HD_OPTIONS = ['All', 'Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const TIPO_EQUIPE_OPTIONS = ['CADASTRAR', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
+const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
+  {
+    value: 'completo',
+    label: 'Completo',
+    targets: [
+      {
+        analysisTab: 'Tab Completa',
+        tableTitle: 'Tabela Completa todas Colunas',
+      },
+      {
+        analysisTab: 'Ranking',
+        tableTitle: 'Detalhamento Diário',
+      },
+    ],
+  },
+];
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule],
   template: `
     <main class="shell">
       <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
         <section class="loading-popup" aria-live="polite" aria-busy="true">
           <div class="loading-spinner"></div>
-          <h2>Carregando Scanner</h2>
-          <p class="summary">A interface só é liberada depois que a página do Scanner termina de carregar abas, filtros e tabelas.</p>
+          <h2>Carregando filtros</h2>
         </section>
       </div>
 
@@ -41,31 +66,47 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
           type="button"
           class="filter-fab"
           [class.filter-fab-active]="filterDrawerOpen()"
-          (click)="toggleFilterDrawer()"
-          aria-label="Abrir filtros">
-          <span class="filter-fab-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"></path>
-            </svg>
-          </span>
+          [class.filter-fab-expanded]="filterDrawerOpen()"
+          [disabled]="loading()"
+          (click)="handlePrimaryAction()"
+          [attr.aria-label]="filterDrawerOpen() ? 'Aplicar filtros' : 'Abrir filtros'">
+          <ng-container *ngIf="!filterDrawerOpen(); else filterLabel">
+            <span class="filter-fab-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"></path>
+              </svg>
+            </span>
+          </ng-container>
+
+          <ng-template #filterLabel>
+            <span class="filter-fab-label">{{ loading() ? 'Filtrando...' : 'Filtrar' }}</span>
+          </ng-template>
         </button>
 
         <div class="drawer-backdrop" *ngIf="filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
 
         <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
           <div class="drawer-head">
-            <div>
-              <p class="panel-kicker">Filtros</p>
-              <h2>Barra lateral</h2>
-            </div>
+            <h2>Filtros</h2>
           </div>
 
           <div class="drawer-body">
+            <article class="drawer-card">
+              <div class="drawer-card-head">
+                <h3>Tipo de Relatório</h3>
+              </div>
+
+              <label class="select-shell">
+                <span class="select-caption">Valor ativo</span>
+                <select [value]="reportType()" (change)="updateReportType($event)">
+                  <option *ngFor="let option of reportTypeOptions" [value]="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+            </article>
+
             <article class="drawer-card" *ngFor="let filter of selectFilters()">
               <div class="drawer-card-head">
-                <div>
-                  <h3>{{ filter.title }}</h3>
-                </div>
+                <h3>{{ filter.title }}</h3>
               </div>
 
               <label class="select-shell">
@@ -79,24 +120,21 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
 
             <article class="drawer-card drawer-card-range">
               <div class="drawer-card-head">
-                <div>
-                  <h3>Dia</h3>
-                </div>
+                <h3>Dia</h3>
               </div>
 
               <div class="day-range-shell">
                 <div class="range-summary-shell">
                   <span class="select-caption">Valor ativo</span>
+                  <div class="day-range-display">
+                    <div>
+                      <strong>{{ dayRange().min }}</strong>
+                    </div>
 
-                <div class="day-range-display">
-                  <div>
-                    <strong>{{ dayRange().min }}</strong>
+                    <div>
+                      <strong>{{ dayRange().max }}</strong>
+                    </div>
                   </div>
-
-                  <div>
-                    <strong>{{ dayRange().max }}</strong>
-                  </div>
-                </div>
                 </div>
 
                 <div class="dual-slider">
@@ -113,159 +151,16 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
           </div>
         </aside>
 
-        <section class="hero">
-          <div class="hero-copy">
-            <p class="eyebrow">Scanner 4.0 - CE</p>
-            <h1>Visual mais limpo, filtros mais claros e painel lateral dedicado</h1>
-            <p class="summary">
-              A tela principal ficou mais limpa e o controle dos filtros saiu para uma barra lateral direita.
-              Os filtros de catálogo agora usam selects mais elegantes e o dia continua com faixa ajustável.
-            </p>
-
-            <div class="hero-ribbon">
-              <span class="hero-pill">{{ changedFiltersCount() }} filtros configurados</span>
-              <span class="hero-pill">{{ catalog()?.availableTabs?.length ?? 0 }} abas lidas</span>
-              <span class="hero-pill">drawer lateral ativo</span>
-            </div>
-          </div>
-
-          <aside class="hero-panel panel">
-            <div class="hero-panel-head">
-              <div>
-                <p class="panel-kicker">Cenário</p>
-                <h2>Resumo atual</h2>
-              </div>
-              <span [class]="'tag ' + (catalog()?.status ?? 'queued')">{{ catalog()?.status ?? 'loading' }}</span>
-            </div>
-
-            <div class="hero-metric-grid">
-              <article class="hero-metric-card">
-                <span class="metric-label">Aba</span>
-                <strong>{{ selectedTabLabel() }}</strong>
-              </article>
-
-              <article class="hero-metric-card">
-                <span class="metric-label">Tabela</span>
-                <strong>{{ selectedTableLabel() }}</strong>
-              </article>
-
-              <article class="hero-metric-card">
-                <span class="metric-label">Ano/Mês</span>
-                <strong>{{ activeValue('ano') || '---' }} / {{ activeValue('mes') || '---' }}</strong>
-              </article>
-
-              <article class="hero-metric-card">
-                <span class="metric-label">Dia</span>
-                <strong>{{ dayRange().min }} - {{ dayRange().max }}</strong>
-              </article>
-            </div>
-          </aside>
-        </section>
-
-        <section class="grid top-grid">
-          <article class="panel form-panel">
-            <div class="section-head">
-              <div>
-                <p class="panel-kicker">Fluxo de extração</p>
-                <h2>Parâmetros principais</h2>
-              </div>
-
-              <button type="button" class="ghost-button" (click)="refreshCatalog()" [disabled]="catalogLoading() || loading()">
-                Recarregar catálogo
-              </button>
-            </div>
-
-            <form [formGroup]="form" (ngSubmit)="submit()">
-              <label>
-                Relatório
-                <input formControlName="reportTitle" placeholder="Scanner 4.0 - CE" />
-              </label>
-
-              <label>
-                Aba
-                <select formControlName="analysisTab">
-                  <option value="">Usar a aba ativa do Spotfire</option>
-                  <option *ngFor="let tab of catalog()?.availableTabs ?? []" [value]="tab">{{ tab }}</option>
-                </select>
-              </label>
-
-              <label>
-                Tabela para exportar
-                <select formControlName="tableTitle">
-                  <option value="">Escolher depois</option>
-                  <option *ngFor="let table of catalog()?.availableTables ?? []" [value]="table">{{ table }}</option>
-                </select>
-              </label>
-
-              <p class="hint">
-                Os filtros são ajustados pelo botão lateral de filtros. Quando terminar, execute a extração.
-              </p>
-
-              <button type="submit" [disabled]="form.invalid || loading() || catalogLoading() || catalog()?.status !== 'ready'">
-                {{ loading() ? 'Enviando extração...' : 'Iniciar extração dos dados' }}
-              </button>
-            </form>
-          </article>
-
-          <article class="panel status-panel">
-            <div class="section-head compact-head">
-              <div>
-                <p class="panel-kicker">Seleção atual</p>
-                <h2>Resumo dos filtros</h2>
-              </div>
-            </div>
-
-            <div class="selection-summary">
-              <article class="selection-line" *ngFor="let filter of selectFilters()">
-                <span>{{ filter.title }}</span>
-                <strong>{{ filter.value || 'sem seleção' }}</strong>
-              </article>
-
-              <article class="selection-line">
-                <span>Dia</span>
-                <strong>{{ dayRange().min }} - {{ dayRange().max }}</strong>
-              </article>
-            </div>
-
-            <div class="status-stack">
-              <p><strong>Status:</strong> <span [class]="'tag ' + (catalog()?.status ?? 'queued')">{{ catalog()?.status ?? 'loading' }}</span></p>
-              <p><strong>Relatório:</strong> {{ catalog()?.reportTitle || form.controls.reportTitle.value }}</p>
-              <p><strong>Aba selecionada:</strong> {{ selectedTabLabel() }}</p>
-              <p><strong>Tabela selecionada:</strong> {{ selectedTableLabel() }}</p>
-              <p *ngIf="catalog()?.updatedAt"><strong>Atualizado em:</strong> {{ catalog()?.updatedAt }}</p>
-              <p *ngIf="catalog()?.errorMessage" class="error"><strong>Erro do catálogo:</strong> {{ catalog()?.errorMessage }}</p>
-              <p *ngIf="catalogRequestError()" class="error"><strong>Erro ao consultar API:</strong> {{ catalogRequestError() }}</p>
-            </div>
-
-            <ng-container *ngIf="job() as currentJob; else emptyState">
-              <hr />
-              <h3>Última extração</h3>
-              <p><strong>Job:</strong> {{ currentJob.id }}</p>
-              <p><strong>Status:</strong> <span [class]="'tag ' + currentJob.status">{{ currentJob.status }}</span></p>
-              <p><strong>Filtros enviados:</strong> {{ currentJob.request.selectedFilters?.length ?? 0 }}</p>
-              <p *ngIf="currentJob.exportFilePath">
-                <strong>Saída:</strong>
-                <a class="download-link" [href]="api.getExportDownloadUrl(currentJob.id)">Baixar export</a>
-                <span class="path">{{ currentJob.exportFilePath }}</span>
-              </p>
-              <p *ngIf="currentJob.errorMessage" class="error"><strong>Erro:</strong> {{ currentJob.errorMessage }}</p>
-            </ng-container>
-
-            <ng-template #emptyState>
-              <p>Nenhuma extração iniciada ainda.</p>
-            </ng-template>
-          </article>
-        </section>
+        <section class="workspace-stage" aria-hidden="true"></section>
       </ng-container>
     </main>
   `,
   styles: [
     `
       .shell {
-        max-width: 1220px;
-        margin: 0 auto;
-        padding: 40px 20px 72px;
+        min-height: 100vh;
         position: relative;
+        overflow: hidden;
       }
 
       .shell::before,
@@ -274,23 +169,27 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         position: absolute;
         border-radius: 999px;
         pointer-events: none;
-        filter: blur(22px);
+        filter: blur(24px);
       }
 
       .shell::before {
-        width: 320px;
-        height: 320px;
-        top: 0;
-        right: -120px;
-        background: radial-gradient(circle, rgba(232, 105, 61, 0.2), transparent 70%);
+        width: 360px;
+        height: 360px;
+        top: -80px;
+        right: -140px;
+        background: radial-gradient(circle, rgba(232, 105, 61, 0.16), transparent 70%);
       }
 
       .shell::after {
-        width: 260px;
-        height: 260px;
-        left: -100px;
-        top: 520px;
-        background: radial-gradient(circle, rgba(30, 123, 122, 0.16), transparent 72%);
+        width: 320px;
+        height: 320px;
+        left: -120px;
+        bottom: -60px;
+        background: radial-gradient(circle, rgba(30, 123, 122, 0.14), transparent 72%);
+      }
+
+      .workspace-stage {
+        min-height: 100vh;
       }
 
       .loading-popup-backdrop,
@@ -310,19 +209,19 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       }
 
       .loading-popup {
-        width: min(440px, 100%);
+        width: min(420px, 100%);
         text-align: center;
         border: 1px solid var(--line);
         background: var(--surface);
-        border-radius: 28px;
+        border-radius: 24px;
         padding: 28px 24px;
         box-shadow: 0 24px 60px rgba(34, 24, 18, 0.16);
       }
 
       .loading-spinner {
-        width: 52px;
-        height: 52px;
-        margin: 0 auto 16px;
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 14px;
         border-radius: 50%;
         border: 4px solid rgba(232, 105, 61, 0.14);
         border-top-color: var(--accent);
@@ -340,6 +239,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         z-index: 1102;
         width: 42px;
         height: 42px;
+        border: 0;
         border-radius: 14px;
         padding: 0;
         display: grid;
@@ -347,16 +247,44 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         background: linear-gradient(145deg, rgba(255, 252, 247, 0.96), rgba(247, 239, 230, 0.92));
         border: 1px solid rgba(23, 26, 31, 0.08);
         box-shadow: 0 14px 30px rgba(34, 24, 18, 0.16);
+        color: var(--accent-strong);
+        cursor: pointer;
+        transition: transform 0.18s ease, width 0.2s ease, padding 0.2s ease, border-radius 0.2s ease, opacity 0.18s ease;
+      }
+
+      .filter-fab:hover {
+        transform: translateY(-1px);
+      }
+
+      .filter-fab:disabled {
+        opacity: 0.7;
+        cursor: wait;
+        transform: none;
       }
 
       .filter-fab-active {
-        background: linear-gradient(145deg, rgba(232, 105, 61, 0.16), rgba(30, 123, 122, 0.14));
+        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
+        color: white;
+      }
+
+      .filter-fab-expanded {
+        width: auto;
+        min-width: 116px;
+        padding: 0 18px;
+        border-radius: 999px;
       }
 
       .filter-fab-icon svg {
         width: 16px;
         height: 16px;
-        fill: var(--accent-strong);
+        fill: currentColor;
+      }
+
+      .filter-fab-label {
+        font-size: 0.84rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .filter-drawer {
@@ -366,7 +294,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         z-index: 1101;
         width: min(380px, calc(100vw - 20px));
         height: 100vh;
-        padding: 20px 18px 18px;
+        padding: 22px 18px 18px;
         background:
           linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(244, 238, 229, 0.96)),
           radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
@@ -381,30 +309,16 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         transform: translateX(0);
       }
 
-      .drawer-head,
-      .hero-panel-head,
-      .section-head {
+      .drawer-head {
         display: flex;
+        align-items: center;
         justify-content: space-between;
-        align-items: flex-start;
-        gap: 14px;
-      }
-
-      .drawer-summary,
-      .summary,
-      .hint,
-      .drawer-card-copy,
-      .path {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.34;
-        font-size: 0.92rem;
+        margin-bottom: 10px;
       }
 
       .drawer-body {
         display: grid;
         gap: 8px;
-        margin-top: 10px;
       }
 
       .drawer-card {
@@ -420,10 +334,12 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         background: rgba(255, 255, 255, 0.66);
       }
 
-      .drawer-card-kicker,
-      .eyebrow,
-      .panel-kicker,
-      .metric-label,
+      .select-shell,
+      .slider-label {
+        display: grid;
+        gap: 4px;
+      }
+
       .select-caption {
         margin: 0 0 3px;
         text-transform: uppercase;
@@ -432,106 +348,20 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         color: var(--muted-strong);
       }
 
-      .select-shell {
-        display: grid;
-        gap: 4px;
-      }
-
-      .range-badge,
-      .hero-pill,
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 30px;
-        padding: 0 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(23, 26, 31, 0.1);
-        background: rgba(255, 255, 255, 0.72);
-        font-size: 0.72rem;
-        font-weight: 700;
-      }
-
-      .hero {
-        margin-bottom: 28px;
-        display: grid;
-        grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
-        gap: 18px;
-      }
-
-      .hero-ribbon {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 18px;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: clamp(2.3rem, 5vw, 4.1rem);
-        line-height: 0.94;
-        letter-spacing: -0.05em;
-        max-width: 11ch;
-      }
-
       h2 {
         margin: 0;
-        font-size: 1.18rem;
-        line-height: 1.06;
+        font-size: 1.08rem;
+        line-height: 1.04;
       }
 
       h3 {
         margin: 0;
-        font-size: 0.98rem;
-        line-height: 1.08;
+        font-size: 0.96rem;
+        line-height: 1.06;
       }
 
-      .grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-        gap: 18px;
-      }
-
-      .panel {
-        border: 1px solid var(--line);
-        background: var(--surface);
-        border-radius: 30px;
-        padding: 24px;
-        backdrop-filter: blur(14px);
-        box-shadow: 0 26px 70px rgba(34, 24, 18, 0.1);
-      }
-
-      .hero-panel {
-        background:
-          linear-gradient(180deg, rgba(255, 250, 245, 0.96), rgba(246, 241, 233, 0.92)),
-          radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
-      }
-
-      .hero-metric-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-        margin-top: 14px;
-      }
-
-      .hero-metric-card {
-        display: grid;
-        gap: 5px;
-        padding: 12px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.68);
-        border: 1px solid rgba(23, 26, 31, 0.08);
-      }
-
-      form,
-      label,
-      .slider-label {
-        display: grid;
-        gap: 4px;
-      }
-
-      input,
-      select {
+      select,
+      input {
         width: 100%;
         border-radius: 12px;
         border: 1px solid rgba(23, 26, 31, 0.12);
@@ -540,26 +370,6 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         color: var(--text);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
         font-size: 0.92rem;
-      }
-
-      button {
-        border: 0;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
-        color: white;
-        padding: 14px 18px;
-        font-weight: 700;
-        cursor: pointer;
-        transition: transform 0.18s ease, opacity 0.18s ease;
-      }
-
-      button:hover { transform: translateY(-1px); }
-      button:disabled { opacity: 0.62; cursor: not-allowed; transform: none; }
-
-      .ghost-button {
-        background: transparent;
-        color: var(--accent-strong);
-        border: 1px solid rgba(23, 26, 31, 0.12);
       }
 
       .day-range-shell {
@@ -583,25 +393,21 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         gap: 5px;
       }
 
-      .day-range-display > div {
-        padding: 8px 10px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.66);
-        border: 1px solid rgba(23, 26, 31, 0.08);
-        display: grid;
-        gap: 2px;
-      }
-
-      .day-range-display strong { font-size: 0.98rem; }
-
-      .dual-slider { display: grid; gap: 4px; }
-
+      .day-range-display > div,
       .slider-label {
         padding: 8px 10px;
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.66);
         border: 1px solid rgba(23, 26, 31, 0.08);
-        gap: 3px;
+      }
+
+      .day-range-display strong {
+        font-size: 0.98rem;
+      }
+
+      .dual-slider {
+        display: grid;
+        gap: 4px;
       }
 
       .slider-label input[type='range'] {
@@ -610,56 +416,6 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         border: 0;
         background: transparent;
         accent-color: var(--accent);
-      }
-
-      .selection-summary {
-        display: grid;
-        gap: 8px;
-        margin-bottom: 14px;
-      }
-
-      .selection-line {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .status-stack p,
-      .path,
-      .error { line-height: 1.36; }
-      .status-stack p { margin: 0 0 6px; }
-      .error { color: var(--error); }
-
-      .download-link {
-        color: var(--accent-strong);
-        font-weight: 700;
-        text-decoration: none;
-        margin-right: 8px;
-      }
-
-      .download-link:hover { text-decoration: underline; }
-
-      hr {
-        border: 0;
-        border-top: 1px solid var(--line);
-        margin: 18px 0;
-      }
-
-      .tag {
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-
-      .queued,
-      .running { background: rgba(157, 100, 0, 0.12); color: var(--warn); }
-      .completed { background: rgba(45, 117, 82, 0.12); color: var(--ok); }
-      .failed { background: rgba(161, 52, 41, 0.12); color: var(--error); }
-      .loading { background: rgba(30, 123, 122, 0.12); color: #1e7b7a; }
-
-      @media (max-width: 1080px) {
-        .hero,
-        .grid { grid-template-columns: 1fr; }
       }
 
       @media (max-width: 720px) {
@@ -671,16 +427,16 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
           border-radius: 12px;
         }
 
-        .hero-metric-grid,
-        .day-range-display { grid-template-columns: 1fr; }
+        .filter-fab-expanded {
+          width: auto;
+        }
+
+        .day-range-display {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 560px) {
-        .selection-line,
-        .section-head,
-        .drawer-head,
-        .hero-panel-head { flex-direction: column; }
-
         .filter-drawer {
           width: calc(100vw - 8px);
           padding-left: 14px;
@@ -692,47 +448,49 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
 })
 export class DashboardComponent implements OnInit {
   protected readonly api = inject(ScannerApiService);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly loading = signal(false);
   protected readonly catalogLoading = signal(true);
   protected readonly catalog = signal<SpotfireCatalog | null>(null);
   protected readonly catalogRequestError = signal<string | null>(null);
-  protected readonly rawCatalogFilters = signal<SpotfireFilter[]>([]);
   protected readonly filterDrawerOpen = signal(false);
+  protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
+  protected readonly reportType = signal<ReportTypeValue>('completo');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
   protected readonly dayRange = signal({ min: 1, max: new Date().getDate() });
-  protected readonly job = signal<ScannerJob | null>(null);
-
-  protected readonly form: FormGroup<{
-    analysisTab: FormControl<string>;
-    reportTitle: FormControl<string>;
-    tableTitle: FormControl<string>;
-  }> = new FormGroup({
-    analysisTab: new FormControl('', { nonNullable: true }),
-    reportTitle: new FormControl('Scanner 4.0 - CE', { nonNullable: true, validators: [Validators.required] }),
-    tableTitle: new FormControl('', { nonNullable: true }),
-  });
-
   protected readonly dayLimit = computed(() => new Date().getDate());
+  protected readonly selectedReportType = computed(() => this.reportTypeOptions.find((option) => option.value === this.reportType()) ?? this.reportTypeOptions[0]);
+
+  protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
 
   public ngOnInit(): void {
-    this.form.controls.analysisTab.valueChanges
-      .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-      .subscribe((analysisTab) => {
-        this.form.controls.tableTitle.setValue('', { emitEvent: false });
-        this.loadCatalog(analysisTab || undefined);
-      });
-
     this.loadCatalog();
   }
 
-  protected toggleFilterDrawer(): void {
-    this.filterDrawerOpen.update((open) => !open);
+  protected handlePrimaryAction(): void {
+    if (this.filterDrawerOpen()) {
+      this.submit();
+      return;
+    }
+
+    this.filterDrawerOpen.set(true);
   }
 
   protected closeFilterDrawer(): void {
+    if (this.loading()) {
+      return;
+    }
+
     this.filterDrawerOpen.set(false);
+  }
+
+  protected updateReportType(event: Event): void {
+    const value = (event.target as HTMLSelectElement | null)?.value as ReportTypeValue | '';
+    if (!value) {
+      return;
+    }
+
+    this.reportType.set(value);
   }
 
   protected updateSelectFilter(key: FilterKey, event: Event): void {
@@ -753,100 +511,51 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  protected selectedTabLabel(): string {
-    return this.form.controls.analysisTab.value || 'Aba ativa do Spotfire';
-  }
-
-  protected selectedTableLabel(): string {
-    return this.form.controls.tableTitle.value || 'Nenhuma tabela escolhida';
-  }
-
-  protected activeValue(key: FilterKey): string {
-    return this.selectFilters().find((filter) => filter.key === key)?.value ?? '';
-  }
-
-  protected changedFiltersCount(): number {
-    return this.buildSelectedFilters().length;
-  }
-
-  protected refreshCatalog(): void {
-    this.loadCatalog(this.form.controls.analysisTab.value || undefined);
-  }
-
   protected catalogReady(): boolean {
     return this.catalog()?.status === 'ready';
   }
 
   protected submit(): void {
-    if (this.form.invalid) {
+    if (this.loading()) {
+      return;
+    }
+
+    const targets = this.selectedReportType()?.targets ?? [];
+    if (targets.length === 0) {
       return;
     }
 
     this.loading.set(true);
-    const rawValue = this.form.getRawValue();
+    const selectedFilters = this.buildSelectedFilters();
 
-    this.api.startExecution({
-      reportTitle: rawValue.reportTitle,
-      analysisTab: rawValue.analysisTab || undefined,
-      tableTitle: rawValue.tableTitle || undefined,
-      selectedFilters: this.buildSelectedFilters(),
-    })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (job) => {
-          this.job.set(job);
-          this.loading.set(false);
-          this.pollJob(job.id);
-        },
-        error: () => {
-          this.loading.set(false);
-        },
-      });
+    forkJoin(targets.map((target) => this.api.startExecution({
+      reportTitle: this.reportTitle(),
+      analysisTab: target.analysisTab,
+      tableTitle: target.tableTitle,
+      selectedFilters,
+    }))).subscribe({
+      next: () => {
+        this.loading.set(false);
+        this.filterDrawerOpen.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+      },
+    });
   }
 
-  private pollJob(jobId: string): void {
-    interval(2000)
-      .pipe(
-        startWith(0),
-        switchMap(() => this.api.getExecution(jobId)),
-        takeWhile((job) => job.status === 'queued' || job.status === 'running', true),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe((job) => {
-        this.job.set(job);
-      });
-  }
-
-  private loadCatalog(analysisTab?: string): void {
+  private loadCatalog(): void {
     this.catalogLoading.set(true);
     this.catalogRequestError.set(null);
 
-    const currentReportTitle = this.form.controls.reportTitle.value.trim();
-
-    this.api.getCatalog({
-      analysisTab,
-      reportTitle: currentReportTitle.length > 0 && currentReportTitle !== 'Scanner 4.0 - CE' ? currentReportTitle : undefined,
-    })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+    this.api.getCatalog()
       .subscribe({
         next: (catalog) => {
           this.catalog.set(catalog);
-          this.rawCatalogFilters.set(catalog.filters);
           this.selectFilters.set(this.buildSelectFilters(catalog.filters));
           this.dayRange.set(this.buildDayRange(catalog.filters));
+          this.reportTitle.set(catalog.reportTitle || DEFAULT_REPORT_TITLE);
           this.catalogLoading.set(catalog.status === 'loading');
-
-          if (!this.form.controls.reportTitle.value || this.form.controls.reportTitle.value === 'Scanner 4.0 - CE') {
-            this.form.controls.reportTitle.setValue(catalog.reportTitle, { emitEvent: false });
-          }
-
-          if (!catalog.availableTabs.includes(this.form.controls.analysisTab.value)) {
-            this.form.controls.analysisTab.setValue('', { emitEvent: false });
-          }
-
-          if (!catalog.availableTables.includes(this.form.controls.tableTitle.value)) {
-            this.form.controls.tableTitle.setValue('', { emitEvent: false });
-          }
         },
         error: (error) => {
           this.catalogLoading.set(false);
@@ -866,35 +575,30 @@ export class DashboardComponent implements OnInit {
       {
         key: 'ano',
         title: 'Ano',
-        subtitle: 'Recorte anual da análise.',
         options: this.yearOptionsFromCatalog(rawFilters),
         value: previous.get('ano') ?? currentYear,
       },
       {
         key: 'mes',
         title: 'Mês',
-        subtitle: 'Leitura mensal até o mês atual.',
         options: MONTH_OPTIONS.slice(0, new Date().getMonth() + 1),
         value: previous.get('mes') ?? currentMonth,
       },
       {
         key: 'atuacaoHd',
         title: 'AtuaçãoHD',
-        subtitle: 'Catálogo principal de atuação.',
         options: ATUACAO_HD_OPTIONS,
         value: previous.get('atuacaoHd') ?? 'All',
       },
       {
         key: 'tipoEquipe',
         title: 'Tipo Equipe',
-        subtitle: 'Tipologia operacional da equipe.',
         options: TIPO_EQUIPE_OPTIONS,
         value: previous.get('tipoEquipe') ?? '',
       },
       {
         key: 'base',
         title: 'Base',
-        subtitle: 'Base e cobertura regional.',
         options: BASE_OPTIONS,
         value: previous.get('base') ?? '',
       },
