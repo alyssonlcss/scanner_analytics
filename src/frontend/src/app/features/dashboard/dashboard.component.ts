@@ -108,7 +108,50 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
               </label>
             </article>
 
-            <article class="drawer-card" *ngFor="let filter of selectFilters()">
+            <article class="drawer-card drawer-card-period">
+              <div class="drawer-card-head">
+                <h3>Período</h3>
+              </div>
+
+              <div class="period-shell">
+                <div class="period-selects">
+                  <label class="select-shell" *ngFor="let filter of periodFilters()">
+                    <span class="select-caption">{{ filter.title }}</span>
+                    <select [value]="filter.value" (change)="updateSelectFilter(filter.key, $event)">
+                      <option value="">Selecione</option>
+                      <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="day-range-shell">
+                  <div class="range-summary-shell">
+                    <span class="select-caption">Dia</span>
+                    <div class="day-range-display">
+                      <div>
+                        <strong>{{ dayRange().min }}</strong>
+                      </div>
+
+                      <div>
+                        <strong>{{ dayRange().max }}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="dual-slider">
+                    <label class="slider-label">
+                      <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" aria-label="Dia inicial" />
+                    </label>
+
+                    <label class="slider-label">
+                      <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" aria-label="Dia final" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="drawer-card" *ngFor="let filter of secondaryFilters()">
               <div class="drawer-card-head">
                 <h3>{{ filter.title }}</h3>
               </div>
@@ -120,37 +163,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                   <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
                 </select>
               </label>
-            </article>
-
-            <article class="drawer-card drawer-card-range">
-              <div class="drawer-card-head">
-                <h3>Dia</h3>
-              </div>
-
-              <div class="day-range-shell">
-                <div class="range-summary-shell">
-                  <span class="select-caption">Valor ativo</span>
-                  <div class="day-range-display">
-                    <div>
-                      <strong>{{ dayRange().min }}</strong>
-                    </div>
-
-                    <div>
-                      <strong>{{ dayRange().max }}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="dual-slider">
-                  <label class="slider-label">
-                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" aria-label="Dia inicial" />
-                  </label>
-
-                  <label class="slider-label">
-                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" aria-label="Dia final" />
-                  </label>
-                </div>
-              </div>
             </article>
           </div>
         </aside>
@@ -360,6 +372,21 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         background: rgba(255, 255, 255, 0.66);
       }
 
+      .drawer-card-period {
+        gap: 10px;
+      }
+
+      .period-shell {
+        display: grid;
+        gap: 8px;
+      }
+
+      .period-selects {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
       .select-shell,
       .slider-label {
         display: grid;
@@ -460,6 +487,10 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         .day-range-display {
           grid-template-columns: 1fr;
         }
+
+        .period-selects {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 560px) {
@@ -487,6 +518,8 @@ export class DashboardComponent implements OnInit {
   protected readonly dayRange = signal({ min: 1, max: new Date().getDate() });
   protected readonly dayLimit = computed(() => new Date().getDate());
   protected readonly selectedReportType = computed(() => this.reportTypeOptions.find((option) => option.value === this.reportType()) ?? this.reportTypeOptions[0]);
+  protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
+  protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
 
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
 
