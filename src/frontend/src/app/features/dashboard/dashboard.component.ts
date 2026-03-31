@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { forkJoin } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -59,6 +58,11 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
           <div class="loading-spinner"></div>
           <h2>Carregando filtros</h2>
         </section>
+      </div>
+
+      <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
+        <div class="loading-spinner"></div>
+        <p>Gerando Relatório</p>
       </div>
 
       <ng-container *ngIf="!catalogLoading() || catalogReady()">
@@ -190,6 +194,27 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
       .workspace-stage {
         min-height: 100vh;
+      }
+
+      .report-loading {
+        position: fixed;
+        inset: 0;
+        z-index: 1003;
+        display: grid;
+        place-items: center;
+        gap: 10px;
+        pointer-events: none;
+        align-content: center;
+        justify-items: center;
+      }
+
+      .report-loading p {
+        margin: 0;
+        color: var(--accent-strong);
+        font-size: 0.92rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .loading-popup-backdrop,
@@ -527,23 +552,12 @@ export class DashboardComponent implements OnInit {
       return;
     }
 
+    this.filterDrawerOpen.set(false);
     this.loading.set(true);
-    const selectedFilters = this.buildSelectedFilters();
 
-    forkJoin(targets.map((target) => this.api.startExecution({
-      reportTitle: this.reportTitle(),
-      analysisTab: target.analysisTab,
-      tableTitle: target.tableTitle,
-      selectedFilters,
-    }))).subscribe({
-      next: () => {
-        this.loading.set(false);
-        this.filterDrawerOpen.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
-      },
-    });
+    window.setTimeout(() => {
+      this.loading.set(false);
+    }, 1800);
   }
 
   private loadCatalog(): void {
