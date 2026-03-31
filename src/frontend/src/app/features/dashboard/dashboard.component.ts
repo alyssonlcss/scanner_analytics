@@ -455,7 +455,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       .option-list {
         display: grid;
         gap: 3px;
-        max-height: 136px;
+        max-height: 116px;
         overflow-y: auto;
         padding: 3px;
         border-radius: 10px;
@@ -466,7 +466,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
       .period-selects .option-list {
         gap: 2px;
-        max-height: 136px;
+        max-height: 98px;
         padding: 2px;
         align-content: start;
       }
