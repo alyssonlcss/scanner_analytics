@@ -464,6 +464,19 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
+      .period-selects .option-list {
+        gap: 2px;
+        max-height: 136px;
+        padding: 2px;
+        align-content: start;
+      }
+
+      .period-selects .option-item {
+        padding: 4px 6px;
+        font-size: 0.75rem;
+        line-height: 1;
+      }
+
       .option-item {
         width: 100%;
         border: 1px solid rgba(23, 26, 31, 0.08);
