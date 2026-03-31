@@ -294,7 +294,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         z-index: 1101;
         width: min(380px, calc(100vw - 20px));
         height: 100vh;
-        padding: 22px 18px 18px;
+        padding: 76px 18px 18px;
         background:
           linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(244, 238, 229, 0.96)),
           radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
@@ -313,12 +313,13 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 10px;
+        margin-bottom: 14px;
       }
 
       .drawer-body {
         display: grid;
         gap: 8px;
+        margin-top: 8px;
       }
 
       .drawer-card {
@@ -439,6 +440,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       @media (max-width: 560px) {
         .filter-drawer {
           width: calc(100vw - 8px);
+          padding-top: 68px;
           padding-left: 14px;
           padding-right: 14px;
         }
