@@ -60,21 +60,13 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
             </div>
           </div>
 
-          <p class="drawer-summary">
-            Apenas os filtros definidos para essa operação. Ano, Mês, AtuaçãoHD, Tipo Equipe e Base usam selects.
-            O dia continua com o mesmo comportamento de range.
-          </p>
-
           <div class="drawer-body">
             <article class="drawer-card" *ngFor="let filter of selectFilters()">
               <div class="drawer-card-head">
                 <div>
-                  <p class="drawer-card-kicker">Seleção direta</p>
                   <h3>{{ filter.title }}</h3>
                 </div>
               </div>
-
-              <p class="drawer-card-copy">{{ filter.subtitle }}</p>
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
@@ -88,23 +80,20 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
             <article class="drawer-card drawer-card-range">
               <div class="drawer-card-head">
                 <div>
-                  <p class="drawer-card-kicker">Range</p>
                   <h3>Dia</h3>
                 </div>
               </div>
 
               <div class="day-range-shell">
                 <div class="range-summary-shell">
-                  <span class="select-caption">Faixa ativa</span>
+                  <span class="select-caption">Valor ativo</span>
 
                 <div class="day-range-display">
                   <div>
-                    <span class="select-caption">Dia inicial</span>
                     <strong>{{ dayRange().min }}</strong>
                   </div>
 
                   <div>
-                    <span class="select-caption">Dia final</span>
                     <strong>{{ dayRange().max }}</strong>
                   </div>
                 </div>
@@ -112,13 +101,11 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
 
                 <div class="dual-slider">
                   <label class="slider-label">
-                    <span class="select-caption">Menor</span>
-                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" />
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" aria-label="Dia inicial" />
                   </label>
 
                   <label class="slider-label">
-                    <span class="select-caption">Maior</span>
-                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" />
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" aria-label="Dia final" />
                   </label>
                 </div>
               </div>
@@ -408,15 +395,16 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       .hint,
       .drawer-card-copy,
       .path {
+        margin: 0;
         color: var(--muted);
-        line-height: 1.5;
+        line-height: 1.34;
         font-size: 0.92rem;
       }
 
       .drawer-body {
         display: grid;
-        gap: 10px;
-        margin-top: 14px;
+        gap: 8px;
+        margin-top: 10px;
       }
 
       .drawer-card {
@@ -425,7 +413,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         border: 1px solid rgba(23, 26, 31, 0.08);
         background: rgba(255, 255, 255, 0.66);
         display: grid;
-        gap: 8px;
+        gap: 6px;
       }
 
       .drawer-card-range {
@@ -437,7 +425,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       .panel-kicker,
       .metric-label,
       .select-caption {
-        margin: 0 0 6px;
+        margin: 0 0 3px;
         text-transform: uppercase;
         letter-spacing: 0.16em;
         font-size: 0.64rem;
@@ -446,7 +434,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
 
       .select-shell {
         display: grid;
-        gap: 6px;
+        gap: 4px;
       }
 
       .range-badge,
@@ -474,8 +462,8 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       .hero-ribbon {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 24px;
+        gap: 8px;
+        margin-top: 18px;
       }
 
       h1 {
@@ -522,13 +510,13 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       .hero-metric-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        margin-top: 18px;
+        gap: 10px;
+        margin-top: 14px;
       }
 
       .hero-metric-card {
         display: grid;
-        gap: 8px;
+        gap: 5px;
         padding: 12px;
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.68);
@@ -539,7 +527,7 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
       label,
       .slider-label {
         display: grid;
-        gap: 6px;
+        gap: 4px;
       }
 
       input,
@@ -580,19 +568,19 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         background: var(--surface-strong);
         border: 1px solid rgba(23, 26, 31, 0.08);
         display: grid;
-        gap: 8px;
+        gap: 6px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       }
 
       .range-summary-shell {
         display: grid;
-        gap: 6px;
+        gap: 4px;
       }
 
       .day-range-display {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
+        gap: 5px;
       }
 
       .day-range-display > div {
@@ -601,19 +589,19 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
         background: rgba(255, 255, 255, 0.66);
         border: 1px solid rgba(23, 26, 31, 0.08);
         display: grid;
-        gap: 4px;
+        gap: 2px;
       }
 
       .day-range-display strong { font-size: 0.98rem; }
 
-      .dual-slider { display: grid; gap: 6px; }
+      .dual-slider { display: grid; gap: 4px; }
 
       .slider-label {
         padding: 8px 10px;
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.66);
         border: 1px solid rgba(23, 26, 31, 0.08);
-        gap: 4px;
+        gap: 3px;
       }
 
       .slider-label input[type='range'] {
@@ -626,21 +614,21 @@ const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', '
 
       .selection-summary {
         display: grid;
-        gap: 10px;
-        margin-bottom: 18px;
+        gap: 8px;
+        margin-bottom: 14px;
       }
 
       .selection-line {
         display: flex;
         justify-content: space-between;
-        gap: 12px;
+        gap: 8px;
         align-items: flex-start;
       }
 
       .status-stack p,
       .path,
-      .error { line-height: 1.55; }
-      .status-stack p { margin: 0 0 10px; }
+      .error { line-height: 1.36; }
+      .status-stack p { margin: 0 0 6px; }
       .error { color: var(--error); }
 
       .download-link {
