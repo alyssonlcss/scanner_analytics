@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { forkJoin } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -588,9 +589,20 @@ export class DashboardComponent implements OnInit {
     this.filterDrawerOpen.set(false);
     this.loading.set(true);
 
-    window.setTimeout(() => {
-      this.loading.set(false);
-    }, 1800);
+    const selectedFilters = this.buildSelectedFilters();
+
+    forkJoin(targets.map((target) => this.api.startExecution({
+      reportTitle: this.reportTitle(),
+      analysisTab: target.analysisTab,
+      selectedFilters,
+    }))).subscribe({
+      next: () => {
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+      },
+    });
   }
 
   private loadCatalog(): void {
