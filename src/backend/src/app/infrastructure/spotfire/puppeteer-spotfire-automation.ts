@@ -64,12 +64,15 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         await this.ensureFiltersPanel(page);
+        await this.ensureAllFiltersVisible(page);
         await this.resetVisibleFilters(page);
 
         if (request.selectedFilters?.length) {
+          await this.ensureAllFiltersVisible(page);
           await this.applySelectedFilters(page, request.selectedFilters);
         }
 
+        await this.ensureAllFiltersVisible(page);
         const filters = await this.loadAllFilters(page);
         this.logFiltersSummary(filters);
         const availableTables = await this.loadAvailableTables(page);
@@ -147,9 +150,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         continue;
       }
 
-      await this.ensureFiltersPanel(page);
+      let applied: unknown = { applied: false, reason: 'not attempted' };
 
-      const applied = await page.evaluate(async function (selection) {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await this.ensureFiltersPanel(page);
+        await this.ensureAllFiltersVisible(page);
+
+        applied = await page.evaluate(async function (selection) {
         function normalize(value: string | null | undefined): string {
           return (value ?? '').replace(/\s+/g, ' ').trim();
         }
@@ -312,8 +319,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           input.value = textValue;
           input.dispatchEvent(new Event('input', { bubbles: true }));
           input.dispatchEvent(new Event('change', { bubbles: true }));
-          input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
-          input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
           input.blur();
           await wait(250);
           return true;
@@ -413,8 +418,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             input.value = requestedValue;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
-            input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
-            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
             input.blur();
             await wait(200);
           }
@@ -452,13 +455,21 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         return { applied: false, reason: `unsupported filter kind: ${selection.kind}` };
-      }, filter);
+        }, filter);
 
-      this.log('filter application result', {
-        title: filter.title,
-        kind: filter.kind,
-        result: applied,
-      });
+        this.log('filter application result', {
+          title: filter.title,
+          kind: filter.kind,
+          attempt,
+          result: applied,
+        });
+
+        if ((applied as { applied?: boolean }).applied) {
+          break;
+        }
+
+        await this.waitForSpotfireIdle(page);
+      }
     }
 
     await this.waitForSpotfireIdle(page);
@@ -880,6 +891,55 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.waitForSpotfireIdle(page);
   }
 
+  private async ensureAllFiltersVisible(page: Page): Promise<void> {
+    const expandedHiddenFilters = await page.evaluate(async function () {
+      function normalize(value: string | null | undefined): string {
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+      }
+
+      function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+        if (!element) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      async function wait(milliseconds: number): Promise<void> {
+        await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, milliseconds); });
+      }
+
+      let clickedShowAll = false;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const button = Array.from(document.querySelectorAll<HTMLElement>('.MessageButton, button, div[title], span[title]'))
+          .filter(function (element) { return isVisible(element); })
+          .find(function (element) {
+            const title = normalize(element.getAttribute('title'));
+            const text = normalize(element.textContent);
+            return title === 'show all' || text === 'show all';
+          });
+
+        if (!button) {
+          break;
+        }
+
+        button.click();
+        clickedShowAll = true;
+        await wait(250);
+      }
+
+      return clickedShowAll;
+    });
+
+    if (expandedHiddenFilters) {
+      this.log('clicked Show all to expand hidden Spotfire filters');
+      await this.waitForSpotfireIdle(page);
+    }
+  }
+
   private async loadAllFilters(page: Page): Promise<SpotfireFilter[]> {
     this.log('waiting for filter titles in the right panel', {
       selector: 'span.sf-element-filter-content.sf-element-filter-title[title]',
@@ -899,7 +959,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       function getPanelScrollContainer(): HTMLElement | null {
         return document.querySelector<HTMLElement>('.FilterPanelScroll .Container')
           ?? document.querySelector<HTMLElement>('.StyledScrollbar.FilterPanelScroll .Container')
+          ?? document.querySelector<HTMLElement>('.StyledScrollbar.FilterPanelScroll')
+          ?? document.querySelector<HTMLElement>('.FilterPanelScroll')
           ?? document.querySelector<HTMLElement>('.sfc-filter-panel .Container')
+          ?? document.querySelector<HTMLElement>('.sfc-filter-panel')
           ?? null;
       }
 
@@ -1120,6 +1183,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         panelScrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
         await wait(160);
         await collectVisibleFilters();
+
+        for (let offset = maxScrollTop; offset >= 0; offset -= step) {
+          panelScrollContainer.scrollTop = offset;
+          panelScrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(100);
+          await collectVisibleFilters();
+        }
       }
 
       return Array.from(collectedFilters.values());

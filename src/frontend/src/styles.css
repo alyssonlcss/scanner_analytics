@@ -1,16 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+
 :root {
-  --bg: #f4efe5;
-  --surface: rgba(255, 250, 243, 0.88);
-  --surface-strong: #fff8ef;
-  --text: #1f1b16;
-  --muted: #625748;
-  --accent: #b24a2f;
-  --accent-strong: #8e341b;
-  --line: rgba(31, 27, 22, 0.12);
-  --ok: #2c6b45;
-  --warn: #9d5a00;
-  --error: #9f2d24;
-  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  --bg: #f3eee6;
+  --surface: rgba(255, 250, 243, 0.84);
+  --surface-strong: #fffaf2;
+  --text: #1b1f25;
+  --muted: #615b54;
+  --muted-strong: #4f4a44;
+  --accent: #e8693d;
+  --accent-strong: #b64d2a;
+  --accent-soft: rgba(232, 105, 61, 0.12);
+  --teal-soft: rgba(30, 123, 122, 0.12);
+  --line: rgba(23, 26, 31, 0.1);
+  --ok: #2d7552;
+  --warn: #9d6400;
+  --error: #a13429;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  font-family: var(--font-body);
 }
 
 * {
@@ -22,12 +29,34 @@ body {
   min-height: 100vh;
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(178, 74, 47, 0.18), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(151, 111, 69, 0.18), transparent 24%),
-    linear-gradient(180deg, #efe3d1 0%, #f7f2ea 52%, #efe7dd 100%);
+    radial-gradient(circle at top left, rgba(232, 105, 61, 0.18), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(30, 123, 122, 0.12), transparent 20%),
+    radial-gradient(circle at bottom right, rgba(170, 131, 87, 0.16), transparent 24%),
+    linear-gradient(180deg, #efe5d8 0%, #f8f4ec 48%, #efe8de 100%);
+  font-family: var(--font-body);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(27, 31, 37, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27, 31, 37, 0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.55), transparent 88%);
 }
 
 button,
 input {
   font: inherit;
+}
+
+h1,
+h2,
+h3,
+button,
+.tag {
+  font-family: var(--font-display);
 }

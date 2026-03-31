@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { distinctUntilChanged, interval, startWith, switchMap, takeWhile } from 'rxjs';
@@ -7,342 +7,641 @@ import { distinctUntilChanged, interval, startWith, switchMap, takeWhile } from 
 import { ScannerApiService, ScannerJob } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
 
+type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'tipoEquipe' | 'base';
+
+type SelectFilterState = {
+  key: FilterKey;
+  title: string;
+  subtitle: string;
+  value: string;
+  options: string[];
+};
+
+const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const ATUACAO_HD_OPTIONS = ['All', 'Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
+const TIPO_EQUIPE_OPTIONS = ['CADASTRAR', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
+const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
     <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Scanner 4.0 - CE</p>
-        <h1>Escolha a aba, ajuste os filtros e só depois extraia</h1>
-        <p class="summary">
-          O fluxo agora começa com o catálogo inicial do Spotfire. A tela mostra a lista de abas em dropdown,
-          carrega todos os filtros detectados e só envia a execução quando o usuário terminar os ajustes.
-        </p>
-      </section>
+      <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
+        <section class="loading-popup" aria-live="polite" aria-busy="true">
+          <div class="loading-spinner"></div>
+          <h2>Carregando Scanner</h2>
+          <p class="summary">A interface só é liberada depois que a página do Scanner termina de carregar abas, filtros e tabelas.</p>
+        </section>
+      </div>
 
-      <section class="grid top-grid">
-        <article class="panel form-panel">
-          <div class="section-head">
-            <h2>Parâmetros da extração</h2>
-            <button type="button" class="ghost-button" (click)="refreshCatalog()" [disabled]="catalogLoading() || loading()">
-              Recarregar catálogo
-            </button>
+      <ng-container *ngIf="!catalogLoading() || catalogReady()">
+        <button
+          type="button"
+          class="filter-fab"
+          [class.filter-fab-active]="filterDrawerOpen()"
+          (click)="toggleFilterDrawer()"
+          aria-label="Abrir filtros">
+          <span class="filter-fab-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"></path>
+            </svg>
+          </span>
+        </button>
+
+        <div class="drawer-backdrop" *ngIf="filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
+
+        <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
+          <div class="drawer-head">
+            <div>
+              <p class="panel-kicker">Filtros</p>
+              <h2>Barra lateral</h2>
+            </div>
           </div>
 
-          <form [formGroup]="form" (ngSubmit)="submit()">
-            <label>
-              Relatório
-              <input formControlName="reportTitle" placeholder="Scanner 4.0 - CE" />
-            </label>
+          <p class="drawer-summary">
+            Apenas os filtros definidos para essa operação. Ano, Mês, AtuaçãoHD, Tipo Equipe e Base usam selects.
+            O dia continua com o mesmo comportamento de range.
+          </p>
 
-            <label>
-              Aba
-              <select formControlName="analysisTab">
-                <option value="">Usar a aba ativa do Spotfire</option>
-                <option *ngFor="let tab of catalog()?.availableTabs ?? []" [value]="tab">{{ tab }}</option>
-              </select>
-            </label>
+          <div class="drawer-body">
+            <article class="drawer-card" *ngFor="let filter of selectFilters()">
+              <div class="drawer-card-head">
+                <div>
+                  <p class="drawer-card-kicker">Seleção direta</p>
+                  <h3>{{ filter.title }}</h3>
+                </div>
+              </div>
 
-            <label>
-              Tabela para exportar
-              <select formControlName="tableTitle">
-                <option value="">Escolher depois</option>
-                <option *ngFor="let table of catalog()?.availableTables ?? []" [value]="table">{{ table }}</option>
-              </select>
-            </label>
+              <p class="drawer-card-copy">{{ filter.subtitle }}</p>
 
-            <p class="hint">
-              Primeiro escolha a aba e ajuste os filtros abaixo. O botão só dispara a automação quando você terminar.
+              <label class="select-shell">
+                <span class="select-caption">Valor ativo</span>
+                <select [value]="filter.value" (change)="updateSelectFilter(filter.key, $event)">
+                  <option value="">Selecione</option>
+                  <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
+                </select>
+              </label>
+            </article>
+
+            <article class="drawer-card drawer-card-range">
+              <div class="drawer-card-head">
+                <div>
+                  <p class="drawer-card-kicker">Range</p>
+                  <h3>Dia</h3>
+                </div>
+              </div>
+
+              <div class="day-range-shell">
+                <div class="range-summary-shell">
+                  <span class="select-caption">Faixa ativa</span>
+
+                <div class="day-range-display">
+                  <div>
+                    <span class="select-caption">Dia inicial</span>
+                    <strong>{{ dayRange().min }}</strong>
+                  </div>
+
+                  <div>
+                    <span class="select-caption">Dia final</span>
+                    <strong>{{ dayRange().max }}</strong>
+                  </div>
+                </div>
+                </div>
+
+                <div class="dual-slider">
+                  <label class="slider-label">
+                    <span class="select-caption">Menor</span>
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" />
+                  </label>
+
+                  <label class="slider-label">
+                    <span class="select-caption">Maior</span>
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" />
+                  </label>
+                </div>
+              </div>
+            </article>
+          </div>
+        </aside>
+
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Scanner 4.0 - CE</p>
+            <h1>Visual mais limpo, filtros mais claros e painel lateral dedicado</h1>
+            <p class="summary">
+              A tela principal ficou mais limpa e o controle dos filtros saiu para uma barra lateral direita.
+              Os filtros de catálogo agora usam selects mais elegantes e o dia continua com faixa ajustável.
             </p>
 
-            <button type="submit" [disabled]="form.invalid || loading() || catalogLoading() || catalog()?.status !== 'ready'">
-              {{ loading() ? 'Enviando extração...' : 'Iniciar extração dos dados' }}
-            </button>
-          </form>
-        </article>
-
-        <article class="panel status-panel">
-          <h2>Resumo do catálogo</h2>
-          <div class="status-stack">
-            <p><strong>Status:</strong> <span [class]="'tag ' + (catalog()?.status ?? 'queued')">{{ catalog()?.status ?? 'loading' }}</span></p>
-            <p><strong>Relatório:</strong> {{ catalog()?.reportTitle || form.controls.reportTitle.value }}</p>
-            <p><strong>Total de abas:</strong> {{ catalog()?.availableTabs?.length ?? 0 }}</p>
-            <p><strong>Total de tabelas:</strong> {{ catalog()?.availableTables?.length ?? 0 }}</p>
-            <p><strong>Total de filtros:</strong> {{ editableFilters().length }}</p>
-            <p><strong>Filtros alterados:</strong> {{ changedFiltersCount() }}</p>
-            <p><strong>Aba selecionada:</strong> {{ selectedTabLabel() }}</p>
-            <p><strong>Tabela selecionada:</strong> {{ selectedTableLabel() }}</p>
-            <p *ngIf="catalog()?.updatedAt"><strong>Atualizado em:</strong> {{ catalog()?.updatedAt }}</p>
-            <p *ngIf="catalog()?.errorMessage" class="error"><strong>Erro do catálogo:</strong> {{ catalog()?.errorMessage }}</p>
-            <p *ngIf="catalogRequestError()" class="error"><strong>Erro ao consultar API:</strong> {{ catalogRequestError() }}</p>
-            <p *ngIf="catalogLoading()">Carregando abas, tabelas e filtros do backend.</p>
+            <div class="hero-ribbon">
+              <span class="hero-pill">{{ changedFiltersCount() }} filtros configurados</span>
+              <span class="hero-pill">{{ catalog()?.availableTabs?.length ?? 0 }} abas lidas</span>
+              <span class="hero-pill">drawer lateral ativo</span>
+            </div>
           </div>
 
-          <div class="preview-stack" *ngIf="catalog() as currentCatalog">
-            <p><strong>Abas recebidas:</strong> {{ previewValues(currentCatalog.availableTabs) }}</p>
-            <p><strong>Tabelas recebidas:</strong> {{ previewValues(currentCatalog.availableTables) }}</p>
-            <p><strong>Filtros detectados:</strong> {{ previewFilterTitles(editableFilters()) }}</p>
-          </div>
-
-          <ng-container *ngIf="job() as currentJob; else emptyState">
-            <hr />
-            <h3>Última extração</h3>
-            <p><strong>Job:</strong> {{ currentJob.id }}</p>
-            <p><strong>Status:</strong> <span [class]="'tag ' + currentJob.status">{{ currentJob.status }}</span></p>
-            <p><strong>Aba:</strong> {{ currentJob.request.analysisTab || 'Aba ativa do Spotfire' }}</p>
-            <p><strong>Tabela:</strong> {{ currentJob.request.tableTitle || 'Nenhuma selecionada' }}</p>
-            <p><strong>Filtros enviados:</strong> {{ currentJob.request.selectedFilters?.length ?? 0 }}</p>
-            <p *ngIf="currentJob.exportFilePath">
-              <strong>Saída:</strong>
-              <a class="download-link" [href]="api.getExportDownloadUrl(currentJob.id)">Baixar export</a>
-              <span class="path">{{ currentJob.exportFilePath }}</span>
-            </p>
-            <p *ngIf="currentJob.errorMessage" class="error"><strong>Erro:</strong> {{ currentJob.errorMessage }}</p>
-          </ng-container>
-
-          <ng-template #emptyState>
-            <p>Nenhuma extração iniciada ainda.</p>
-          </ng-template>
-        </article>
-      </section>
-
-      <section class="panel filter-panel">
-        <div class="section-head">
-          <h2>Filtros para aplicar antes da extração</h2>
-          <span>{{ editableFilters().length }} itens</span>
-        </div>
-
-        <div class="filter-list" *ngIf="editableFilters().length; else noFilters">
-          <article class="filter-card" *ngFor="let filter of editableFilters()">
-            <div class="filter-header">
-              <strong>{{ filter.title }}</strong>
-              <span class="filter-kind">{{ filter.kind }}</span>
+          <aside class="hero-panel panel">
+            <div class="hero-panel-head">
+              <div>
+                <p class="panel-kicker">Cenário</p>
+                <h2>Resumo atual</h2>
+              </div>
+              <span [class]="'tag ' + (catalog()?.status ?? 'queued')">{{ catalog()?.status ?? 'loading' }}</span>
             </div>
 
-            <p class="filter-meta">{{ describeFilter(filter) }}</p>
+            <div class="hero-metric-grid">
+              <article class="hero-metric-card">
+                <span class="metric-label">Aba</span>
+                <strong>{{ selectedTabLabel() }}</strong>
+              </article>
 
-            <div class="editor-block" *ngIf="filter.kind === 'list' || filter.kind === 'toggle-group'">
-              <label class="editor-label">
-                Valores para aplicar
-                <select
-                  multiple
-                  class="multi-select"
-                  (change)="updateSelectedOptions(filter.title, selectElementValues($event))">
-                  <option
-                    *ngFor="let option of filter.options ?? []"
-                    [value]="option.label"
-                    [selected]="isValueSelected(filter, option.label)">
-                    {{ option.label }}
-                  </option>
+              <article class="hero-metric-card">
+                <span class="metric-label">Tabela</span>
+                <strong>{{ selectedTableLabel() }}</strong>
+              </article>
+
+              <article class="hero-metric-card">
+                <span class="metric-label">Ano/Mês</span>
+                <strong>{{ activeValue('ano') || '---' }} / {{ activeValue('mes') || '---' }}</strong>
+              </article>
+
+              <article class="hero-metric-card">
+                <span class="metric-label">Dia</span>
+                <strong>{{ dayRange().min }} - {{ dayRange().max }}</strong>
+              </article>
+            </div>
+          </aside>
+        </section>
+
+        <section class="grid top-grid">
+          <article class="panel form-panel">
+            <div class="section-head">
+              <div>
+                <p class="panel-kicker">Fluxo de extração</p>
+                <h2>Parâmetros principais</h2>
+              </div>
+
+              <button type="button" class="ghost-button" (click)="refreshCatalog()" [disabled]="catalogLoading() || loading()">
+                Recarregar catálogo
+              </button>
+            </div>
+
+            <form [formGroup]="form" (ngSubmit)="submit()">
+              <label>
+                Relatório
+                <input formControlName="reportTitle" placeholder="Scanner 4.0 - CE" />
+              </label>
+
+              <label>
+                Aba
+                <select formControlName="analysisTab">
+                  <option value="">Usar a aba ativa do Spotfire</option>
+                  <option *ngFor="let tab of catalog()?.availableTabs ?? []" [value]="tab">{{ tab }}</option>
                 </select>
               </label>
 
-              <div class="action-row">
-                <button type="button" class="mini-button" (click)="selectAllFilterValues(filter.title)">Selecionar (All)</button>
-                <button type="button" class="mini-button" (click)="restoreFilterDefaults(filter.title)">Restaurar padrão</button>
-                <button type="button" class="mini-button" (click)="clearFilterSelection(filter.title)">Limpar</button>
+              <label>
+                Tabela para exportar
+                <select formControlName="tableTitle">
+                  <option value="">Escolher depois</option>
+                  <option *ngFor="let table of catalog()?.availableTables ?? []" [value]="table">{{ table }}</option>
+                </select>
+              </label>
+
+              <p class="hint">
+                Os filtros são ajustados pelo botão lateral de filtros. Quando terminar, execute a extração.
+              </p>
+
+              <button type="submit" [disabled]="form.invalid || loading() || catalogLoading() || catalog()?.status !== 'ready'">
+                {{ loading() ? 'Enviando extração...' : 'Iniciar extração dos dados' }}
+              </button>
+            </form>
+          </article>
+
+          <article class="panel status-panel">
+            <div class="section-head compact-head">
+              <div>
+                <p class="panel-kicker">Seleção atual</p>
+                <h2>Resumo dos filtros</h2>
               </div>
             </div>
 
-            <div class="range-editor" *ngIf="filter.kind === 'range' && filter.range">
-              <label class="editor-label">
-                Valor inicial
-                <input
-                  [value]="filter.range.selectedMin"
-                  (input)="updateRangeFilter(filter.title, 'min', inputValue($event))"
-                  placeholder="Valor inicial" />
-              </label>
+            <div class="selection-summary">
+              <article class="selection-line" *ngFor="let filter of selectFilters()">
+                <span>{{ filter.title }}</span>
+                <strong>{{ filter.value || 'sem seleção' }}</strong>
+              </article>
 
-              <label class="editor-label">
-                Valor final
-                <input
-                  [value]="filter.range.selectedMax"
-                  (input)="updateRangeFilter(filter.title, 'max', inputValue($event))"
-                  placeholder="Valor final" />
-              </label>
+              <article class="selection-line">
+                <span>Dia</span>
+                <strong>{{ dayRange().min }} - {{ dayRange().max }}</strong>
+              </article>
             </div>
 
-            <p class="selected-values" *ngIf="showCurrentSelection(filter)">
-              {{ currentSelectionLabel(filter) }}
-            </p>
-          </article>
-        </div>
+            <div class="status-stack">
+              <p><strong>Status:</strong> <span [class]="'tag ' + (catalog()?.status ?? 'queued')">{{ catalog()?.status ?? 'loading' }}</span></p>
+              <p><strong>Relatório:</strong> {{ catalog()?.reportTitle || form.controls.reportTitle.value }}</p>
+              <p><strong>Aba selecionada:</strong> {{ selectedTabLabel() }}</p>
+              <p><strong>Tabela selecionada:</strong> {{ selectedTableLabel() }}</p>
+              <p *ngIf="catalog()?.updatedAt"><strong>Atualizado em:</strong> {{ catalog()?.updatedAt }}</p>
+              <p *ngIf="catalog()?.errorMessage" class="error"><strong>Erro do catálogo:</strong> {{ catalog()?.errorMessage }}</p>
+              <p *ngIf="catalogRequestError()" class="error"><strong>Erro ao consultar API:</strong> {{ catalogRequestError() }}</p>
+            </div>
 
-        <ng-template #noFilters>
-          <p>Os filtros aparecerão aqui assim que o backend concluir a carga inicial do Spotfire.</p>
-        </ng-template>
-      </section>
+            <ng-container *ngIf="job() as currentJob; else emptyState">
+              <hr />
+              <h3>Última extração</h3>
+              <p><strong>Job:</strong> {{ currentJob.id }}</p>
+              <p><strong>Status:</strong> <span [class]="'tag ' + currentJob.status">{{ currentJob.status }}</span></p>
+              <p><strong>Filtros enviados:</strong> {{ currentJob.request.selectedFilters?.length ?? 0 }}</p>
+              <p *ngIf="currentJob.exportFilePath">
+                <strong>Saída:</strong>
+                <a class="download-link" [href]="api.getExportDownloadUrl(currentJob.id)">Baixar export</a>
+                <span class="path">{{ currentJob.exportFilePath }}</span>
+              </p>
+              <p *ngIf="currentJob.errorMessage" class="error"><strong>Erro:</strong> {{ currentJob.errorMessage }}</p>
+            </ng-container>
+
+            <ng-template #emptyState>
+              <p>Nenhuma extração iniciada ainda.</p>
+            </ng-template>
+          </article>
+        </section>
+      </ng-container>
     </main>
   `,
   styles: [
     `
       .shell {
-        max-width: 1180px;
+        max-width: 1220px;
         margin: 0 auto;
-        padding: 48px 20px 64px;
+        padding: 40px 20px 72px;
+        position: relative;
       }
 
-      .hero {
-        margin-bottom: 28px;
+      .shell::before,
+      .shell::after {
+        content: '';
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+        filter: blur(22px);
       }
 
-      .eyebrow {
-        margin: 0 0 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.18em;
-        font-size: 0.78rem;
-        color: var(--accent-strong);
+      .shell::before {
+        width: 320px;
+        height: 320px;
+        top: 0;
+        right: -120px;
+        background: radial-gradient(circle, rgba(232, 105, 61, 0.2), transparent 70%);
       }
 
-      h1 {
-        margin: 0;
-        font-size: clamp(2.1rem, 5vw, 4rem);
-        line-height: 0.96;
-        max-width: 12ch;
+      .shell::after {
+        width: 260px;
+        height: 260px;
+        left: -100px;
+        top: 520px;
+        background: radial-gradient(circle, rgba(30, 123, 122, 0.16), transparent 72%);
       }
 
-      .summary {
-        max-width: 64ch;
-        color: var(--muted);
-        line-height: 1.6;
+      .loading-popup-backdrop,
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(28, 21, 17, 0.28);
+        backdrop-filter: blur(8px);
       }
 
-      .grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-        gap: 18px;
-        margin-bottom: 18px;
+      .loading-popup-backdrop {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
       }
 
-      .panel {
+      .loading-popup {
+        width: min(440px, 100%);
+        text-align: center;
         border: 1px solid var(--line);
         background: var(--surface);
-        backdrop-filter: blur(14px);
-        border-radius: 24px;
-        padding: 22px;
-        box-shadow: 0 22px 50px rgba(67, 42, 22, 0.08);
+        border-radius: 28px;
+        padding: 28px 24px;
+        box-shadow: 0 24px 60px rgba(34, 24, 18, 0.16);
       }
 
-      h2 {
-        margin-top: 0;
-        margin-bottom: 16px;
+      .loading-spinner {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto 16px;
+        border-radius: 50%;
+        border: 4px solid rgba(232, 105, 61, 0.14);
+        border-top-color: var(--accent);
+        animation: loading-spin 0.9s linear infinite;
       }
 
-      form {
+      @keyframes loading-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .filter-fab {
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        z-index: 1102;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        padding: 0;
         display: grid;
+        place-items: center;
+        background: linear-gradient(145deg, rgba(255, 252, 247, 0.96), rgba(247, 239, 230, 0.92));
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        box-shadow: 0 14px 30px rgba(34, 24, 18, 0.16);
+      }
+
+      .filter-fab-active {
+        background: linear-gradient(145deg, rgba(232, 105, 61, 0.16), rgba(30, 123, 122, 0.14));
+      }
+
+      .filter-fab-icon svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--accent-strong);
+      }
+
+      .filter-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 1101;
+        width: min(380px, calc(100vw - 20px));
+        height: 100vh;
+        padding: 20px 18px 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(244, 238, 229, 0.96)),
+          radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
+        border-left: 1px solid rgba(23, 26, 31, 0.08);
+        box-shadow: -24px 0 60px rgba(34, 24, 18, 0.18);
+        transform: translateX(100%);
+        transition: transform 0.24s ease;
+        overflow: auto;
+      }
+
+      .filter-drawer-open {
+        transform: translateX(0);
+      }
+
+      .drawer-head,
+      .hero-panel-head,
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
         gap: 14px;
       }
 
-      label,
-      .editor-label {
-        display: grid;
-        gap: 8px;
-        font-weight: 600;
-      }
-
-      input,
-      select {
-        width: 100%;
-        border-radius: 14px;
-        border: 1px solid rgba(31, 27, 22, 0.16);
-        padding: 13px 14px;
-        background: var(--surface-strong);
-      }
-
-      button {
-        border: 0;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--accent) 0%, #cc6a36 100%);
-        color: white;
-        padding: 14px 18px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-
-      .ghost-button,
-      .mini-button,
-      .option-button {
-        background: transparent;
-        color: var(--accent-strong);
-        border: 1px solid rgba(31, 27, 22, 0.14);
-      }
-
-      .mini-button {
-        padding: 8px 12px;
-        border-radius: 999px;
-        font-size: 0.85rem;
-      }
-
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        border-radius: 999px;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.08em;
-      }
-
-      .queued,
-      .running {
-        background: rgba(157, 90, 0, 0.12);
-        color: var(--warn);
-      }
-
-      .completed {
-        background: rgba(44, 107, 69, 0.12);
-        color: var(--ok);
-      }
-
-      .failed {
-        background: rgba(159, 45, 36, 0.12);
-        color: var(--error);
-      }
-
-      .loading {
-        background: rgba(21, 79, 99, 0.12);
-        color: #154f63;
-      }
-
+      .drawer-summary,
+      .summary,
       .hint,
-      .filter-meta {
-        margin: 0;
+      .drawer-card-copy,
+      .path {
         color: var(--muted);
         line-height: 1.5;
         font-size: 0.92rem;
       }
 
-      .error {
-        color: var(--error);
-      }
-
-      .status-stack p,
-      .preview-stack p {
-        margin: 0 0 10px;
-      }
-
-      .preview-stack {
+      .drawer-body {
+        display: grid;
+        gap: 10px;
         margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px solid var(--line);
       }
 
-      hr {
-        border: 0;
-        border-top: 1px solid var(--line);
-        margin: 18px 0;
+      .drawer-card {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        background: rgba(255, 255, 255, 0.66);
+        display: grid;
+        gap: 8px;
+      }
+
+      .drawer-card-range {
+        background: rgba(255, 255, 255, 0.66);
+      }
+
+      .drawer-card-kicker,
+      .eyebrow,
+      .panel-kicker,
+      .metric-label,
+      .select-caption {
+        margin: 0 0 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 0.64rem;
+        color: var(--muted-strong);
+      }
+
+      .select-shell {
+        display: grid;
+        gap: 6px;
+      }
+
+      .range-badge,
+      .hero-pill,
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(23, 26, 31, 0.1);
+        background: rgba(255, 255, 255, 0.72);
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      .hero {
+        margin-bottom: 28px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+        gap: 18px;
+      }
+
+      .hero-ribbon {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.3rem, 5vw, 4.1rem);
+        line-height: 0.94;
+        letter-spacing: -0.05em;
+        max-width: 11ch;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1.18rem;
+        line-height: 1.06;
       }
 
       h3 {
-        margin: 0 0 12px;
+        margin: 0;
+        font-size: 0.98rem;
+        line-height: 1.08;
       }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+        gap: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 30px;
+        padding: 24px;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 26px 70px rgba(34, 24, 18, 0.1);
+      }
+
+      .hero-panel {
+        background:
+          linear-gradient(180deg, rgba(255, 250, 245, 0.96), rgba(246, 241, 233, 0.92)),
+          radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
+      }
+
+      .hero-metric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .hero-metric-card {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.68);
+        border: 1px solid rgba(23, 26, 31, 0.08);
+      }
+
+      form,
+      label,
+      .slider-label {
+        display: grid;
+        gap: 6px;
+      }
+
+      input,
+      select {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid rgba(23, 26, 31, 0.12);
+        padding: 10px 12px;
+        background: var(--surface-strong);
+        color: var(--text);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        font-size: 0.92rem;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
+        color: white;
+        padding: 14px 18px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.18s ease, opacity 0.18s ease;
+      }
+
+      button:hover { transform: translateY(-1px); }
+      button:disabled { opacity: 0.62; cursor: not-allowed; transform: none; }
+
+      .ghost-button {
+        background: transparent;
+        color: var(--accent-strong);
+        border: 1px solid rgba(23, 26, 31, 0.12);
+      }
+
+      .day-range-shell {
+        padding: 8px;
+        border-radius: 14px;
+        background: var(--surface-strong);
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        display: grid;
+        gap: 8px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+      }
+
+      .range-summary-shell {
+        display: grid;
+        gap: 6px;
+      }
+
+      .day-range-display {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .day-range-display > div {
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.66);
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        display: grid;
+        gap: 4px;
+      }
+
+      .day-range-display strong { font-size: 0.98rem; }
+
+      .dual-slider { display: grid; gap: 6px; }
+
+      .slider-label {
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.66);
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        gap: 4px;
+      }
+
+      .slider-label input[type='range'] {
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        accent-color: var(--accent);
+      }
+
+      .selection-summary {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .selection-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .status-stack p,
+      .path,
+      .error { line-height: 1.55; }
+      .status-stack p { margin: 0 0 10px; }
+      .error { color: var(--error); }
 
       .download-link {
         color: var(--accent-strong);
@@ -351,105 +650,53 @@ import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.m
         margin-right: 8px;
       }
 
-      .download-link:hover {
-        text-decoration: underline;
+      .download-link:hover { text-decoration: underline; }
+
+      hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 18px 0;
       }
 
-      .path {
-        display: block;
-        margin-top: 6px;
-        color: var(--muted);
-        word-break: break-all;
-      }
-
-      .section-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 16px;
-      }
-
-      .filter-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 14px;
-      }
-
-      .filter-card {
-        border-radius: 16px;
-        background: rgba(255, 248, 239, 0.84);
-        border: 1px solid rgba(31, 27, 22, 0.08);
-        padding: 16px;
-        display: grid;
-        gap: 12px;
-      }
-
-      .filter-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 12px;
-      }
-
-      .filter-kind {
+      .tag {
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        font-size: 0.75rem;
-        color: var(--muted);
       }
 
-      .editor-block,
-      .range-editor {
-        display: grid;
-        gap: 10px;
+      .queued,
+      .running { background: rgba(157, 100, 0, 0.12); color: var(--warn); }
+      .completed { background: rgba(45, 117, 82, 0.12); color: var(--ok); }
+      .failed { background: rgba(161, 52, 41, 0.12); color: var(--error); }
+      .loading { background: rgba(30, 123, 122, 0.12); color: #1e7b7a; }
+
+      @media (max-width: 1080px) {
+        .hero,
+        .grid { grid-template-columns: 1fr; }
       }
 
-      .range-editor {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .action-row,
-      .option-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .multi-select {
-        min-height: 180px;
-        border-radius: 16px;
-        background: var(--surface-strong);
-      }
-
-      .option-pill {
-        display: inline-flex;
-        padding: 7px 12px;
-        border-radius: 999px;
-        font-size: 0.82rem;
-      }
-
-      .option-button {
-        color: var(--text);
-      }
-
-      .option-selected {
-        background: linear-gradient(135deg, rgba(178, 74, 47, 0.16) 0%, rgba(204, 106, 54, 0.16) 100%);
-        border-color: rgba(178, 74, 47, 0.36);
-      }
-
-      .selected-values {
-        margin: 0;
-        font-weight: 600;
-        line-height: 1.45;
-      }
-
-      @media (max-width: 920px) {
-        .grid {
-          grid-template-columns: 1fr;
+      @media (max-width: 720px) {
+        .filter-fab {
+          top: 16px;
+          right: 16px;
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
         }
 
-        .range-editor {
-          grid-template-columns: 1fr;
+        .hero-metric-grid,
+        .day-range-display { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 560px) {
+        .selection-line,
+        .section-head,
+        .drawer-head,
+        .hero-panel-head { flex-direction: column; }
+
+        .filter-drawer {
+          width: calc(100vw - 8px);
+          padding-left: 14px;
+          padding-right: 14px;
         }
       }
     `,
@@ -463,7 +710,10 @@ export class DashboardComponent implements OnInit {
   protected readonly catalogLoading = signal(true);
   protected readonly catalog = signal<SpotfireCatalog | null>(null);
   protected readonly catalogRequestError = signal<string | null>(null);
-  protected readonly editableFilters = signal<SpotfireFilter[]>([]);
+  protected readonly rawCatalogFilters = signal<SpotfireFilter[]>([]);
+  protected readonly filterDrawerOpen = signal(false);
+  protected readonly selectFilters = signal<SelectFilterState[]>([]);
+  protected readonly dayRange = signal({ min: 1, max: new Date().getDate() });
   protected readonly job = signal<ScannerJob | null>(null);
 
   protected readonly form: FormGroup<{
@@ -472,25 +722,71 @@ export class DashboardComponent implements OnInit {
     tableTitle: FormControl<string>;
   }> = new FormGroup({
     analysisTab: new FormControl('', { nonNullable: true }),
-    reportTitle: new FormControl('Scanner 4.0 - CE', {
-      nonNullable: true,
-      validators: [Validators.required],
-    }),
+    reportTitle: new FormControl('Scanner 4.0 - CE', { nonNullable: true, validators: [Validators.required] }),
     tableTitle: new FormControl('', { nonNullable: true }),
   });
 
+  protected readonly dayLimit = computed(() => new Date().getDate());
+
   public ngOnInit(): void {
     this.form.controls.analysisTab.valueChanges
-      .pipe(
-        distinctUntilChanged(),
-        takeUntilDestroyed(this.destroyRef),
-      )
+      .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((analysisTab) => {
         this.form.controls.tableTitle.setValue('', { emitEvent: false });
         this.loadCatalog(analysisTab || undefined);
       });
 
     this.loadCatalog();
+  }
+
+  protected toggleFilterDrawer(): void {
+    this.filterDrawerOpen.update((open) => !open);
+  }
+
+  protected closeFilterDrawer(): void {
+    this.filterDrawerOpen.set(false);
+  }
+
+  protected updateSelectFilter(key: FilterKey, event: Event): void {
+    const value = (event.target as HTMLSelectElement | null)?.value ?? '';
+    this.selectFilters.update((filters) => filters.map((filter) => filter.key === key ? { ...filter, value } : filter));
+  }
+
+  protected updateDayRange(boundary: 'min' | 'max', event: Event): void {
+    const value = Number((event.target as HTMLInputElement | null)?.value ?? Number.NaN);
+    if (Number.isNaN(value)) {
+      return;
+    }
+
+    this.dayRange.update((range) => {
+      const nextMin = boundary === 'min' ? Math.min(value, range.max) : range.min;
+      const nextMax = boundary === 'max' ? Math.max(value, range.min) : range.max;
+      return { min: nextMin, max: nextMax };
+    });
+  }
+
+  protected selectedTabLabel(): string {
+    return this.form.controls.analysisTab.value || 'Aba ativa do Spotfire';
+  }
+
+  protected selectedTableLabel(): string {
+    return this.form.controls.tableTitle.value || 'Nenhuma tabela escolhida';
+  }
+
+  protected activeValue(key: FilterKey): string {
+    return this.selectFilters().find((filter) => filter.key === key)?.value ?? '';
+  }
+
+  protected changedFiltersCount(): number {
+    return this.buildSelectedFilters().length;
+  }
+
+  protected refreshCatalog(): void {
+    this.loadCatalog(this.form.controls.analysisTab.value || undefined);
+  }
+
+  protected catalogReady(): boolean {
+    return this.catalog()?.status === 'ready';
   }
 
   protected submit(): void {
@@ -500,14 +796,13 @@ export class DashboardComponent implements OnInit {
 
     this.loading.set(true);
     const rawValue = this.form.getRawValue();
-    const payload = {
+
+    this.api.startExecution({
       reportTitle: rawValue.reportTitle,
       analysisTab: rawValue.analysisTab || undefined,
       tableTitle: rawValue.tableTitle || undefined,
-      selectedFilters: this.getChangedFilters(),
-    };
-
-    this.api.startExecution(payload)
+      selectedFilters: this.buildSelectedFilters(),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (job) => {
@@ -519,147 +814,6 @@ export class DashboardComponent implements OnInit {
           this.loading.set(false);
         },
       });
-  }
-
-  protected refreshCatalog(): void {
-    this.loadCatalog(this.form.controls.analysisTab.value || undefined);
-  }
-
-  protected selectedTabLabel(): string {
-    return this.form.controls.analysisTab.value || 'Aba ativa do Spotfire';
-  }
-
-  protected selectedTableLabel(): string {
-    return this.form.controls.tableTitle.value || 'Nenhuma tabela escolhida';
-  }
-
-  protected describeFilter(filter: SpotfireFilter): string {
-    if (filter.kind === 'range' && filter.range) {
-      return `Intervalo detectado de ${filter.range.min} até ${filter.range.max}`;
-    }
-
-    if (filter.options?.length) {
-      return `${filter.options.length} opções detectadas no catálogo`;
-    }
-
-    return filter.selectedValues.length ? `${filter.selectedValues.length} valores atuais detectados` : 'Sem valores detectados no catálogo';
-  }
-
-  protected previewValues(values: string[]): string {
-    if (!values.length) {
-      return 'nenhum item recebido';
-    }
-
-    const preview = values.slice(0, 5).join(', ');
-    return values.length > 5 ? `${preview} e mais ${values.length - 5}` : preview;
-  }
-
-  protected previewFilterTitles(filters: SpotfireFilter[]): string {
-    if (!filters.length) {
-      return 'nenhum filtro recebido';
-    }
-
-    const preview = filters.slice(0, 6).map((filter) => filter.title).join(', ');
-    return filters.length > 6 ? `${preview} e mais ${filters.length - 6}` : preview;
-  }
-
-  protected changedFiltersCount(): number {
-    return this.getChangedFilters().length;
-  }
-
-  protected inputValue(event: Event): string {
-    return (event.target as HTMLInputElement | null)?.value ?? '';
-  }
-
-  protected selectElementValues(event: Event): string[] {
-    const target = event.target as HTMLSelectElement | null;
-
-    if (!target) {
-      return [];
-    }
-
-    return Array.from(target.selectedOptions)
-      .map((option) => option.value.trim())
-      .filter((value, index, list) => value.length > 0 && list.indexOf(value) === index);
-  }
-
-  protected updateSelectedOptions(title: string, selectedValues: string[]): void {
-    const normalizedValues = selectedValues.filter((value, index, list) => value.length > 0 && list.indexOf(value) === index);
-
-    this.updateFilter(title, (filter) => ({
-      ...filter,
-      selectedValues: normalizedValues,
-    }));
-  }
-
-  protected selectAllFilterValues(title: string): void {
-    this.updateFilter(title, (filter) => {
-      const allOption = filter.options?.find((option) => option.label.toLowerCase().startsWith('(all)'));
-
-      if (!allOption) {
-        return filter;
-      }
-
-      return {
-        ...filter,
-        selectedValues: [allOption.label],
-      };
-    });
-  }
-
-  protected restoreFilterDefaults(title: string): void {
-    const baseline = this.catalog()?.filters.find((filter) => filter.title === title);
-
-    if (!baseline) {
-      return;
-    }
-
-    this.updateFilter(title, () => this.cloneFilter(baseline));
-  }
-
-  protected clearFilterSelection(title: string): void {
-    this.updateFilter(title, (filter) => ({
-      ...filter,
-      selectedValues: [],
-      range: filter.range
-        ? {
-          ...filter.range,
-          selectedMin: '',
-          selectedMax: '',
-        }
-        : undefined,
-    }));
-  }
-
-  protected updateRangeFilter(title: string, boundary: 'min' | 'max', value: string): void {
-    this.updateFilter(title, (filter) => ({
-      ...filter,
-      range: filter.range
-        ? {
-          ...filter.range,
-          selectedMin: boundary === 'min' ? value : filter.range.selectedMin,
-          selectedMax: boundary === 'max' ? value : filter.range.selectedMax,
-        }
-        : undefined,
-    }));
-  }
-
-  protected isValueSelected(filter: SpotfireFilter, label: string): boolean {
-    return filter.selectedValues.some((value) => value.toLowerCase() === label.toLowerCase());
-  }
-
-  protected showCurrentSelection(filter: SpotfireFilter): boolean {
-    return this.currentSelectionLabel(filter).length > 0;
-  }
-
-  protected currentSelectionLabel(filter: SpotfireFilter): string {
-    if (filter.kind === 'range' && filter.range) {
-      return filter.range.selectedMin || filter.range.selectedMax
-        ? `Intervalo escolhido: ${filter.range.selectedMin || 'vazio'} -> ${filter.range.selectedMax || 'vazio'}`
-        : '';
-    }
-
-    return filter.selectedValues.length ? `Valores escolhidos: ${filter.selectedValues.join(', ')}` : '';
   }
 
   private pollJob(jobId: string): void {
@@ -680,21 +834,19 @@ export class DashboardComponent implements OnInit {
     this.catalogRequestError.set(null);
 
     const currentReportTitle = this.form.controls.reportTitle.value.trim();
-    const currentCatalog = this.catalog();
-    const shouldRequestReportTitle = currentReportTitle.length > 0
-      && currentReportTitle !== 'Scanner 4.0 - CE'
-      && currentReportTitle !== (currentCatalog?.reportTitle ?? '');
 
     this.api.getCatalog({
       analysisTab,
-      reportTitle: shouldRequestReportTitle ? currentReportTitle : undefined,
+      reportTitle: currentReportTitle.length > 0 && currentReportTitle !== 'Scanner 4.0 - CE' ? currentReportTitle : undefined,
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (catalog) => {
           this.catalog.set(catalog);
+          this.rawCatalogFilters.set(catalog.filters);
+          this.selectFilters.set(this.buildSelectFilters(catalog.filters));
+          this.dayRange.set(this.buildDayRange(catalog.filters));
           this.catalogLoading.set(catalog.status === 'loading');
-          this.editableFilters.set(this.mergeEditableFilters(catalog.filters));
 
           if (!this.form.controls.reportTitle.value || this.form.controls.reportTitle.value === 'Scanner 4.0 - CE') {
             this.form.controls.reportTitle.setValue(catalog.reportTitle, { emitEvent: false });
@@ -711,92 +863,108 @@ export class DashboardComponent implements OnInit {
         error: (error) => {
           this.catalogLoading.set(false);
           this.catalogRequestError.set(this.describeHttpError(error));
+          this.selectFilters.set(this.buildSelectFilters([]));
+          this.dayRange.set({ min: 1, max: this.dayLimit() });
         },
       });
   }
 
-  private mergeEditableFilters(incomingFilters: SpotfireFilter[]): SpotfireFilter[] {
-    const currentByTitle = new Map(this.editableFilters().map((filter) => [filter.title, filter]));
+  private buildSelectFilters(rawFilters: SpotfireFilter[]): SelectFilterState[] {
+    const currentYear = String(new Date().getFullYear());
+    const currentMonth = MONTH_OPTIONS[new Date().getMonth()];
+    const previous = new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
 
-    return incomingFilters.map((filter) => {
-      const existing = currentByTitle.get(filter.title);
-
-      if (!existing || existing.kind !== filter.kind) {
-        return this.cloneFilter(filter);
-      }
-
-      return {
-        ...this.cloneFilter(filter),
-        selectedValues: [...existing.selectedValues],
-        range: filter.range
-          ? {
-            ...filter.range,
-            selectedMin: existing.range?.selectedMin ?? filter.range.selectedMin,
-            selectedMax: existing.range?.selectedMax ?? filter.range.selectedMax,
-          }
-          : undefined,
-      };
-    });
+    return [
+      {
+        key: 'ano',
+        title: 'Ano',
+        subtitle: 'Recorte anual da análise.',
+        options: this.yearOptionsFromCatalog(rawFilters),
+        value: previous.get('ano') ?? currentYear,
+      },
+      {
+        key: 'mes',
+        title: 'Mês',
+        subtitle: 'Leitura mensal até o mês atual.',
+        options: MONTH_OPTIONS.slice(0, new Date().getMonth() + 1),
+        value: previous.get('mes') ?? currentMonth,
+      },
+      {
+        key: 'atuacaoHd',
+        title: 'AtuaçãoHD',
+        subtitle: 'Catálogo principal de atuação.',
+        options: ATUACAO_HD_OPTIONS,
+        value: previous.get('atuacaoHd') ?? 'All',
+      },
+      {
+        key: 'tipoEquipe',
+        title: 'Tipo Equipe',
+        subtitle: 'Tipologia operacional da equipe.',
+        options: TIPO_EQUIPE_OPTIONS,
+        value: previous.get('tipoEquipe') ?? '',
+      },
+      {
+        key: 'base',
+        title: 'Base',
+        subtitle: 'Base e cobertura regional.',
+        options: BASE_OPTIONS,
+        value: previous.get('base') ?? '',
+      },
+    ];
   }
 
-  private updateFilter(title: string, updater: (filter: SpotfireFilter) => SpotfireFilter): void {
-    this.editableFilters.update((filters) => filters.map((filter) => {
-      if (filter.title !== title) {
-        return filter;
-      }
+  private buildDayRange(rawFilters: SpotfireFilter[]): { min: number; max: number } {
+    const previous = this.dayRange();
+    const rawDayFilter = rawFilters.find((filter) => filter.title.toLowerCase() === 'dia');
+    const catalogMax = Number(rawDayFilter?.range?.max ?? this.dayLimit());
+    const limit = Number.isFinite(catalogMax) && catalogMax > 0 ? catalogMax : this.dayLimit();
 
-      return updater(this.cloneFilter(filter));
-    }));
-  }
-
-  private getChangedFilters(): SpotfireFilter[] {
-    const baselineByTitle = new Map((this.catalog()?.filters ?? []).map((filter) => [filter.title, filter]));
-
-    return this.editableFilters()
-      .filter((filter) => this.isFilterChanged(filter, baselineByTitle.get(filter.title)))
-      .map((filter) => this.cloneFilter(filter));
-  }
-
-  private isFilterChanged(current: SpotfireFilter, baseline?: SpotfireFilter): boolean {
-    if (!baseline) {
-      return this.hasMeaningfulSelection(current);
-    }
-
-    if (current.kind !== baseline.kind) {
-      return true;
-    }
-
-    if (current.kind === 'range') {
-      return (current.range?.selectedMin ?? '').trim() !== (baseline.range?.selectedMin ?? '').trim()
-        || (current.range?.selectedMax ?? '').trim() !== (baseline.range?.selectedMax ?? '').trim();
-    }
-
-    return this.normalizeValues(current.selectedValues) !== this.normalizeValues(baseline.selectedValues);
-  }
-
-  private hasMeaningfulSelection(filter: SpotfireFilter): boolean {
-    if (filter.kind === 'range') {
-      return Boolean(filter.range?.selectedMin?.trim() || filter.range?.selectedMax?.trim());
-    }
-
-    return filter.selectedValues.some((value) => value.trim().length > 0);
-  }
-
-  private normalizeValues(values: string[]): string {
-    return values
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0)
-      .sort()
-      .join('|');
-  }
-
-  private cloneFilter(filter: SpotfireFilter): SpotfireFilter {
     return {
-      ...filter,
-      selectedValues: [...filter.selectedValues],
-      options: filter.options?.map((option) => ({ ...option })),
-      range: filter.range ? { ...filter.range } : undefined,
+      min: Math.min(previous.min, limit),
+      max: Math.min(Math.max(previous.max, previous.min), limit),
     };
+  }
+
+  private yearOptionsFromCatalog(rawFilters: SpotfireFilter[]): string[] {
+    const yearFilter = rawFilters.find((filter) => filter.title.toLowerCase() === 'ano');
+    const options = yearFilter?.options?.map((option) => option.label).filter((label) => /^\d{4}$/.test(label)) ?? [];
+
+    if (options.length > 0) {
+      return [...new Set(options)].sort((left, right) => Number(right) - Number(left));
+    }
+
+    const currentYear = new Date().getFullYear();
+    return [String(currentYear), String(currentYear - 1)];
+  }
+
+  private buildSelectedFilters(): SpotfireFilter[] {
+    const filters: SpotfireFilter[] = [];
+
+    for (const filter of this.selectFilters()) {
+      if (!filter.value) {
+        continue;
+      }
+
+      filters.push({
+        title: filter.title,
+        kind: 'list',
+        selectedValues: [filter.value],
+      });
+    }
+
+    filters.push({
+      title: 'Dia',
+      kind: 'range',
+      selectedValues: [],
+      range: {
+        min: '1',
+        max: String(this.dayLimit()),
+        selectedMin: String(this.dayRange().min),
+        selectedMax: String(this.dayRange().max),
+      },
+    });
+
+    return filters;
   }
 
   private describeHttpError(error: unknown): string {
@@ -812,9 +980,7 @@ export class DashboardComponent implements OnInit {
       }
 
       if (typeof candidate.status === 'number') {
-        const suffix = typeof candidate.statusText === 'string' && candidate.statusText.trim().length > 0
-          ? ` ${candidate.statusText}`
-          : '';
+        const suffix = typeof candidate.statusText === 'string' && candidate.statusText.trim().length > 0 ? ` ${candidate.statusText}` : '';
         return `HTTP ${candidate.status}${suffix}`;
       }
     }
