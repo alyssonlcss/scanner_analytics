@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
@@ -60,7 +59,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   template: `
     <main class="shell">
       <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
@@ -108,9 +107,16 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <select [ngModel]="reportType()" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateReportType($event)">
-                  <option *ngFor="let option of reportTypeOptions" [value]="option.value">{{ option.label }}</option>
-                </select>
+                <div class="option-list" role="listbox" aria-label="Tipo de Relatório">
+                  <button
+                    type="button"
+                    class="option-item"
+                    *ngFor="let option of reportTypeOptions"
+                    [class.option-item-active]="reportType() === option.value"
+                    (click)="updateReportType(option.value)">
+                    {{ option.label }}
+                  </button>
+                </div>
               </label>
             </article>
 
@@ -123,10 +129,24 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                 <div class="period-selects">
                   <label class="select-shell" *ngFor="let filter of periodFilters()">
                     <span class="select-caption">{{ filter.title }}</span>
-                    <select [ngModel]="filter.value" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateSelectFilter(filter.key, $event)">
-                      <option value="">Selecione</option>
-                      <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
-                    </select>
+                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title">
+                      <button
+                        type="button"
+                        class="option-item"
+                        [class.option-item-active]="filter.value === ''"
+                        (click)="updateSelectFilter(filter.key, '')">
+                        Selecione
+                      </button>
+
+                      <button
+                        type="button"
+                        class="option-item"
+                        *ngFor="let option of filter.options"
+                        [class.option-item-active]="filter.value === option"
+                        (click)="updateSelectFilter(filter.key, option)">
+                        {{ option }}
+                      </button>
+                    </div>
                   </label>
                 </div>
 
@@ -164,10 +184,24 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <select [ngModel]="filter.value" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateSelectFilter(filter.key, $event)">
-                  <option value="">Selecione</option>
-                  <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
-                </select>
+                <div class="option-list" role="listbox" [attr.aria-label]="filter.title">
+                  <button
+                    type="button"
+                    class="option-item"
+                    [class.option-item-active]="filter.value === ''"
+                    (click)="updateSelectFilter(filter.key, '')">
+                    Selecione
+                  </button>
+
+                  <button
+                    type="button"
+                    class="option-item"
+                    *ngFor="let option of filter.options"
+                    [class.option-item-active]="filter.value === option"
+                    (click)="updateSelectFilter(filter.key, option)">
+                    {{ option }}
+                  </button>
+                </div>
               </label>
             </article>
           </div>
@@ -318,7 +352,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         z-index: 1101;
         width: min(380px, calc(100vw - 20px));
         height: 100vh;
-        padding: 76px 18px 18px;
+        padding: 40px 18px 18px;
         background:
           linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(244, 238, 229, 0.96)),
           radial-gradient(circle at top right, rgba(232, 105, 61, 0.12), transparent 38%);
@@ -337,7 +371,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 14px;
+        margin-bottom: 6px;
       }
 
       .drawer-submit {
@@ -360,45 +394,49 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
       .drawer-body {
         display: grid;
-        gap: 8px;
-        margin-top: 8px;
+        gap: 6px;
+        margin-top: 0;
       }
 
       .drawer-card {
-        padding: 14px;
-        border-radius: 18px;
+        padding: 9px 10px;
+        border-radius: 16px;
         border: 1px solid rgba(23, 26, 31, 0.08);
         background: rgba(255, 255, 255, 0.66);
         display: grid;
-        gap: 6px;
+        gap: 3px;
       }
 
       .drawer-card-period {
-        gap: 10px;
+        gap: 6px;
       }
 
       .period-shell {
         display: grid;
-        gap: 8px;
+        gap: 5px;
       }
 
       .period-selects {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: 5px;
       }
 
       .select-shell,
       .slider-label {
         display: grid;
-        gap: 4px;
+        gap: 2px;
+      }
+
+      .select-shell {
+        min-width: 0;
       }
 
       .select-caption {
-        margin: 0 0 3px;
+        margin: 0;
         text-transform: uppercase;
         letter-spacing: 0.16em;
-        font-size: 0.64rem;
+        font-size: 0.56rem;
         color: var(--muted-strong);
       }
 
@@ -414,7 +452,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         line-height: 1.06;
       }
 
-      select,
       input {
         width: 100%;
         border-radius: 12px;
@@ -426,48 +463,86 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         font-size: 0.92rem;
       }
 
-      select:disabled,
       input:disabled {
         opacity: 0.55;
         cursor: not-allowed;
       }
 
+      .option-list {
+        display: grid;
+        gap: 3px;
+        max-height: 136px;
+        overflow-y: auto;
+        padding: 3px;
+        border-radius: 10px;
+        border: 1px solid rgba(23, 26, 31, 0.12);
+        background: var(--surface-strong);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      }
+
+      .option-item {
+        width: 100%;
+        border: 1px solid rgba(23, 26, 31, 0.08);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.68);
+        color: var(--text);
+        padding: 5px 7px;
+        font: inherit;
+        font-size: 0.78rem;
+        line-height: 1.05;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+      }
+
+      .option-item:hover {
+        border-color: rgba(18, 93, 58, 0.28);
+        background: rgba(232, 244, 237, 0.92);
+      }
+
+      .option-item-active {
+        border-color: rgba(18, 93, 58, 0.38);
+        background: rgba(217, 239, 227, 0.96);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
       .day-range-shell {
-        padding: 8px;
-        border-radius: 14px;
+        padding: 6px;
+        border-radius: 12px;
         background: var(--surface-strong);
         border: 1px solid rgba(23, 26, 31, 0.08);
         display: grid;
-        gap: 6px;
+        gap: 4px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       }
 
       .range-summary-shell {
         display: grid;
-        gap: 4px;
+        gap: 3px;
       }
 
       .day-range-display {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 5px;
+        gap: 4px;
       }
 
       .day-range-display > div,
       .slider-label {
-        padding: 8px 10px;
-        border-radius: 12px;
+        padding: 6px 8px;
+        border-radius: 10px;
         background: rgba(255, 255, 255, 0.66);
         border: 1px solid rgba(23, 26, 31, 0.08);
       }
 
       .day-range-display strong {
-        font-size: 0.98rem;
+        font-size: 0.88rem;
       }
 
       .dual-slider {
         display: grid;
-        gap: 4px;
+        gap: 3px;
       }
 
       .slider-label input[type='range'] {
@@ -496,7 +571,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       @media (max-width: 560px) {
         .filter-drawer {
           width: calc(100vw - 8px);
-          padding-top: 68px;
+          padding-top: 36px;
           padding-left: 14px;
           padding-right: 14px;
         }
@@ -715,18 +790,21 @@ export class DashboardComponent implements OnInit {
   }
 
   private yearOptionsFromCatalog(rawFilters: SpotfireFilter[]): string[] {
-    const options = [...new Set(this.extractReferenceDates(rawFilters).map((entry) => String(entry.date.getFullYear())))].sort((left, right) => Number(right) - Number(left));
-
-    if (options.length > 0) {
-      return options;
-    }
-
     const currentYear = new Date().getFullYear();
-    return [String(currentYear), String(currentYear - 1)];
+    return [...new Set([
+      ...this.extractReferenceDates(rawFilters).map((entry) => String(entry.date.getFullYear())),
+      String(currentYear),
+      String(currentYear - 1),
+    ])].sort((left, right) => Number(right) - Number(left));
   }
 
   private monthOptionsFromCatalog(rawFilters: SpotfireFilter[], selectedYear: string): string[] {
+    const currentYear = new Date().getFullYear();
     const selectedYearNumber = Number(selectedYear);
+
+    if (selectedYear && Number.isFinite(selectedYearNumber) && selectedYearNumber < currentYear) {
+      return MONTH_OPTIONS;
+    }
 
     const options = [...new Set(this.extractReferenceDates(rawFilters)
       .filter((entry) => !selectedYear || entry.date.getFullYear() === selectedYearNumber)
