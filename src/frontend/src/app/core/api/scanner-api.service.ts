@@ -5,6 +5,21 @@ import { Observable, map } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
 
+export interface ScannerDataDownloadResult {
+  status: 'completed';
+  reportTitle: string;
+  updatedAt: string;
+  files: Array<{
+    analysisTab: string;
+    tableTitle: string;
+    fileName: string;
+    filePath: string;
+  }>;
+  filters: SpotfireFilter[];
+  availableTabs: string[];
+  availableTables: string[];
+}
+
 export interface ScannerJob {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
@@ -55,6 +70,21 @@ export class ScannerApiService {
     return this.http.get<unknown>(`${this.baseUrl}/scanner/catalog`, { params }).pipe(
       map((payload) => this.normalizeCatalog(payload)),
     );
+  }
+
+  public dataDownload(payload: {
+    reportTitle?: string;
+    selectedFilters?: SpotfireFilter[];
+    periodSelection?: {
+      year?: string;
+      month?: string;
+      dayRange?: {
+        min: number;
+        max: number;
+      };
+    };
+  }): Observable<ScannerDataDownloadResult> {
+    return this.http.post<ScannerDataDownloadResult>(`${this.baseUrl}/scanner/data-download`, payload);
   }
 
   public getExportDownloadUrl(jobId: string): string {

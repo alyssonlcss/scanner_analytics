@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { forkJoin } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -18,20 +17,18 @@ type SelectFilterState = {
   enabled: boolean;
 };
 
-type ReportTarget = {
-  analysisTab: string;
-  tableTitle: string;
-};
-
 type ReportTypeOption = {
   value: ReportTypeValue;
   label: string;
-  targets: ReportTarget[];
 };
 
-type ReferenceDateEntry = {
-  label: string;
-  date: Date;
+type PeriodSelectionPayload = {
+  year?: string;
+  month?: string;
+  dayRange?: {
+    min: number;
+    max: number;
+  };
 };
 
 const ALL_OPTION = 'All';
@@ -40,20 +37,15 @@ const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', '
 const ATUACAO_HD_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const TIPO_EQUIPE_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
+const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'tipoEquipe' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
+  atuacaoHd: { sourceTitle: 'AtuaçãoHD', sourceKind: 'list' },
+  tipoEquipe: { sourceTitle: 'Tipo Equipe', sourceKind: 'toggle-group' },
+  base: { sourceTitle: 'Base', sourceKind: 'list' },
+};
 const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   {
     value: 'completo',
     label: 'Completo',
-    targets: [
-      {
-        analysisTab: 'Tab Completa',
-        tableTitle: 'Tabela Completa todas Colunas',
-      },
-      {
-        analysisTab: 'Ranking',
-        tableTitle: 'Detalhamento Diário',
-      },
-    ],
   },
 ];
 
@@ -66,21 +58,21 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
         <section class="loading-popup" aria-live="polite" aria-busy="true">
           <div class="loading-spinner"></div>
-          <h2>Carregando filtros</h2>
+          <h2>Abrindo Scanner M300</h2>
         </section>
       </div>
 
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
         <div class="loading-spinner"></div>
-        <p>Gerando Relatório</p>
+        <p>Aplicando filtros e baixando tabelas</p>
       </div>
 
       <ng-container *ngIf="!catalogLoading() || catalogReady()">
         <button
-          *ngIf="!filterDrawerOpen()"
+          *ngIf="catalogReady() && !filterDrawerOpen()"
           type="button"
           class="filter-fab"
-          [disabled]="loading()"
+          [disabled]="loading() || !catalogReady()"
           (click)="openFilterDrawer()"
           aria-label="Abrir filtros">
             <span class="filter-fab-icon">
@@ -90,9 +82,9 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
             </span>
         </button>
 
-        <div class="drawer-backdrop" *ngIf="filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
+        <div class="drawer-backdrop" *ngIf="catalogReady() && filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
 
-        <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
+        <aside class="filter-drawer" [class.filter-drawer-open]="catalogReady() && filterDrawerOpen()">
           <div class="drawer-head">
             <h2>Filtros</h2>
             <button type="button" class="drawer-submit" [disabled]="loading()" (click)="submit()">
@@ -659,11 +651,10 @@ export class DashboardComponent implements OnInit {
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
-  protected readonly selectedReportType = computed(() => this.reportTypeOptions.find((option) => option.value === this.reportType()) ?? this.reportTypeOptions[0]);
   protected readonly dayLimit = computed(() => {
     const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
     const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
-    const days = this.dayOptionsFromCatalog(this.rawCatalogFilters(), year, month);
+    const days = this.dayOptionsFromSelection(year, month);
     return days[days.length - 1] ?? 31;
   });
   protected readonly dayRangeStart = computed(() => {
@@ -704,9 +695,9 @@ export class DashboardComponent implements OnInit {
 
     if (key === 'ano' || key === 'mes') {
       const overrideValues = new Map(updatedFilters.map((filter) => [filter.key, filter.value]));
-      const rebuiltFilters = this.buildSelectFilters(this.rawCatalogFilters(), overrideValues);
+      const rebuiltFilters = this.buildSelectFilters(overrideValues);
       this.selectFilters.set(rebuiltFilters);
-      this.dayRange.set(this.buildDayRange(this.rawCatalogFilters(), new Map(rebuiltFilters.map((filter) => [filter.key, filter.value]))));
+      this.dayRange.set(this.buildDayRange(new Map(rebuiltFilters.map((filter) => [filter.key, filter.value]))));
       return;
     }
 
@@ -731,12 +722,7 @@ export class DashboardComponent implements OnInit {
   }
 
   protected submit(): void {
-    if (this.loading()) {
-      return;
-    }
-
-    const targets = this.selectedReportType()?.targets ?? [];
-    if (targets.length === 0) {
+    if (this.loading() || !this.catalogReady()) {
       return;
     }
 
@@ -745,11 +731,11 @@ export class DashboardComponent implements OnInit {
 
     const selectedFilters = this.buildSelectedFilters();
 
-    forkJoin(targets.map((target) => this.api.startExecution({
+    this.api.dataDownload({
       reportTitle: this.reportTitle(),
-      analysisTab: target.analysisTab,
       selectedFilters,
-    }))).subscribe({
+      periodSelection: this.buildPeriodSelection(),
+    }).subscribe({
       next: () => {
         this.loading.set(false);
       },
@@ -767,11 +753,11 @@ export class DashboardComponent implements OnInit {
       .subscribe({
         next: (catalog) => {
           this.catalog.set(catalog);
-          this.rawCatalogFilters.set(catalog.filters);
+          this.rawCatalogFilters.set([]);
 
-          const builtFilters = this.buildSelectFilters(catalog.filters);
+          const builtFilters = this.buildSelectFilters();
           this.selectFilters.set(builtFilters);
-          this.dayRange.set(this.buildDayRange(catalog.filters, new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
+          this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
           this.reportTitle.set(catalog.reportTitle || DEFAULT_REPORT_TITLE);
           this.catalogLoading.set(catalog.status === 'loading');
         },
@@ -779,29 +765,22 @@ export class DashboardComponent implements OnInit {
           this.catalogLoading.set(false);
           this.catalogRequestError.set(this.describeHttpError(error));
           this.rawCatalogFilters.set([]);
-          this.selectFilters.set(this.buildSelectFilters([]));
+          this.selectFilters.set(this.buildSelectFilters());
           this.dayRange.set({ min: 1, max: 31 });
         },
       });
   }
 
-  private buildSelectFilters(rawFilters: SpotfireFilter[], overrideValues?: Map<FilterKey, string>): SelectFilterState[] {
+  private buildSelectFilters(overrideValues?: Map<FilterKey, string>): SelectFilterState[] {
     const previous = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
-    const availableYears = this.yearOptionsFromCatalog(rawFilters);
+    const availableYears = this.yearOptions();
     const fallbackYear = availableYears.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : (availableYears[0] ?? '');
     const anoValue = this.resolveValue(previous.get('ano'), this.withAllOption(availableYears), fallbackYear);
 
-    const availableMonths = this.monthOptionsFromCatalog(rawFilters, anoValue);
+    const availableMonths = this.monthOptionsFromSelection(anoValue);
     const currentMonth = MONTH_OPTIONS[new Date().getMonth()];
     const fallbackMonth = availableMonths.includes(currentMonth) ? currentMonth : (availableMonths[0] ?? '');
     const mesValue = this.resolveValue(previous.get('mes'), this.withAllOption(availableMonths), fallbackMonth);
-
-    const baseFilter = this.findCatalogFilter(rawFilters, 'Base');
-    const tipoEquipeFilter = this.findCatalogFilter(rawFilters, 'Tipo Equipe');
-    const atuacaoHdFilter = this.findCatalogFilter(rawFilters, 'AtuaçãoHD') ?? this.findCatalogFilter(rawFilters, 'AtuacaoHD');
-    const atuacaoHdOptions = this.catalogOptions(atuacaoHdFilter);
-    const tipoEquipeOptions = this.catalogOptions(tipoEquipeFilter);
-    const baseOptions = this.catalogOptions(baseFilter);
 
     return [
       {
@@ -821,37 +800,37 @@ export class DashboardComponent implements OnInit {
       {
         key: 'atuacaoHd',
         title: 'AtuaçãoHD',
-        value: this.resolveValue(previous.get('atuacaoHd'), this.withAllOption(atuacaoHdOptions.length > 0 ? atuacaoHdOptions : ATUACAO_HD_OPTIONS), ''),
-        options: this.withAllOption(atuacaoHdOptions.length > 0 ? atuacaoHdOptions : ATUACAO_HD_OPTIONS),
-        sourceTitle: atuacaoHdFilter?.title,
-        sourceKind: atuacaoHdFilter?.kind,
-        enabled: Boolean(atuacaoHdFilter),
+        value: this.resolveValue(previous.get('atuacaoHd'), this.withAllOption(ATUACAO_HD_OPTIONS), ''),
+        options: this.withAllOption(ATUACAO_HD_OPTIONS),
+        sourceTitle: FILTER_SOURCE_MAP.atuacaoHd.sourceTitle,
+        sourceKind: FILTER_SOURCE_MAP.atuacaoHd.sourceKind,
+        enabled: true,
       },
       {
         key: 'tipoEquipe',
         title: 'Tipo Equipe',
-        value: this.resolveValue(previous.get('tipoEquipe'), this.withAllOption(tipoEquipeOptions.length > 0 ? tipoEquipeOptions : TIPO_EQUIPE_OPTIONS), this.defaultOptionValue(tipoEquipeFilter)),
-        options: this.withAllOption(tipoEquipeOptions.length > 0 ? tipoEquipeOptions : TIPO_EQUIPE_OPTIONS),
-        sourceTitle: tipoEquipeFilter?.title,
-        sourceKind: tipoEquipeFilter?.kind,
+        value: this.resolveValue(previous.get('tipoEquipe'), this.withAllOption(TIPO_EQUIPE_OPTIONS), ''),
+        options: this.withAllOption(TIPO_EQUIPE_OPTIONS),
+        sourceTitle: FILTER_SOURCE_MAP.tipoEquipe.sourceTitle,
+        sourceKind: FILTER_SOURCE_MAP.tipoEquipe.sourceKind,
         enabled: true,
       },
       {
         key: 'base',
         title: 'Base',
-        value: this.resolveValue(previous.get('base'), this.withAllOption(baseOptions.length > 0 ? baseOptions : BASE_OPTIONS), this.defaultOptionValue(baseFilter)),
-        options: this.withAllOption(baseOptions.length > 0 ? baseOptions : BASE_OPTIONS),
-        sourceTitle: baseFilter?.title,
-        sourceKind: baseFilter?.kind,
+        value: this.resolveValue(previous.get('base'), this.withAllOption(BASE_OPTIONS), ''),
+        options: this.withAllOption(BASE_OPTIONS),
+        sourceTitle: FILTER_SOURCE_MAP.base.sourceTitle,
+        sourceKind: FILTER_SOURCE_MAP.base.sourceKind,
         enabled: true,
       },
     ];
   }
 
-  private buildDayRange(rawFilters: SpotfireFilter[], overrideValues?: Map<FilterKey, string>): { min: number; max: number } {
+  private buildDayRange(overrideValues?: Map<FilterKey, string>): { min: number; max: number } {
     const previous = this.dayRange();
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
-    const days = this.dayOptionsFromCatalog(rawFilters, values.get('ano') ?? '', values.get('mes') ?? '');
+    const days = this.dayOptionsFromSelection(values.get('ano') ?? '', values.get('mes') ?? '');
     const minDay = days[0] ?? 1;
     const maxDay = days[days.length - 1] ?? 31;
 
@@ -861,16 +840,12 @@ export class DashboardComponent implements OnInit {
     };
   }
 
-  private yearOptionsFromCatalog(rawFilters: SpotfireFilter[]): string[] {
+  private yearOptions(): string[] {
     const currentYear = new Date().getFullYear();
-    return [...new Set([
-      ...this.extractReferenceDates(rawFilters).map((entry) => String(entry.date.getFullYear())),
-      String(currentYear),
-      String(currentYear - 1),
-    ])].sort((left, right) => Number(right) - Number(left));
+    return [String(currentYear), String(currentYear - 1)];
   }
 
-  private monthOptionsFromCatalog(rawFilters: SpotfireFilter[], selectedYear: string): string[] {
+  private monthOptionsFromSelection(selectedYear: string): string[] {
     const normalizedYear = selectedYear === ALL_OPTION ? '' : selectedYear;
     const currentYear = new Date().getFullYear();
     const selectedYearNumber = Number(normalizedYear);
@@ -879,35 +854,26 @@ export class DashboardComponent implements OnInit {
       return MONTH_OPTIONS;
     }
 
-    const options = [...new Set(this.extractReferenceDates(rawFilters)
-      .filter((entry) => !normalizedYear || entry.date.getFullYear() === selectedYearNumber)
-      .map((entry) => MONTH_OPTIONS[entry.date.getMonth()]))];
-
-    if (options.length > 0) {
-      return options;
-    }
-
     return MONTH_OPTIONS.slice(0, new Date().getMonth() + 1);
   }
 
-  private dayOptionsFromCatalog(rawFilters: SpotfireFilter[], selectedYear: string, selectedMonth: string): number[] {
+  private dayOptionsFromSelection(selectedYear: string, selectedMonth: string): number[] {
     const normalizedYear = selectedYear === ALL_OPTION ? '' : selectedYear;
     const normalizedMonth = selectedMonth === ALL_OPTION ? '' : selectedMonth;
-    const selectedYearNumber = Number(normalizedYear);
     const selectedMonthIndex = MONTH_OPTIONS.indexOf(normalizedMonth);
 
-    return [...new Set(this.extractReferenceDates(rawFilters)
-      .filter((entry) => (!normalizedYear || entry.date.getFullYear() === selectedYearNumber) && (selectedMonthIndex === -1 || entry.date.getMonth() === selectedMonthIndex))
-      .map((entry) => entry.date.getDate()))].sort((left, right) => left - right);
-  }
+    if (selectedMonthIndex === -1) {
+      return Array.from({ length: 31 }, (_, index) => index + 1);
+    }
 
-  private extractReferenceDates(rawFilters: SpotfireFilter[]): ReferenceDateEntry[] {
-    const referenceFilter = this.findCatalogFilter(rawFilters, 'Data Referência');
+    const currentDate = new Date();
+    const resolvedYear = normalizedYear ? Number(normalizedYear) : currentDate.getFullYear();
+    const maxDay = new Date(resolvedYear, selectedMonthIndex + 1, 0).getDate();
+    const limitedMaxDay = normalizedYear === String(currentDate.getFullYear()) && selectedMonthIndex === currentDate.getMonth()
+      ? Math.min(maxDay, currentDate.getDate())
+      : maxDay;
 
-    return referenceFilter?.options
-      ?.map((option) => ({ label: option.label, date: new Date(option.label) }))
-      .filter((entry) => !Number.isNaN(entry.date.getTime()) && !entry.label.startsWith('(All)') && entry.label !== '...')
-      ?? [];
+    return Array.from({ length: limitedMaxDay }, (_, index) => index + 1);
   }
 
   private buildSelectedFilters(): SpotfireFilter[] {
@@ -933,46 +899,20 @@ export class DashboardComponent implements OnInit {
       });
     }
 
-    const selectedReferenceDates = this.selectedReferenceDateLabels();
-    if (selectedReferenceDates.length > 0) {
-      filters.push({
-        title: 'Data Referência',
-        kind: 'list',
-        selectedValues: selectedReferenceDates,
-      });
-    }
-
     return filters;
   }
 
-  private selectedReferenceDateLabels(): string[] {
+  private buildPeriodSelection(): PeriodSelectionPayload {
     const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
     const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
-    const normalizedYear = year === ALL_OPTION ? '' : year;
-    const normalizedMonth = month === ALL_OPTION ? '' : month;
-    const selectedMonthIndex = MONTH_OPTIONS.indexOf(normalizedMonth);
-
-    return this.extractReferenceDates(this.rawCatalogFilters())
-      .filter((entry) => (!normalizedYear || String(entry.date.getFullYear()) === normalizedYear) && (selectedMonthIndex === -1 || entry.date.getMonth() === selectedMonthIndex))
-      .filter((entry) => entry.date.getDate() >= this.dayRange().min && entry.date.getDate() <= this.dayRange().max)
-      .map((entry) => entry.label);
-  }
-
-  private findCatalogFilter(rawFilters: SpotfireFilter[], title: string): SpotfireFilter | undefined {
-    const expected = title.trim().toLowerCase();
-    return rawFilters.find((filter) => filter.title.trim().toLowerCase() === expected);
-  }
-
-  private catalogOptions(filter?: SpotfireFilter): string[] {
-    return filter?.options
-      ?.map((option) => option.label)
-      .filter((label) => !label.startsWith('(All)') && label !== '...')
-      ?? [];
-  }
-
-  private defaultOptionValue(filter?: SpotfireFilter): string {
-    const selected = filter?.options?.filter((option) => option.selected).map((option) => option.label).filter((label) => !label.startsWith('(All)') && label !== '...') ?? [];
-    return selected.length === 1 ? selected[0] : '';
+    return {
+      year: year || undefined,
+      month: month || undefined,
+      dayRange: {
+        min: this.dayRange().min,
+        max: this.dayRange().max,
+      },
+    };
   }
 
   private resolveValue(value: string | undefined, options: string[], fallback: string): string {

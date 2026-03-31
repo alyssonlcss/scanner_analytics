@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
-import { access } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { access, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { basename, extname, join, resolve } from 'node:path';
 
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -38,6 +38,30 @@ const createExecutionSchema = z.object({
   selectedFilters: z.array(filterSchema).optional(),
 });
 
+const dataDownloadSchema = z.object({
+  reportTitle: z.string().trim().min(1).optional(),
+  selectedFilters: z.array(filterSchema).optional(),
+  periodSelection: z.object({
+    year: z.string().trim().optional(),
+    month: z.string().trim().optional(),
+    dayRange: z.object({
+      min: z.number().int().min(1),
+      max: z.number().int().min(1),
+    }).optional(),
+  }).optional(),
+});
+
+const DATA_DOWNLOAD_TARGETS = [
+  {
+    analysisTab: 'Tab Completa',
+    tableTitle: 'Tabela Completa todas Colunas',
+  },
+  {
+    analysisTab: 'Ranking',
+    tableTitle: 'Detalhamento Diário',
+  },
+] as const;
+
 export async function createServer() {
   const server = Fastify({ logger: true });
   const jobStore = new InMemoryJobStore();
@@ -69,33 +93,20 @@ export async function createServer() {
     });
 
     try {
-      const catalog = await automation.runExtraction({
-        reportTitle: environment.spotfire.defaultReportTitle,
-      });
+      await automation.prepareSession(environment.spotfire.defaultReportTitle);
 
       catalogStore.set({
         status: 'ready',
         reportTitle: environment.spotfire.defaultReportTitle,
-        filters: catalog.filters,
-        availableTabs: catalog.availableTabs,
-        availableTables: catalog.availableTables,
+        filters: [],
+        availableTabs: [],
+        availableTables: [],
         updatedAt: new Date().toISOString(),
       });
 
       server.log.info({
         reportTitle: environment.spotfire.defaultReportTitle,
-        tabCount: catalog.availableTabs.length,
-        tabs: catalog.availableTabs,
-        tableCount: catalog.availableTables.length,
-        tables: catalog.availableTables,
-        filterCount: catalog.filters.length,
-        filters: catalog.filters.map((filter) => ({
-          title: filter.title,
-          kind: filter.kind,
-          selectedValues: filter.selectedValues,
-          optionCount: filter.options?.length ?? 0,
-        })),
-      }, 'Spotfire catalog warmup completed');
+      }, 'Spotfire session warmup completed without metadata collection');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown catalog warmup error';
 
@@ -124,36 +135,76 @@ export async function createServer() {
     catalogStatus: server.getSpotfireCatalog().status,
   }));
 
-  server.get('/api/scanner/catalog', async (request) => {
-    const query = z.object({
-      analysisTab: z.string().trim().min(1).optional(),
-      reportTitle: z.string().trim().min(1).optional(),
-    }).parse(request.query);
-
-    if (!query.analysisTab && !query.reportTitle) {
-      return server.getSpotfireCatalog();
-    }
-
-    const reportTitle = query.reportTitle ?? environment.spotfire.defaultReportTitle;
-    const catalog = await automation.runExtraction({
-      reportTitle,
-      analysisTab: query.analysisTab,
-    });
-
-    return {
-      status: 'ready',
-      reportTitle,
-      filters: catalog.filters,
-      availableTabs: catalog.availableTabs,
-      availableTables: catalog.availableTables,
-      updatedAt: new Date().toISOString(),
-    } satisfies SpotfireCatalog;
+  server.get('/api/scanner/catalog', async () => {
+    return server.getSpotfireCatalog();
   });
 
   server.post('/api/scanner/executions', async (request, reply) => {
     const payload = createExecutionSchema.parse(request.body);
     const job = await startScannerJob.execute(payload);
     return reply.code(202).send(job);
+  });
+
+  server.post('/api/scanner/data-download', async (request, reply) => {
+    const payload = dataDownloadSchema.parse(request.body);
+    const reportTitle = payload.reportTitle ?? environment.spotfire.defaultReportTitle;
+    const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
+
+    await resetDataDirectory(dataDirectory);
+
+    const downloadedFiles: Array<{
+      analysisTab: string;
+      tableTitle: string;
+      fileName: string;
+      filePath: string;
+    }> = [];
+
+    let latestCatalog: SpotfireCatalog | null = null;
+
+    for (const target of DATA_DOWNLOAD_TARGETS) {
+      const result = await automation.runExtraction({
+        reportTitle,
+        analysisTab: target.analysisTab,
+        tableTitle: target.tableTitle,
+        selectedFilters: payload.selectedFilters,
+        periodSelection: payload.periodSelection,
+      });
+
+      if (!result.exportFilePath) {
+        throw new Error(`export file was not generated for table: ${target.tableTitle}`);
+      }
+
+      const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
+      const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
+
+      downloadedFiles.push({
+        analysisTab: target.analysisTab,
+        tableTitle: target.tableTitle,
+        fileName,
+        filePath,
+      });
+
+      latestCatalog = {
+        status: 'ready',
+        reportTitle,
+        filters: result.filters,
+        availableTabs: result.availableTabs,
+        availableTables: result.availableTables,
+        updatedAt: new Date().toISOString(),
+      } satisfies SpotfireCatalog;
+    }
+
+    await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
+
+    return reply.send({
+      status: 'completed',
+      reportTitle,
+      updatedAt: new Date().toISOString(),
+      files: downloadedFiles,
+      filters: latestCatalog?.filters ?? [],
+      availableTabs: latestCatalog?.availableTabs ?? [],
+      availableTables: latestCatalog?.availableTables ?? [],
+    });
   });
 
   server.get('/api/scanner/executions/:jobId', async (request, reply) => {
@@ -221,5 +272,32 @@ declare module 'fastify' {
     };
     getSpotfireCatalog: () => SpotfireCatalog;
     warmupSpotfireCatalog: () => Promise<void>;
+  }
+}
+
+async function resetDataDirectory(dataDirectory: string): Promise<void> {
+  await rm(dataDirectory, { recursive: true, force: true });
+  await mkdir(dataDirectory, { recursive: true });
+}
+
+async function moveDownloadedFile(sourcePath: string, dataDirectory: string, targetFileName: string): Promise<string> {
+  await mkdir(dataDirectory, { recursive: true });
+
+  const targetPath = join(dataDirectory, targetFileName);
+  await rm(targetPath, { force: true });
+  await rename(sourcePath, targetPath);
+
+  return targetPath;
+}
+
+async function cleanupDataDirectory(dataDirectory: string, preservedFileNames: string[]): Promise<void> {
+  const preserved = new Set(preservedFileNames);
+  const remainingEntries = await readdir(dataDirectory);
+
+  for (const entry of remainingEntries) {
+    if (!preserved.has(entry)) {
+      const entryPath = join(dataDirectory, entry);
+      await rm(entryPath, { recursive: true, force: true });
+    }
   }
 }

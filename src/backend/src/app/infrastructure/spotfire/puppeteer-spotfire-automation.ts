@@ -12,6 +12,8 @@ import type { Environment } from '../config/env.js';
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const DOWNLOAD_POLL_INTERVAL_MS = 500;
 const DOWNLOAD_EXTENSIONS = new Set(['.csv', '.txt', '.xlsx', '.xls']);
+const ALL_OPTION = 'All';
+const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   private activeQueue: Promise<void> = Promise.resolve();
@@ -31,10 +33,54 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     console.info(prefix, message);
   }
 
+  private logStep(step: string, status: 'START' | 'OK' | 'WARN' | 'FAIL', message: string, details?: Record<string, unknown>): void {
+    this.log(`[${status}] ${step} :: ${message}`, details);
+  }
+
+  public async prepareSession(reportTitle: string): Promise<void> {
+    await this.runSerialized(async () => {
+      const { page, createdNewPage } = await this.getAutomationSession();
+
+      this.logStep('warmup', 'START', 'preparing authenticated Spotfire session', {
+        reportTitle,
+        keepOpen: this.environment.spotfire.keepOpen,
+        createdNewPage,
+      });
+
+      try {
+        if (createdNewPage) {
+          await page.setViewport({ width: 1600, height: 1000 });
+          this.logStep('warmup', 'OK', 'created new browser page and applied viewport', {
+            width: 1600,
+            height: 1000,
+          });
+        }
+
+        await this.openAnalysis(page, reportTitle);
+        await this.ensureNoMaximizedVisualization(page);
+        await this.ensureFiltersPanel(page);
+        await this.ensureAllFiltersVisible(page);
+        await this.resetVisibleFilters(page);
+        await this.waitForSpotfireIdle(page);
+        this.logStep('warmup', 'OK', 'spotfire session is ready and waiting for data-download', {
+          reportTitle,
+          currentUrl: page.url(),
+        });
+      } finally {
+        if (!this.environment.spotfire.keepOpen) {
+          this.logStep('warmup', 'WARN', 'closing browser because keepOpen=false');
+          await this.disposeAutomationSession();
+        } else {
+          this.logStep('warmup', 'OK', 'keeping browser and page open because keepOpen=true');
+        }
+      }
+    });
+  }
+
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
     return this.runSerialized(async () => {
       const outputDirectory = await this.prepareOutputDirectory();
-      this.log('starting extraction run', {
+      this.logStep('data-download', 'START', 'starting extraction run', {
         reportTitle: request.reportTitle ?? this.environment.spotfire.defaultReportTitle,
         analysisTab: request.analysisTab ?? null,
         tableTitle: request.tableTitle ?? null,
@@ -48,43 +94,97 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       try {
         if (createdNewPage) {
           await page.setViewport({ width: 1600, height: 1000 });
+          this.logStep('browser', 'OK', 'created new browser page for extraction run', {
+            width: 1600,
+            height: 1000,
+          });
         }
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
         await this.ensureNoMaximizedVisualization(page);
         const availableTabs = await this.loadAvailableTabs(page);
-        this.log('collected available tabs', {
+        this.logStep('analysis', 'OK', 'loaded available tabs from current analysis', {
           count: availableTabs.length,
           tabs: availableTabs,
         });
 
         if (request.analysisTab) {
+          this.logStep('analysis-tab', 'START', 'opening requested analysis tab', {
+            analysisTab: request.analysisTab,
+          });
           await this.openAnalysisTab(page, request.analysisTab);
           await this.ensureNoMaximizedVisualization(page);
+          this.logStep('analysis-tab', 'OK', 'requested analysis tab is active', {
+            analysisTab: request.analysisTab,
+          });
         }
 
         await this.ensureFiltersPanel(page);
         await this.ensureAllFiltersVisible(page);
         await this.resetVisibleFilters(page);
 
-        if (request.selectedFilters?.length) {
+        const selectedFilters = request.selectedFilters ?? [];
+        const directFilters = selectedFilters.filter((filter) => filter.title.trim().toLowerCase() !== 'data referência');
+
+        if (directFilters.length) {
+          this.logStep('filters', 'START', 'applying direct non-period filters', {
+            count: directFilters.length,
+            titles: directFilters.map((filter) => filter.title),
+          });
           await this.ensureAllFiltersVisible(page);
-          await this.applySelectedFilters(page, request.selectedFilters);
+          await this.applySelectedFilters(page, directFilters);
+          this.logStep('filters', 'OK', 'finished applying direct non-period filters');
+        }
+
+        if (request.periodSelection) {
+          this.logStep('period', 'START', 'resolving Ano/Mes/Dia selection to Data Referencia values', {
+            periodSelection: request.periodSelection,
+          });
+          await this.ensureAllFiltersVisible(page);
+          const currentFilters = await this.loadAllFilters(page);
+          const referenceDateFilter = this.buildReferenceDateFilter(currentFilters, request.periodSelection);
+
+          if (referenceDateFilter) {
+            await this.applySelectedFilters(page, [referenceDateFilter]);
+            this.logStep('period', 'OK', 'applied derived Data Referencia filter', {
+              selectedValueCount: referenceDateFilter.selectedValues.length,
+            });
+          } else {
+            this.logStep('period', 'WARN', 'period selection produced no Data Referencia values');
+          }
+        }
+
+        const explicitReferenceDateFilters = selectedFilters.filter((filter) => filter.title.trim().toLowerCase() === 'data referência');
+        if (explicitReferenceDateFilters.length) {
+          this.logStep('filters', 'START', 'applying explicit Data Referencia filters from request', {
+            count: explicitReferenceDateFilters.length,
+          });
+          await this.ensureAllFiltersVisible(page);
+          await this.applySelectedFilters(page, explicitReferenceDateFilters);
+          this.logStep('filters', 'OK', 'finished applying explicit Data Referencia filters');
         }
 
         await this.ensureAllFiltersVisible(page);
         const filters = await this.loadAllFilters(page);
         this.logFiltersSummary(filters);
         const availableTables = await this.loadAvailableTables(page);
-        this.log('collected available tables', {
+        this.logStep('analysis', 'OK', 'loaded available tables from current analysis tab', {
           count: availableTables.length,
           tables: availableTables,
         });
 
         let exportFilePath: string | undefined;
         if (request.tableTitle) {
+          this.logStep('export', 'START', 'preparing table export', {
+            tableTitle: request.tableTitle,
+            outputDirectory,
+          });
           await this.maximizeTable(page, request.tableTitle);
           exportFilePath = await this.exportTable(page, outputDirectory, request);
+          this.logStep('export', 'OK', 'table export finished', {
+            tableTitle: request.tableTitle,
+            exportFilePath: exportFilePath ?? null,
+          });
         }
 
         return {
@@ -95,10 +195,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         };
       } finally {
         if (!this.environment.spotfire.keepOpen) {
-          this.log('closing browser because keepOpen=false');
+          this.logStep('browser', 'WARN', 'closing browser because keepOpen=false');
           await this.disposeAutomationSession();
         } else {
-          this.log('keeping browser and page open because keepOpen=true');
+          this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
         }
       }
     });
@@ -813,17 +913,47 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async ensureFiltersPanel(page: Page): Promise<void> {
+    this.logStep('filters-panel', 'START', 'checking whether the Spotfire filters panel is already visible', {
+      expectedLabel: this.environment.spotfire.filterPanelLabel,
+    });
+
     const panelIsOpen = await page.evaluate(function (panelLabel) {
       function normalize(value: string | null | undefined): string {
-        return (value ?? '').replace(/\s+/g, ' ').trim();
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
       }
 
-      return Array.from(document.querySelectorAll<HTMLElement>('.sf-element-panel-header, .sfc-filter-panel, .FilterPanelScroll'))
-        .some(function (element) { return normalize(element.textContent).includes(panelLabel); });
+      function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+        if (!element) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      const requestedLabel = normalize(panelLabel);
+
+      return Array.from(document.querySelectorAll<HTMLElement>('.sfc-filter-panel, .FilterPanelScroll, .sf-element-panel-header, .ResetButton, [title="Reset Visible Filters"]'))
+        .filter(function (element) { return isVisible(element); })
+        .some(function (element) {
+          const values = [
+            normalize(element.getAttribute('title')),
+            normalize(element.getAttribute('aria-label')),
+            normalize(element.textContent),
+          ].filter(function (value) { return value.length > 0; });
+
+          return element.classList.contains('sfc-filter-panel')
+            || element.classList.contains('FilterPanelScroll')
+            || element.classList.contains('ResetButton')
+            || values.some(function (value) {
+              return value.includes(requestedLabel) || value === 'reset visible filters';
+            });
+        });
     }, this.environment.spotfire.filterPanelLabel);
 
     if (panelIsOpen) {
-      this.log('filters panel is already open on the right side', {
+      this.logStep('filters-panel', 'OK', 'filters panel is already open on the right side', {
         panelLabel: this.environment.spotfire.filterPanelLabel,
       });
       return;
@@ -831,7 +961,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     const opened = await page.evaluate(function (panelLabel) {
       function normalize(value: string | null | undefined): string {
-        return (value ?? '').replace(/\s+/g, ' ').trim();
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
       }
 
       function isVisible(element: HTMLElement): boolean {
@@ -840,16 +970,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
       }
 
-      const candidates = Array.from(document.querySelectorAll<HTMLElement>('[title], [alt], #Spotfire.FilterPanel, .sfx_label_924, .sfx_tool-button_923'))
+      const requestedLabel = normalize(panelLabel);
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>('[title], [alt], [aria-label], button, div, span'))
         .filter(function (element) { return isVisible(element); })
         .find(function (element) {
           const values = [
             normalize(element.getAttribute('title')),
             normalize(element.getAttribute('alt')),
+            normalize(element.getAttribute('aria-label')),
             normalize(element.textContent),
           ].filter(function (value) { return value.length > 0; });
 
-          return values.some(function (value) { return value === panelLabel; });
+          return values.some(function (value) { return value === requestedLabel; });
         });
 
       if (!candidates) {
@@ -860,35 +992,139 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return true;
     }, this.environment.spotfire.filterPanelLabel);
 
-    this.log('attempted to open filters panel by text', {
+    this.logStep('filters-panel', 'START', 'attempted to open filters panel by visible text/title', {
       panelLabel: this.environment.spotfire.filterPanelLabel,
       openedFromToolbar: opened,
     });
 
     if (!opened) {
       await this.clickByText(page, this.environment.spotfire.filterPanelLabel, true);
-      this.log('opened filters panel using generic text click fallback', {
+      this.logStep('filters-panel', 'WARN', 'opened filters panel using generic text click fallback', {
         panelLabel: this.environment.spotfire.filterPanelLabel,
       });
     }
 
     await this.waitForSpotfireIdle(page);
+    this.logStep('filters-panel', 'OK', 'filters panel open flow finished');
   }
 
   private async resetVisibleFilters(page: Page): Promise<void> {
-    this.log('searching for reset visible filters button by title text', {
+    this.logStep('filters-reset', 'START', 'searching for the Reset Visible Filters button', {
       title: 'Reset Visible Filters',
     });
 
-    const resetButton = await page.$("[title='Reset Visible Filters']");
+    let resetTarget = await page.evaluate(function () {
+      function normalize(value: string | null | undefined): string {
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+      }
 
-    if (!resetButton) {
+      function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+        if (!element) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      function findResetButton(): HTMLElement | null {
+        return Array.from(document.querySelectorAll<HTMLElement>('[title], [aria-label], button, div, span, svg, path'))
+          .filter(function (element) { return isVisible(element); })
+          .find(function (element) {
+            const values = [
+              normalize(element.getAttribute('title')),
+              normalize(element.getAttribute('aria-label')),
+              normalize(element.textContent),
+            ].filter(function (value) { return value.length > 0; });
+
+            return element.classList.contains('ResetButton')
+              || values.some(function (value) { return value === 'reset visible filters'; });
+          }) ?? null;
+      }
+
+      const resetButton = findResetButton();
+      if (!resetButton) {
+        return null;
+      }
+
+      resetButton.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = resetButton.getBoundingClientRect();
+
+      return {
+        x: rect.left + (rect.width / 2),
+        y: rect.top + (rect.height / 2),
+        width: rect.width,
+        height: rect.height,
+        title: resetButton.getAttribute('title') ?? '',
+        className: resetButton.className,
+      };
+    });
+
+    if (!resetTarget) {
+      this.logStep('filters-reset', 'WARN', 'reset button not found in DOM, opening filters panel before retry', {
+        title: 'Reset Visible Filters',
+      });
+      await this.ensureFiltersPanel(page);
+      resetTarget = await page.evaluate(function () {
+        function normalize(value: string | null | undefined): string {
+          return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+          if (!element) {
+            return false;
+          }
+
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+        }
+
+        const resetButton = Array.from(document.querySelectorAll<HTMLElement>('[title], [aria-label], button, div, span, svg, path'))
+          .filter(function (element) { return isVisible(element); })
+          .find(function (element) {
+            const values = [
+              normalize(element.getAttribute('title')),
+              normalize(element.getAttribute('aria-label')),
+              normalize(element.textContent),
+            ].filter(function (value) { return value.length > 0; });
+
+            return element.classList.contains('ResetButton')
+              || values.some(function (value) { return value === 'reset visible filters'; });
+          });
+
+        if (!resetButton) {
+          return null;
+        }
+
+        resetButton.scrollIntoView({ block: 'center', inline: 'center' });
+        const rect = resetButton.getBoundingClientRect();
+
+        return {
+          x: rect.left + (rect.width / 2),
+          y: rect.top + (rect.height / 2),
+          width: rect.width,
+          height: rect.height,
+          title: resetButton.getAttribute('title') ?? '',
+          className: resetButton.className,
+        };
+      });
+    }
+
+    if (!resetTarget) {
+      this.logStep('filters-reset', 'FAIL', 'could not find Reset Visible Filters button after retry');
       throw new Error('reset visible filters button not found');
     }
 
-    await resetButton.click();
-    this.log('clicked reset visible filters button');
+    this.logStep('filters-reset', 'START', 'resolved visible reset target and will click by mouse coordinates', resetTarget);
+    await page.mouse.move(resetTarget.x, resetTarget.y);
+    await page.mouse.down();
+    await page.mouse.up();
+
+    this.logStep('filters-reset', 'OK', 'sent real mouse click to Reset Visible Filters target', resetTarget);
     await this.waitForSpotfireIdle(page);
+    this.logStep('filters-reset', 'OK', 'Spotfire became idle after reset action');
   }
 
   private async ensureAllFiltersVisible(page: Page): Promise<void> {
@@ -1462,6 +1698,79 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       .replace(/[^a-zA-Z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .toLowerCase() || 'scanner-export';
+  }
+
+  private buildReferenceDateFilter(filters: SpotfireFilter[], periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): SpotfireFilter | undefined {
+    const referenceDateFilter = filters.find((filter) => filter.title.trim().toLowerCase() === 'data referência');
+
+    if (!referenceDateFilter?.options?.length) {
+      this.log('could not derive Data Referência filter because options are unavailable');
+      return undefined;
+    }
+
+    const normalizedYear = periodSelection.year && periodSelection.year !== ALL_OPTION ? periodSelection.year : '';
+    const normalizedMonth = periodSelection.month && periodSelection.month !== ALL_OPTION ? periodSelection.month : '';
+    const selectedMonthIndex = MONTH_OPTIONS.indexOf(normalizedMonth.toLowerCase());
+    const minDay = periodSelection.dayRange?.min ?? 1;
+    const maxDay = periodSelection.dayRange?.max ?? 31;
+
+    const selectedValues = referenceDateFilter.options
+      .map((option) => option.label)
+      .filter((label) => !label.startsWith('(All)') && label !== '...')
+      .filter((label) => {
+        const parsedDate = this.parseReferenceDate(label);
+
+        if (!parsedDate) {
+          return false;
+        }
+
+        if (normalizedYear && String(parsedDate.getFullYear()) !== normalizedYear) {
+          return false;
+        }
+
+        if (selectedMonthIndex !== -1 && parsedDate.getMonth() !== selectedMonthIndex) {
+          return false;
+        }
+
+        const day = parsedDate.getDate();
+        return day >= minDay && day <= maxDay;
+      });
+
+    if (!selectedValues.length) {
+      this.log('period selection did not resolve any Data Referência values', {
+        year: periodSelection.year ?? null,
+        month: periodSelection.month ?? null,
+        minDay,
+        maxDay,
+      });
+      return undefined;
+    }
+
+    return {
+      title: 'Data Referência',
+      kind: 'list',
+      selectedValues,
+    };
+  }
+
+  private parseReferenceDate(label: string): Date | undefined {
+    const directDate = new Date(label);
+
+    if (!Number.isNaN(directDate.getTime())) {
+      return directDate;
+    }
+
+    const parts = label.trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (!parts) {
+      return undefined;
+    }
+
+    const day = Number(parts[1]);
+    const month = Number(parts[2]) - 1;
+    const year = Number(parts[3]);
+    const parsedDate = new Date(year, month, day);
+
+    return Number.isNaN(parsedDate.getTime()) ? undefined : parsedDate;
   }
 
   private async clickByText(page: Page, text: string, exact = true): Promise<void> {
