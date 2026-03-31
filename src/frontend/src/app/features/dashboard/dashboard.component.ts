@@ -156,14 +156,12 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                     </div>
                   </div>
 
-                  <div class="dual-slider">
-                    <label class="slider-label">
-                      <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" aria-label="Dia inicial" />
-                    </label>
-
-                    <label class="slider-label">
-                      <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" aria-label="Dia final" />
-                    </label>
+                  <div
+                    class="dual-slider"
+                    [style.--range-start]="dayRangeStart() + '%'"
+                    [style.--range-end]="dayRangeEnd() + '%'">
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().min" (input)="updateDayRange('min', $event)" aria-label="Dia inicial" />
+                    <input type="range" min="1" [max]="dayLimit()" step="1" [value]="dayRange().max" (input)="updateDayRange('max', $event)" aria-label="Dia final" />
                   </div>
                 </div>
               </div>
@@ -525,8 +523,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         gap: 4px;
       }
 
-      .day-range-display > div,
-      .slider-label {
+      .day-range-display > div {
         padding: 6px 8px;
         border-radius: 10px;
         background: rgba(255, 255, 255, 0.66);
@@ -538,16 +535,76 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
       }
 
       .dual-slider {
+        position: relative;
+        height: 28px;
         display: grid;
-        gap: 3px;
+        align-items: center;
       }
 
-      .slider-label input[type='range'] {
+      .dual-slider::before {
+        content: '';
+        position: absolute;
+        left: 3px;
+        right: 3px;
+        top: 50%;
+        height: 6px;
+        transform: translateY(-50%);
+        border-radius: 999px;
+        background: linear-gradient(
+          90deg,
+          rgba(23, 26, 31, 0.12) 0%,
+          rgba(23, 26, 31, 0.12) var(--range-start),
+          rgba(18, 93, 58, 0.82) var(--range-start),
+          rgba(18, 93, 58, 0.82) var(--range-end),
+          rgba(23, 26, 31, 0.12) var(--range-end),
+          rgba(23, 26, 31, 0.12) 100%
+        );
+      }
+
+      .dual-slider input[type='range'] {
+        position: absolute;
+        inset: 0;
         width: 100%;
         padding: 0;
         border: 0;
         background: transparent;
-        accent-color: var(--accent);
+        appearance: none;
+        -webkit-appearance: none;
+        pointer-events: none;
+      }
+
+      .dual-slider input[type='range']::-webkit-slider-runnable-track {
+        height: 6px;
+        background: transparent;
+      }
+
+      .dual-slider input[type='range']::-moz-range-track {
+        height: 6px;
+        background: transparent;
+      }
+
+      .dual-slider input[type='range']::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        margin-top: -4px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        background: #fff7f1;
+        box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
+        pointer-events: auto;
+        cursor: pointer;
+      }
+
+      .dual-slider input[type='range']::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        background: #fff7f1;
+        box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
+        pointer-events: auto;
+        cursor: pointer;
       }
 
       @media (max-width: 720px) {
@@ -598,6 +655,14 @@ export class DashboardComponent implements OnInit {
     const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
     const days = this.dayOptionsFromCatalog(this.rawCatalogFilters(), year, month);
     return days[days.length - 1] ?? 31;
+  });
+  protected readonly dayRangeStart = computed(() => {
+    const limit = this.dayLimit();
+    return limit > 1 ? ((this.dayRange().min - 1) / (limit - 1)) * 100 : 0;
+  });
+  protected readonly dayRangeEnd = computed(() => {
+    const limit = this.dayLimit();
+    return limit > 1 ? ((this.dayRange().max - 1) / (limit - 1)) * 100 : 100;
   });
 
   public ngOnInit(): void {
