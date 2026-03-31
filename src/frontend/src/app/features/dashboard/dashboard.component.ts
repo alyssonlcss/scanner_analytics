@@ -133,14 +133,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                       <button
                         type="button"
                         class="option-item"
-                        [class.option-item-active]="filter.value === ''"
-                        (click)="updateSelectFilter(filter.key, '')">
-                        Selecione
-                      </button>
-
-                      <button
-                        type="button"
-                        class="option-item"
                         *ngFor="let option of filter.options"
                         [class.option-item-active]="filter.value === option"
                         (click)="updateSelectFilter(filter.key, option)">
@@ -185,14 +177,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
                 <div class="option-list" role="listbox" [attr.aria-label]="filter.title">
-                  <button
-                    type="button"
-                    class="option-item"
-                    [class.option-item-active]="filter.value === ''"
-                    (click)="updateSelectFilter(filter.key, '')">
-                    Selecione
-                  </button>
-
                   <button
                     type="button"
                     class="option-item"
