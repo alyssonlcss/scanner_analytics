@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
@@ -13,6 +14,9 @@ type SelectFilterState = {
   title: string;
   value: string;
   options: string[];
+  sourceTitle?: string;
+  sourceKind?: SpotfireFilter['kind'];
+  enabled: boolean;
 };
 
 type ReportTarget = {
@@ -26,10 +30,15 @@ type ReportTypeOption = {
   targets: ReportTarget[];
 };
 
+type ReferenceDateEntry = {
+  label: string;
+  date: Date;
+};
+
 const DEFAULT_REPORT_TITLE = 'Scanner 4.0 - CE';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ATUACAO_HD_OPTIONS = ['All', 'Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
-const TIPO_EQUIPE_OPTIONS = ['CADASTRAR', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
+const TIPO_EQUIPE_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
 const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   {
@@ -51,7 +60,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <main class="shell">
       <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
@@ -68,24 +77,17 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
       <ng-container *ngIf="!catalogLoading() || catalogReady()">
         <button
+          *ngIf="!filterDrawerOpen()"
           type="button"
           class="filter-fab"
-          [class.filter-fab-active]="filterDrawerOpen()"
-          [class.filter-fab-expanded]="filterDrawerOpen()"
           [disabled]="loading()"
-          (click)="handlePrimaryAction()"
-          [attr.aria-label]="filterDrawerOpen() ? 'Aplicar filtros' : 'Abrir filtros'">
-          <ng-container *ngIf="!filterDrawerOpen(); else filterLabel">
+          (click)="openFilterDrawer()"
+          aria-label="Abrir filtros">
             <span class="filter-fab-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"></path>
               </svg>
             </span>
-          </ng-container>
-
-          <ng-template #filterLabel>
-            <span class="filter-fab-label">{{ loading() ? 'Filtrando...' : 'Filtrar' }}</span>
-          </ng-template>
         </button>
 
         <div class="drawer-backdrop" *ngIf="filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
@@ -93,6 +95,9 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
           <div class="drawer-head">
             <h2>Filtros</h2>
+            <button type="button" class="drawer-submit" [disabled]="loading()" (click)="submit()">
+              {{ loading() ? 'Filtrando...' : 'Filtrar' }}
+            </button>
           </div>
 
           <div class="drawer-body">
@@ -103,7 +108,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <select [value]="reportType()" (change)="updateReportType($event)">
+                <select [ngModel]="reportType()" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateReportType($event)">
                   <option *ngFor="let option of reportTypeOptions" [value]="option.value">{{ option.label }}</option>
                 </select>
               </label>
@@ -118,7 +123,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                 <div class="period-selects">
                   <label class="select-shell" *ngFor="let filter of periodFilters()">
                     <span class="select-caption">{{ filter.title }}</span>
-                    <select [value]="filter.value" (change)="updateSelectFilter(filter.key, $event)">
+                    <select [ngModel]="filter.value" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateSelectFilter(filter.key, $event)">
                       <option value="">Selecione</option>
                       <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
                     </select>
@@ -159,7 +164,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <select [value]="filter.value" (change)="updateSelectFilter(filter.key, $event)">
+                <select [ngModel]="filter.value" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateSelectFilter(filter.key, $event)">
                   <option value="">Selecione</option>
                   <option *ngFor="let option of filter.options" [value]="option">{{ option }}</option>
                 </select>
@@ -300,29 +305,10 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         transform: none;
       }
 
-      .filter-fab-active {
-        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
-        color: white;
-      }
-
-      .filter-fab-expanded {
-        width: auto;
-        min-width: 116px;
-        padding: 0 18px;
-        border-radius: 999px;
-      }
-
       .filter-fab-icon svg {
         width: 16px;
         height: 16px;
         fill: currentColor;
-      }
-
-      .filter-fab-label {
-        font-size: 0.84rem;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
       }
 
       .filter-drawer {
@@ -354,6 +340,24 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         margin-bottom: 14px;
       }
 
+      .drawer-submit {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: white;
+        background: linear-gradient(135deg, var(--accent) 0%, #ef7a45 100%);
+        cursor: pointer;
+      }
+
+      .drawer-submit:disabled {
+        opacity: 0.7;
+        cursor: wait;
+      }
+
       .drawer-body {
         display: grid;
         gap: 8px;
@@ -367,10 +371,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         background: rgba(255, 255, 255, 0.66);
         display: grid;
         gap: 6px;
-      }
-
-      .drawer-card-range {
-        background: rgba(255, 255, 255, 0.66);
       }
 
       .drawer-card-period {
@@ -424,6 +424,12 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         color: var(--text);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
         font-size: 0.92rem;
+      }
+
+      select:disabled,
+      input:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
       }
 
       .day-range-shell {
@@ -481,14 +487,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
           border-radius: 12px;
         }
 
-        .filter-fab-expanded {
-          width: auto;
-        }
-
-        .day-range-display {
-          grid-template-columns: 1fr;
-        }
-
+        .day-range-display,
         .period-selects {
           grid-template-columns: 1fr;
         }
@@ -512,28 +511,28 @@ export class DashboardComponent implements OnInit {
   protected readonly catalogLoading = signal(true);
   protected readonly catalog = signal<SpotfireCatalog | null>(null);
   protected readonly catalogRequestError = signal<string | null>(null);
+  protected readonly rawCatalogFilters = signal<SpotfireFilter[]>([]);
   protected readonly filterDrawerOpen = signal(false);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('completo');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
-  protected readonly dayRange = signal({ min: 1, max: new Date().getDate() });
-  protected readonly dayLimit = computed(() => new Date().getDate());
-  protected readonly selectedReportType = computed(() => this.reportTypeOptions.find((option) => option.value === this.reportType()) ?? this.reportTypeOptions[0]);
+  protected readonly dayRange = signal({ min: 1, max: 31 });
+  protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
-
-  protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
+  protected readonly selectedReportType = computed(() => this.reportTypeOptions.find((option) => option.value === this.reportType()) ?? this.reportTypeOptions[0]);
+  protected readonly dayLimit = computed(() => {
+    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
+    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
+    const days = this.dayOptionsFromCatalog(this.rawCatalogFilters(), year, month);
+    return days[days.length - 1] ?? 31;
+  });
 
   public ngOnInit(): void {
     this.loadCatalog();
   }
 
-  protected handlePrimaryAction(): void {
-    if (this.filterDrawerOpen()) {
-      this.submit();
-      return;
-    }
-
+  protected openFilterDrawer(): void {
     this.filterDrawerOpen.set(true);
   }
 
@@ -545,18 +544,26 @@ export class DashboardComponent implements OnInit {
     this.filterDrawerOpen.set(false);
   }
 
-  protected updateReportType(event: Event): void {
-    const value = (event.target as HTMLSelectElement | null)?.value as ReportTypeValue | '';
+  protected updateReportType(value: ReportTypeValue | string): void {
     if (!value) {
       return;
     }
 
-    this.reportType.set(value);
+    this.reportType.set(value as ReportTypeValue);
   }
 
-  protected updateSelectFilter(key: FilterKey, event: Event): void {
-    const value = (event.target as HTMLSelectElement | null)?.value ?? '';
-    this.selectFilters.update((filters) => filters.map((filter) => filter.key === key ? { ...filter, value } : filter));
+  protected updateSelectFilter(key: FilterKey, value: string): void {
+    const updatedFilters = this.selectFilters().map((filter) => filter.key === key ? { ...filter, value } : filter);
+
+    if (key === 'ano' || key === 'mes') {
+      const overrideValues = new Map(updatedFilters.map((filter) => [filter.key, filter.value]));
+      const rebuiltFilters = this.buildSelectFilters(this.rawCatalogFilters(), overrideValues);
+      this.selectFilters.set(rebuiltFilters);
+      this.dayRange.set(this.buildDayRange(this.rawCatalogFilters(), new Map(rebuiltFilters.map((filter) => [filter.key, filter.value]))));
+      return;
+    }
+
+    this.selectFilters.set(updatedFilters);
   }
 
   protected updateDayRange(boundary: 'min' | 'max', event: Event): void {
@@ -613,111 +620,208 @@ export class DashboardComponent implements OnInit {
       .subscribe({
         next: (catalog) => {
           this.catalog.set(catalog);
-          this.selectFilters.set(this.buildSelectFilters(catalog.filters));
-          this.dayRange.set(this.buildDayRange(catalog.filters));
+          this.rawCatalogFilters.set(catalog.filters);
+
+          const builtFilters = this.buildSelectFilters(catalog.filters);
+          this.selectFilters.set(builtFilters);
+          this.dayRange.set(this.buildDayRange(catalog.filters, new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
           this.reportTitle.set(catalog.reportTitle || DEFAULT_REPORT_TITLE);
           this.catalogLoading.set(catalog.status === 'loading');
         },
         error: (error) => {
           this.catalogLoading.set(false);
           this.catalogRequestError.set(this.describeHttpError(error));
+          this.rawCatalogFilters.set([]);
           this.selectFilters.set(this.buildSelectFilters([]));
-          this.dayRange.set({ min: 1, max: this.dayLimit() });
+          this.dayRange.set({ min: 1, max: 31 });
         },
       });
   }
 
-  private buildSelectFilters(rawFilters: SpotfireFilter[]): SelectFilterState[] {
-    const currentYear = String(new Date().getFullYear());
+  private buildSelectFilters(rawFilters: SpotfireFilter[], overrideValues?: Map<FilterKey, string>): SelectFilterState[] {
+    const previous = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
+    const availableYears = this.yearOptionsFromCatalog(rawFilters);
+    const fallbackYear = availableYears.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : (availableYears[0] ?? '');
+    const anoValue = this.resolveValue(previous.get('ano'), availableYears, fallbackYear);
+
+    const availableMonths = this.monthOptionsFromCatalog(rawFilters, anoValue);
     const currentMonth = MONTH_OPTIONS[new Date().getMonth()];
-    const previous = new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
+    const fallbackMonth = availableMonths.includes(currentMonth) ? currentMonth : (availableMonths[0] ?? '');
+    const mesValue = this.resolveValue(previous.get('mes'), availableMonths, fallbackMonth);
+
+    const baseFilter = this.findCatalogFilter(rawFilters, 'Base');
+    const tipoEquipeFilter = this.findCatalogFilter(rawFilters, 'Tipo Equipe');
+    const atuacaoHdFilter = this.findCatalogFilter(rawFilters, 'AtuaçãoHD') ?? this.findCatalogFilter(rawFilters, 'AtuacaoHD');
+    const atuacaoHdOptions = this.catalogOptions(atuacaoHdFilter);
+    const tipoEquipeOptions = this.catalogOptions(tipoEquipeFilter);
+    const baseOptions = this.catalogOptions(baseFilter);
 
     return [
       {
         key: 'ano',
         title: 'Ano',
-        options: this.yearOptionsFromCatalog(rawFilters),
-        value: previous.get('ano') ?? currentYear,
+        value: anoValue,
+        options: availableYears,
+        enabled: true,
       },
       {
         key: 'mes',
         title: 'Mês',
-        options: MONTH_OPTIONS.slice(0, new Date().getMonth() + 1),
-        value: previous.get('mes') ?? currentMonth,
+        value: mesValue,
+        options: availableMonths,
+        enabled: true,
       },
       {
         key: 'atuacaoHd',
         title: 'AtuaçãoHD',
-        options: ATUACAO_HD_OPTIONS,
-        value: previous.get('atuacaoHd') ?? 'All',
+        value: this.resolveValue(previous.get('atuacaoHd'), atuacaoHdOptions.length > 0 ? atuacaoHdOptions : ATUACAO_HD_OPTIONS, ''),
+        options: atuacaoHdOptions.length > 0 ? atuacaoHdOptions : ATUACAO_HD_OPTIONS,
+        sourceTitle: atuacaoHdFilter?.title,
+        sourceKind: atuacaoHdFilter?.kind,
+        enabled: Boolean(atuacaoHdFilter),
       },
       {
         key: 'tipoEquipe',
         title: 'Tipo Equipe',
-        options: TIPO_EQUIPE_OPTIONS,
-        value: previous.get('tipoEquipe') ?? '',
+        value: this.resolveValue(previous.get('tipoEquipe'), tipoEquipeOptions.length > 0 ? tipoEquipeOptions : TIPO_EQUIPE_OPTIONS, this.defaultOptionValue(tipoEquipeFilter)),
+        options: tipoEquipeOptions.length > 0 ? tipoEquipeOptions : TIPO_EQUIPE_OPTIONS,
+        sourceTitle: tipoEquipeFilter?.title,
+        sourceKind: tipoEquipeFilter?.kind,
+        enabled: true,
       },
       {
         key: 'base',
         title: 'Base',
-        options: BASE_OPTIONS,
-        value: previous.get('base') ?? '',
+        value: this.resolveValue(previous.get('base'), baseOptions.length > 0 ? baseOptions : BASE_OPTIONS, this.defaultOptionValue(baseFilter)),
+        options: baseOptions.length > 0 ? baseOptions : BASE_OPTIONS,
+        sourceTitle: baseFilter?.title,
+        sourceKind: baseFilter?.kind,
+        enabled: true,
       },
     ];
   }
 
-  private buildDayRange(rawFilters: SpotfireFilter[]): { min: number; max: number } {
+  private buildDayRange(rawFilters: SpotfireFilter[], overrideValues?: Map<FilterKey, string>): { min: number; max: number } {
     const previous = this.dayRange();
-    const rawDayFilter = rawFilters.find((filter) => filter.title.toLowerCase() === 'dia');
-    const catalogMax = Number(rawDayFilter?.range?.max ?? this.dayLimit());
-    const limit = Number.isFinite(catalogMax) && catalogMax > 0 ? catalogMax : this.dayLimit();
+    const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
+    const days = this.dayOptionsFromCatalog(rawFilters, values.get('ano') ?? '', values.get('mes') ?? '');
+    const minDay = days[0] ?? 1;
+    const maxDay = days[days.length - 1] ?? 31;
 
     return {
-      min: Math.min(previous.min, limit),
-      max: Math.min(Math.max(previous.max, previous.min), limit),
+      min: Math.max(minDay, Math.min(previous.min, maxDay)),
+      max: Math.max(Math.max(minDay, previous.min), Math.min(previous.max, maxDay)),
     };
   }
 
   private yearOptionsFromCatalog(rawFilters: SpotfireFilter[]): string[] {
-    const yearFilter = rawFilters.find((filter) => filter.title.toLowerCase() === 'ano');
-    const options = yearFilter?.options?.map((option) => option.label).filter((label) => /^\d{4}$/.test(label)) ?? [];
+    const options = [...new Set(this.extractReferenceDates(rawFilters).map((entry) => String(entry.date.getFullYear())))].sort((left, right) => Number(right) - Number(left));
 
     if (options.length > 0) {
-      return [...new Set(options)].sort((left, right) => Number(right) - Number(left));
+      return options;
     }
 
     const currentYear = new Date().getFullYear();
     return [String(currentYear), String(currentYear - 1)];
   }
 
+  private monthOptionsFromCatalog(rawFilters: SpotfireFilter[], selectedYear: string): string[] {
+    const selectedYearNumber = Number(selectedYear);
+
+    const options = [...new Set(this.extractReferenceDates(rawFilters)
+      .filter((entry) => !selectedYear || entry.date.getFullYear() === selectedYearNumber)
+      .map((entry) => MONTH_OPTIONS[entry.date.getMonth()]))];
+
+    if (options.length > 0) {
+      return options;
+    }
+
+    return MONTH_OPTIONS.slice(0, new Date().getMonth() + 1);
+  }
+
+  private dayOptionsFromCatalog(rawFilters: SpotfireFilter[], selectedYear: string, selectedMonth: string): number[] {
+    const selectedYearNumber = Number(selectedYear);
+    const selectedMonthIndex = MONTH_OPTIONS.indexOf(selectedMonth);
+
+    return [...new Set(this.extractReferenceDates(rawFilters)
+      .filter((entry) => (!selectedYear || entry.date.getFullYear() === selectedYearNumber) && (selectedMonthIndex === -1 || entry.date.getMonth() === selectedMonthIndex))
+      .map((entry) => entry.date.getDate()))].sort((left, right) => left - right);
+  }
+
+  private extractReferenceDates(rawFilters: SpotfireFilter[]): ReferenceDateEntry[] {
+    const referenceFilter = this.findCatalogFilter(rawFilters, 'Data Referência');
+
+    return referenceFilter?.options
+      ?.map((option) => ({ label: option.label, date: new Date(option.label) }))
+      .filter((entry) => !Number.isNaN(entry.date.getTime()) && !entry.label.startsWith('(All)') && entry.label !== '...')
+      ?? [];
+  }
+
   private buildSelectedFilters(): SpotfireFilter[] {
     const filters: SpotfireFilter[] = [];
 
-    for (const filter of this.selectFilters()) {
-      if (!filter.value) {
+    for (const filter of this.secondaryFilters()) {
+      if (!filter.value || !filter.enabled || !filter.sourceTitle || !filter.sourceKind) {
         continue;
       }
 
       filters.push({
-        title: filter.title,
-        kind: 'list',
+        title: filter.sourceTitle,
+        kind: filter.sourceKind,
         selectedValues: [filter.value],
       });
     }
 
-    filters.push({
-      title: 'Dia',
-      kind: 'range',
-      selectedValues: [],
-      range: {
-        min: '1',
-        max: String(this.dayLimit()),
-        selectedMin: String(this.dayRange().min),
-        selectedMax: String(this.dayRange().max),
-      },
-    });
+    const selectedReferenceDates = this.selectedReferenceDateLabels();
+    if (selectedReferenceDates.length > 0) {
+      filters.push({
+        title: 'Data Referência',
+        kind: 'list',
+        selectedValues: selectedReferenceDates,
+      });
+    }
 
     return filters;
+  }
+
+  private selectedReferenceDateLabels(): string[] {
+    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
+    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
+    const selectedMonthIndex = MONTH_OPTIONS.indexOf(month);
+
+    return this.extractReferenceDates(this.rawCatalogFilters())
+      .filter((entry) => (!year || String(entry.date.getFullYear()) === year) && (selectedMonthIndex === -1 || entry.date.getMonth() === selectedMonthIndex))
+      .filter((entry) => entry.date.getDate() >= this.dayRange().min && entry.date.getDate() <= this.dayRange().max)
+      .map((entry) => entry.label);
+  }
+
+  private findCatalogFilter(rawFilters: SpotfireFilter[], title: string): SpotfireFilter | undefined {
+    const expected = title.trim().toLowerCase();
+    return rawFilters.find((filter) => filter.title.trim().toLowerCase() === expected);
+  }
+
+  private catalogOptions(filter?: SpotfireFilter): string[] {
+    return filter?.options
+      ?.map((option) => option.label)
+      .filter((label) => !label.startsWith('(All)') && label !== '...')
+      ?? [];
+  }
+
+  private defaultOptionValue(filter?: SpotfireFilter): string {
+    const selected = filter?.options?.filter((option) => option.selected).map((option) => option.label).filter((label) => !label.startsWith('(All)') && label !== '...') ?? [];
+    return selected.length === 1 ? selected[0] : '';
+  }
+
+  private resolveValue(value: string | undefined, options: string[], fallback: string): string {
+    if (value && options.includes(value)) {
+      return value;
+    }
+
+    if (fallback && options.includes(fallback)) {
+      return fallback;
+    }
+
+    return '';
   }
 
   private describeHttpError(error: unknown): string {
