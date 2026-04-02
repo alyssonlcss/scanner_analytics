@@ -114,227 +114,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
-        await this.ensureNoMaximizedVisualization(page);
-        const availableTabs = await this.loadAvailableTabs(page);
-        this.logStep('analysis', 'OK', 'loaded available tabs from current analysis', {
-          count: availableTabs.length,
-          tabs: availableTabs,
+        this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and stopped before tab/filter/export actions', {
+          currentUrl: page.url(),
         });
-
-        if (request.analysisTab) {
-          this.logStep('analysis-tab', 'START', 'opening requested analysis tab', {
-            analysisTab: request.analysisTab,
-          });
-          await this.openAnalysisTab(page, request.analysisTab);
-          await this.ensureNoMaximizedVisualization(page);
-          this.logStep('analysis-tab', 'OK', 'requested analysis tab is active', {
-            analysisTab: request.analysisTab,
-          });
-        }
-
-        await this.ensureFiltersPanel(page);
-        await this.ensureAllFiltersVisible(page);
-        await this.resetVisibleFilters(page);
-
-        // Scroll filter panel to the very bottom ONCE — then read only currently rendered filters.
-        // Avoid the heavy full-panel scan (slow + changes scroll position, breaking virtualization).
-        await this.scrollFilterPanelToBottom(page);
-        let initialFilters = await this.readVisibleFilters(page);
-
-        this.logStep('filters', 'OK', 'initial filter scan complete', {
-          count: initialFilters.length,
-          titles: initialFilters.map((f) => f.title),
-        });
-
-        const selectedFilters = request.selectedFilters ?? [];
-
-        // Build the strict bottom-to-top application order:
-        // 1) Atuação  2) Ano  3) Mês  4) Base
-        // 5) Data Referência (always last, handled separately)
-        const orderedFiltersToApply: SpotfireFilter[] = [];
-        const usedTitles = new Set<string>();
-
-        // Helper: find filter from selectedFilters or periodSelection by normalized key
-        const findSelectedFilter = (key: string): SpotfireFilter | undefined => {
-          return selectedFilters.find((f) => this.normalizeFilterName(f.title) === key);
-        };
-
-        // 1) Atuação
-        const atuacaoFilter = selectedFilters.find((f) => ['atuacaohd', 'atuacao'].includes(this.normalizeFilterName(f.title)));
-        if (atuacaoFilter) {
-          orderedFiltersToApply.push(atuacaoFilter);
-          usedTitles.add(atuacaoFilter.title);
-        }
-
-        // 2) Ano — from selectedFilters or periodSelection
-        const anoFromSelected = findSelectedFilter('ano');
-        if (anoFromSelected) {
-          orderedFiltersToApply.push(anoFromSelected);
-          usedTitles.add(anoFromSelected.title);
-        } else if (request.periodSelection?.year && request.periodSelection.year !== ALL_OPTION) {
-          const resolvedTitle = this.resolveActualFilterTitle(initialFilters, 'Ano');
-          if (resolvedTitle) {
-            const existing = initialFilters.find((f) => this.normalizeFilterName(f.title) === this.normalizeFilterName(resolvedTitle));
-            orderedFiltersToApply.push({ title: resolvedTitle, kind: existing?.kind ?? 'list', selectedValues: [request.periodSelection.year] });
-            usedTitles.add(resolvedTitle);
-          }
-        }
-
-        // 3) Mês — from selectedFilters or periodSelection
-        const mesFromSelected = findSelectedFilter('mes');
-        if (mesFromSelected) {
-          orderedFiltersToApply.push(mesFromSelected);
-          usedTitles.add(mesFromSelected.title);
-        } else if (request.periodSelection?.month && request.periodSelection.month !== ALL_OPTION) {
-          const resolvedTitle = this.resolveActualFilterTitle(initialFilters, 'Mês');
-          if (resolvedTitle) {
-            const existing = initialFilters.find((f) => this.normalizeFilterName(f.title) === this.normalizeFilterName(resolvedTitle));
-            orderedFiltersToApply.push({ title: resolvedTitle, kind: existing?.kind ?? 'list', selectedValues: [request.periodSelection.month] });
-            usedTitles.add(resolvedTitle);
-          }
-        }
-
-        // 4) Base
-        const baseFilter = findSelectedFilter('base');
-        if (baseFilter) {
-          orderedFiltersToApply.push(baseFilter);
-          usedTitles.add(baseFilter.title);
-        }
-
-        // Append any remaining non-period filters not explicitly ordered
-        for (const f of selectedFilters) {
-          if (usedTitles.has(f.title)) continue;
-          if (f.title.trim().toLowerCase() === 'data referência') continue;
-          orderedFiltersToApply.push(f);
-          usedTitles.add(f.title);
-        }
-
-        // Resolve all titles against actual Spotfire DOM titles
-        const resolvedOrderedFilters = this.resolveRequestedFilters(initialFilters, orderedFiltersToApply);
-
-        const appliedByTitle = new Map<string, boolean>();
-
-        if (resolvedOrderedFilters.length) {
-          this.logStep('filters', 'START', 'applying filters in bottom-to-top order', {
-            count: resolvedOrderedFilters.length,
-            order: resolvedOrderedFilters.map((f) => `${f.title} (${f.kind})`),
-          });
-
-          for (const singleFilter of resolvedOrderedFilters) {
-            this.logStep('filter', 'START', `applying: ${singleFilter.title}`, {
-              kind: singleFilter.kind,
-              values: singleFilter.selectedValues,
-            });
-
-            await this.locateFilterElement(page, singleFilter.title);
-            const applyResult = await this.applySingleFilterWithRetry(page, singleFilter);
-            appliedByTitle.set(this.normalizeFilterName(singleFilter.title), applyResult.applied);
-            await this.waitForSpotfireIdle(page);
-
-            if (!applyResult.applied) {
-              this.logStep('filters', 'FAIL', 'stopping filter pipeline because a filter failed to apply', {
-                failedTitle: singleFilter.title,
-                kind: singleFilter.kind,
-                values: singleFilter.selectedValues,
-              });
-              throw new Error(`filter not applied: ${singleFilter.title}`);
-            }
-
-            this.logStep('filter', 'OK', `finished: ${singleFilter.title}`);
-          }
-
-          this.logStep('filters', 'OK', 'finished applying ordered filters');
-        }
-
-        // 6) Data Referência — ALWAYS LAST
-        //    Generate date strings directly (M/D/YYYY) instead of scanning 455 virtualized options
-        if (request.periodSelection) {
-          this.logStep('period', 'START', 'applying Data Referência (last filter)', {
-            periodSelection: request.periodSelection,
-          });
-
-          // Day-range can only be applied AFTER Ano and Mês are applied.
-          const needsYear = Boolean(request.periodSelection.year && request.periodSelection.year !== ALL_OPTION);
-          const needsMonth = Boolean(request.periodSelection.month && request.periodSelection.month !== ALL_OPTION);
-
-          const anoTitle = this.resolveActualFilterTitle(initialFilters, 'Ano') ?? 'Ano';
-          const mesTitle = this.resolveActualFilterTitle(initialFilters, 'Mês') ?? 'Mês';
-
-          const anoApplied = !needsYear || (appliedByTitle.get(this.normalizeFilterName(anoTitle)) ?? false);
-          const mesApplied = !needsMonth || (appliedByTitle.get(this.normalizeFilterName(mesTitle)) ?? false);
-
-          if (!anoApplied || !mesApplied) {
-            this.logStep('period', 'WARN', 'skipping Data Referência because Ano/Mês were not applied', {
-              needsYear,
-              needsMonth,
-              anoApplied,
-              mesApplied,
-            });
-          } else {
-
-          const referenceDates = this.generateReferenceDates(request.periodSelection);
-          const resolvedRefTitle = this.resolveActualFilterTitle(initialFilters, 'Data Referência');
-
-          if (referenceDates.length && resolvedRefTitle) {
-            const dataRefFilter: SpotfireFilter = {
-              title: resolvedRefTitle,
-              kind: 'list',
-              selectedValues: referenceDates,
-            };
-            await this.locateFilterElement(page, dataRefFilter.title);
-            await this.applySingleFilterWithRetry(page, dataRefFilter);
-            await this.waitForSpotfireIdle(page);
-            this.logStep('period', 'OK', 'applied Data Referência filter', {
-              selectedValueCount: referenceDates.length,
-              dates: referenceDates,
-            });
-          } else {
-            this.logStep('period', 'WARN', 'period selection produced no Data Referência values', {
-              dates: referenceDates,
-              resolvedTitle: resolvedRefTitle ?? null,
-            });
-          }
-          }
-        }
-
-        const explicitReferenceDateFilters = selectedFilters.filter((filter) => filter.title.trim().toLowerCase() === 'data referência');
-        if (explicitReferenceDateFilters.length) {
-          this.logStep('filters', 'START', 'applying explicit Data Referência filters from request', {
-            count: explicitReferenceDateFilters.length,
-          });
-          await this.locateFilterElement(page, explicitReferenceDateFilters[0].title);
-          await this.applySelectedFilters(page, explicitReferenceDateFilters);
-          this.logStep('filters', 'OK', 'finished applying explicit Data Referência filters');
-        }
-
-        // Keep this lightweight (do not rescan/scroll the full filter panel).
-        const filters = await this.readVisibleFilters(page);
-        this.logFiltersSummary(filters);
-        const availableTables = await this.loadAvailableTables(page);
-        this.logStep('analysis', 'OK', 'loaded available tables from current analysis tab', {
-          count: availableTables.length,
-          tables: availableTables,
-        });
-
-        let exportFilePath: string | undefined;
-        if (request.tableTitle) {
-          this.logStep('export', 'START', 'preparing table export', {
-            tableTitle: request.tableTitle,
-            outputDirectory,
-          });
-          await this.maximizeTable(page, request.tableTitle);
-          exportFilePath = await this.exportTable(page, outputDirectory, request);
-          this.logStep('export', 'OK', 'table export finished', {
-            tableTitle: request.tableTitle,
-            exportFilePath: exportFilePath ?? null,
-          });
-        }
 
         return {
-          filters,
-          availableTabs,
-          availableTables,
-          exportFilePath,
+          filters: [],
+          availableTabs: [],
+          availableTables: [],
         };
       } finally {
         if (!this.environment.spotfire.keepOpen) {
@@ -441,7 +228,30 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async applySingleFilter(page: Page, filter: SpotfireFilter): Promise<{ applied: boolean; reason: string }> {
+    const hostInspectionBeforeLocate = await this.inspectFilterHost(page, filter.title);
+    this.log('filter host inspection before locate', {
+      filterTitle: filter.title,
+      filterKind: filter.kind,
+      expectedHost: this.getExpectedFilterHost(filter.title),
+      resolvedHost: hostInspectionBeforeLocate.resolvedHost,
+      matchedTitle: hostInspectionBeforeLocate.matchedTitle,
+      panelMatch: hostInspectionBeforeLocate.panelMatch,
+      leftVisualMatch: hostInspectionBeforeLocate.leftVisualMatch,
+    });
+
     const found = await this.locateFilterElement(page, filter.title);
+
+    const hostInspectionAfterLocate = await this.inspectFilterHost(page, filter.title);
+    this.log('filter host inspection after locate', {
+      filterTitle: filter.title,
+      filterKind: filter.kind,
+      expectedHost: this.getExpectedFilterHost(filter.title),
+      found,
+      resolvedHost: hostInspectionAfterLocate.resolvedHost,
+      matchedTitle: hostInspectionAfterLocate.matchedTitle,
+      panelMatch: hostInspectionAfterLocate.panelMatch,
+      leftVisualMatch: hostInspectionAfterLocate.leftVisualMatch,
+    });
 
     if (!found) {
       return { applied: false, reason: 'filter not found in DOM' };
@@ -463,6 +273,73 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   private normalizeForCompare(value: string | null | undefined): string {
     return (value ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  private getExpectedFilterHost(filterTitle: string): 'right-panel' | 'left-filtros' {
+    return this.normalizeFilterName(filterTitle) === 'datareferencia' ? 'right-panel' : 'left-filtros';
+  }
+
+  private async inspectFilterHost(page: Page, filterTitle: string): Promise<{
+    resolvedHost: 'right-panel' | 'left-filtros' | null;
+    matchedTitle: string | null;
+    panelMatch: boolean;
+    leftVisualMatch: boolean;
+  }> {
+    return page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const wanted = trimColon(title);
+
+      const panelFilter = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === wanted;
+      }) ?? null;
+
+      const filtersVisual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      }) ?? null;
+
+      let leftFilter: HTMLElement | null = null;
+
+      if (filtersVisual) {
+        for (const control of Array.from(filtersVisual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+          const paragraph = control.closest('p');
+          const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+          if (trimColon(labelParagraph?.textContent) === wanted) {
+            leftFilter = control;
+            break;
+          }
+        }
+      }
+
+      const resolvedHost: 'right-panel' | 'left-filtros' | null = panelFilter
+        ? 'right-panel'
+        : leftFilter
+          ? 'left-filtros'
+          : null;
+      const matchedTitle = panelFilter
+        ? ((panelFilter.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]')?.getAttribute('title')
+          ?? panelFilter.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title')?.textContent
+          ?? '').trim() || null)
+        : leftFilter
+          ? ((leftFilter.closest('p')?.previousElementSibling?.textContent ?? '').trim() || null)
+          : null;
+
+      return {
+        resolvedHost,
+        matchedTitle,
+        panelMatch: panelFilter !== null,
+        leftVisualMatch: leftFilter !== null,
+      };
+    }, filterTitle);
   }
 
   private async locateFilterElement(page: Page, filterTitle: string): Promise<boolean> {
@@ -522,6 +399,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       if (el) {
         el.scrollIntoView({ block: 'center' });
         return true;
+      }
+
+      if (trimColon(title) !== 'data referencia') {
+        return false;
       }
 
       const sc = document.querySelector<HTMLElement>('.FilterPanelScroll .Container')
@@ -702,71 +583,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
   }
 
-  private async getFilterSearchInputCoords(page: Page, filterTitle: string): Promise<{ x: number; y: number } | null> {
-    return page.evaluate((title: string) => {
-      function nc(v: string | null | undefined): string {
-        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      }
-
-      function trimColon(v: string | null | undefined): string {
-        return nc(v).replace(/:$/, '');
-      }
-
-      function resolveFilterElement(): HTMLElement | null {
-        const t = trimColon(title);
-        const isReferenceFilter = t === 'data referencia';
-
-        if (isReferenceFilter) {
-          return Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-            return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-          }) ?? null;
-        }
-
-        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
-          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
-            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
-          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
-        });
-
-        if (!visual) {
-          return null;
-        }
-
-        for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
-          const paragraph = control.closest('p');
-          const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
-          if (trimColon(labelParagraph?.textContent) === t) {
-            return control;
-          }
-        }
-
-        return null;
-      }
-
-      const filterEl = resolveFilterElement();
-
-      if (!filterEl) {
-        return null;
-      }
-
-      const input = filterEl.querySelector<HTMLInputElement>('input.SearchInput, input[placeholder*="Type to search in list"]');
-
-      if (!input) {
-        return null;
-      }
-
-      input.scrollIntoView({ block: 'center' });
-      const r = input.getBoundingClientRect();
-
-      if (r.width === 0 || r.height === 0) {
-        return null;
-      }
-
-      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-    }, filterTitle);
-  }
-
   private async getFilterTitleCoords(page: Page, filterTitle: string): Promise<{ x: number; y: number } | null> {
     return page.evaluate((title: string) => {
       function nc(v: string | null | undefined): string {
@@ -784,7 +600,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         ? Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
           const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
           return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-        })
+        }) ?? null
         : null;
 
       let titleEl: HTMLElement | null = null;
@@ -817,6 +633,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       titleEl.scrollIntoView({ block: 'center' });
       const r = titleEl.getBoundingClientRect();
+
       if (r.width === 0 || r.height === 0) {
         return null;
       }
@@ -870,11 +687,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
       }
 
-      if (!filterEl) {
-        return null;
-      }
-
-      if (!titleEl) {
+      if (!filterEl || !titleEl) {
         return null;
       }
 
@@ -1146,7 +959,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const isAllSelect = values.some((v) => v.toLowerCase().startsWith('(all)'));
     const clickValues = isAllSelect ? ['(All)'] : values;
     const isSingleExplicitSelection = !isAllSelect && clickValues.length === 1;
-    const isYearFilter = ['ano', 'year'].includes(this.normalizeFilterName(filterTitle));
 
     const readListFilterSummary = async (): Promise<{
       allRowLabel: string | null;
@@ -1240,13 +1052,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         function resolveFilterElement(): HTMLElement | null {
           const t = trimColon(title);
-          const panelFilter = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-            return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-          });
+          const isReferenceFilter = t === 'data referencia';
 
-          if (panelFilter) {
-            return panelFilter;
+          if (isReferenceFilter) {
+            return Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+              const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+              return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+            }) ?? null;
           }
 
           const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
@@ -1287,120 +1099,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }, filterTitle);
     };
 
-    const findLastVisibleListItemCoords = async (searchTerm: string): Promise<{ x: number; y: number; label: string } | null> => {
-      return page.evaluate((args: { title: string; searchTerm: string }) => {
-        function nc(v: string | null | undefined): string {
-          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        }
-
-        function trimColon(v: string | null | undefined): string {
-          return nc(v).replace(/:$/, '');
-        }
-
-        function resolveFilterElement(): HTMLElement | null {
-          const t = trimColon(args.title);
-          const panelFilter = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-            return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-          });
-
-          if (panelFilter) {
-            return panelFilter;
-          }
-
-          const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
-            const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
-              ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
-            return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
-          });
-
-          if (!visual) {
-            return null;
-          }
-
-          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
-            const paragraph = control.closest('p');
-            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
-            if (trimColon(labelParagraph?.textContent) === t) {
-              return control;
-            }
-          }
-
-          return null;
-        }
-
-        const s = nc(args.searchTerm);
-        const filterEl = resolveFilterElement();
-
-        if (!filterEl) {
-          return null;
-        }
-
-        const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-          .map((item) => ({
-            element: item,
-            label: nc(item.getAttribute('title') ?? item.textContent),
-            rect: item.getBoundingClientRect(),
-          }))
-          .filter((item) => item.rect.width > 0 && item.rect.height > 0)
-          .filter((item) => item.label.length > 0 && !item.label.startsWith('(all)') && item.label !== '...');
-
-        const matching = items.filter((item) => item.label.includes(s) || s.includes(item.label));
-        const chosen = (matching.length > 0 ? matching : items).at(-1);
-
-        if (!chosen) {
-          return null;
-        }
-
-        return {
-          x: Math.round(chosen.rect.left + Math.min(24, Math.max(8, chosen.rect.width * 0.25))),
-          y: Math.round(chosen.rect.top + Math.min(chosen.rect.height - 2, Math.max(chosen.rect.height * 0.78, chosen.rect.height / 2 + 3))),
-          label: chosen.label,
-        };
-      }, { title: filterTitle, searchTerm });
-    };
-
-    const selectBySearchAndLastVisibleOption = async (searchTerm: string, useCtrl: boolean): Promise<boolean> => {
-      await this.locateFilterElement(page, filterTitle);
-      await this.activateListFilter(page, filterTitle);
-      await this.clearFilterSearchInput(page, filterTitle);
-
-      const searchCoords = await this.getFilterSearchInputCoords(page, filterTitle);
-      if (!searchCoords) {
-        return false;
-      }
-
-      await page.mouse.click(searchCoords.x, searchCoords.y, { clickCount: 3 });
-      await new Promise((r) => setTimeout(r, 80));
-      await page.keyboard.type(searchTerm, { delay: 30 });
-      await page.keyboard.press('Enter').catch(() => undefined);
-      await new Promise((r) => setTimeout(r, 350));
-
-      const lastVisible = await findLastVisibleListItemCoords(searchTerm);
-      if (!lastVisible) {
-        await this.clearFilterSearchInput(page, filterTitle);
-        return false;
-      }
-
-      if (useCtrl) {
-        await page.keyboard.down('Control');
-      }
-
-      await page.mouse.click(lastVisible.x, lastVisible.y);
-
-      if (useCtrl) {
-        await page.keyboard.up('Control');
-      }
-
-      await new Promise((r) => setTimeout(r, 250));
-      await this.waitForSpotfireIdle(page, 8000);
-
-      const summary = await readListFilterSummary();
-      await this.clearFilterSearchInput(page, filterTitle);
-
-      return summary.filteredCount === null || summary.filteredCount >= (useCtrl ? 2 : 1);
-    };
-
     const clickValueWithFallbacks = async (searchTerm: string, allowCtrlFallback: boolean): Promise<boolean> => {
       // Re-locate the filter to ensure it's in the viewport
       await this.locateFilterElement(page, filterTitle);
@@ -1408,27 +1106,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await this.activateListFilter(page, filterTitle);
       await new Promise((r) => setTimeout(r, 180));
 
-      // Try to resolve item directly (no search)
       let item = await this.findListItemCoords(page, filterTitle, searchTerm);
-
-      // If not found, use SearchInput to filter list then find item
-      if (!item) {
-        await this.clearFilterSearchInput(page, filterTitle);
-        const searchCoords = await this.getFilterSearchInputCoords(page, filterTitle);
-        if (searchCoords) {
-          await page.mouse.click(searchCoords.x, searchCoords.y, { clickCount: 3 });
-          await new Promise((r) => setTimeout(r, 80));
-          await page.keyboard.type(searchTerm, { delay: 30 });
-          await page.keyboard.press('Enter').catch(() => undefined);
-          await new Promise((r) => setTimeout(r, 320));
-        }
-
-        item = await this.findListItemCoords(page, filterTitle, searchTerm);
-      }
 
       if (!item) {
         this.logStep('list-filter', 'WARN', 'list item not found', { filterTitle, searchTerm });
-        await this.clearFilterSearchInput(page, filterTitle);
         return false;
       }
 
@@ -1443,14 +1124,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       if (isSingleExplicitSelection) {
         const summary = await readListFilterSummary();
         if (summary.filteredCount === 1) {
-          await this.clearFilterSearchInput(page, filterTitle);
           return true;
         }
       }
 
       let after = await this.findListItemCoords(page, filterTitle, searchTerm);
       if (after?.selected) {
-        await this.clearFilterSearchInput(page, filterTitle);
         return true;
       }
 
@@ -1461,13 +1140,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       if (isSingleExplicitSelection) {
         const summary = await readListFilterSummary();
         if (summary.filteredCount === 1) {
-          await this.clearFilterSearchInput(page, filterTitle);
           return true;
         }
       }
       after = await this.findListItemCoords(page, filterTitle, searchTerm);
       if (after?.selected) {
-        await this.clearFilterSearchInput(page, filterTitle);
         return true;
       }
 
@@ -1481,38 +1158,20 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (isSingleExplicitSelection) {
           const summary = await readListFilterSummary();
           if (summary.filteredCount === 1) {
-            await this.clearFilterSearchInput(page, filterTitle);
             return true;
           }
         }
         after = await this.findListItemCoords(page, filterTitle, searchTerm);
         if (after?.selected) {
-          await this.clearFilterSearchInput(page, filterTitle);
           return true;
         }
       }
 
-      await this.clearFilterSearchInput(page, filterTitle);
       return false;
     };
 
     for (let i = 0; i < clickValues.length; i += 1) {
       const searchTerm = clickValues[i];
-
-      if (isYearFilter && !isAllSelect) {
-        const ok = await selectBySearchAndLastVisibleOption(searchTerm, i > 0);
-
-        if (!ok) {
-          this.logStep('list-filter', 'WARN', 'year selection via search/last-visible option failed', {
-            filterTitle,
-            value: searchTerm,
-          });
-        }
-
-        await this.waitForSpotfireIdle(page, 8000);
-        await this.locateFilterElement(page, filterTitle);
-        continue;
-      }
 
       const ok = await clickValueWithFallbacks(searchTerm, i === 0);
 
@@ -1553,28 +1212,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         await this.locateFilterElement(page, filterTitle);
         await this.activateFilter(page, filterTitle);
 
-        // Try to find item without search first
         let item = await this.findListItemCoords(page, filterTitle, verifyValue);
-
-        // If not visible, use SearchInput (when present) and try again
-        if (!item) {
-          await this.clearFilterSearchInput(page, filterTitle);
-          const searchCoords = await this.getFilterSearchInputCoords(page, filterTitle);
-          if (searchCoords) {
-            await page.mouse.click(searchCoords.x, searchCoords.y, { clickCount: 3 });
-            await new Promise((r) => setTimeout(r, 80));
-            await page.keyboard.type(verifyValue, { delay: 30 });
-            await page.keyboard.press('Enter').catch(() => undefined);
-            await new Promise((r) => setTimeout(r, 350));
-            item = await this.findListItemCoords(page, filterTitle, verifyValue);
-          }
-        }
 
         if (item?.selected) {
           verifiedSelected.push(item.label);
         }
-
-        await this.clearFilterSearchInput(page, filterTitle);
       }
     }
 
@@ -1615,11 +1257,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
 
-      const t = nc(title);
-      const filterEl = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-        return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-      });
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const t = trimColon(title);
+      const isReferenceFilter = t === 'data referencia';
+
+      let filterEl = isReferenceFilter
+        ? Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+        }) ?? null
+        : null;
+
+      if (!filterEl && !isReferenceFilter) {
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (visual) {
+          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+            const paragraph = control.closest('p');
+            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+            if (trimColon(labelParagraph?.textContent) === t) {
+              filterEl = control;
+              break;
+            }
+          }
+        }
+      }
 
       if (!filterEl) {
         return [];
@@ -1724,11 +1393,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
 
-      const t = nc(title);
-      const filterEl = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-        return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-      });
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const t = trimColon(title);
+      const isReferenceFilter = t === 'data referencia';
+
+      let filterEl = isReferenceFilter
+        ? Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+        }) ?? null
+        : null;
+
+      if (!filterEl && !isReferenceFilter) {
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (visual) {
+          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+            const paragraph = control.closest('p');
+            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+            if (trimColon(labelParagraph?.textContent) === t) {
+              filterEl = control;
+              break;
+            }
+          }
+        }
+      }
 
       if (!filterEl) {
         return [];
@@ -1771,11 +1467,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
 
-      const t = nc(title);
-      const filterEl = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-        return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-      });
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const t = trimColon(title);
+      const isReferenceFilter = t === 'data referencia';
+
+      let filterEl = isReferenceFilter
+        ? Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+        }) ?? null
+        : null;
+
+      if (!filterEl && !isReferenceFilter) {
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (visual) {
+          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+            const paragraph = control.closest('p');
+            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+            if (trimColon(labelParagraph?.textContent) === t) {
+              filterEl = control;
+              break;
+            }
+          }
+        }
+      }
 
       if (!filterEl) {
         return null;
@@ -2487,52 +2210,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     await this.waitForSpotfireIdle(page);
     this.logStep('filters-panel', 'OK', 'filter bar scrolled to the bottom and idle');
-  }
-
-  /**
-   * Clear any text currently in the SearchInput of the given filter.
-   * Uses evaluate to find the input and reset it, avoiding coordinate issues.
-   */
-  private async clearFilterSearchInput(page: Page, filterTitle: string): Promise<void> {
-    await page.evaluate((title: string) => {
-      function nc(v: string | null | undefined): string {
-        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      }
-      function trimColon(v: string | null | undefined): string {
-        return nc(v).replace(/:$/, '');
-      }
-      const t = trimColon(title);
-      let filterEl = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-        return nc(el?.getAttribute('title') ?? el?.textContent) === t;
-      }) ?? null;
-      if (!filterEl) {
-        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
-          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
-            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
-          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
-        });
-
-        if (visual) {
-          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
-            const paragraph = control.closest('p');
-            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
-            if (trimColon(labelParagraph?.textContent) === t) {
-              filterEl = control;
-              break;
-            }
-          }
-        }
-      }
-      if (!filterEl) return;
-      const input = filterEl.querySelector<HTMLInputElement>('input.SearchInput');
-      if (input && input.value.length > 0) {
-        input.focus();
-        input.value = '';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }, filterTitle);
-    await new Promise((r) => setTimeout(r, 200));
   }
 
   /**
