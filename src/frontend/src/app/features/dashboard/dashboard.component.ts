@@ -4,7 +4,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
 
-type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'tipoEquipe' | 'base';
+type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
 type ReportTypeValue = 'completo';
 
 type SelectFilterState = {
@@ -35,11 +35,9 @@ const ALL_OPTION = 'All';
 const DEFAULT_REPORT_TITLE = 'Scanner 4.0 - CE';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ATUACAO_HD_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
-const TIPO_EQUIPE_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
-const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'tipoEquipe' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
-  atuacaoHd: { sourceTitle: 'AtuaçãoHD', sourceKind: 'list' },
-  tipoEquipe: { sourceTitle: 'Tipo Equipe', sourceKind: 'toggle-group' },
+const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
+  atuacaoHd: { sourceTitle: 'Atuação', sourceKind: 'list' },
   base: { sourceTitle: 'Base', sourceKind: 'list' },
 };
 const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
@@ -799,20 +797,11 @@ export class DashboardComponent implements OnInit {
       },
       {
         key: 'atuacaoHd',
-        title: 'AtuaçãoHD',
+        title: 'Atuação',
         value: this.resolveValue(previous.get('atuacaoHd'), this.withAllOption(ATUACAO_HD_OPTIONS), ''),
         options: this.withAllOption(ATUACAO_HD_OPTIONS),
         sourceTitle: FILTER_SOURCE_MAP.atuacaoHd.sourceTitle,
         sourceKind: FILTER_SOURCE_MAP.atuacaoHd.sourceKind,
-        enabled: true,
-      },
-      {
-        key: 'tipoEquipe',
-        title: 'Tipo Equipe',
-        value: this.resolveValue(previous.get('tipoEquipe'), this.withAllOption(TIPO_EQUIPE_OPTIONS), ''),
-        options: this.withAllOption(TIPO_EQUIPE_OPTIONS),
-        sourceTitle: FILTER_SOURCE_MAP.tipoEquipe.sourceTitle,
-        sourceKind: FILTER_SOURCE_MAP.tipoEquipe.sourceKind,
         enabled: true,
       },
       {

@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run edge:debug",
     "dev": "tsc -p tsconfig.json && node dist/main.js",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "edge:debug": "powershell -ExecutionPolicy Bypass -File ./scripts/start-edge-debug.ps1"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
