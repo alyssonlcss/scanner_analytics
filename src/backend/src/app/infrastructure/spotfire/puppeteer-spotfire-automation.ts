@@ -114,14 +114,52 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
-        this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and stopped before tab/filter/export actions', {
+        this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
           currentUrl: page.url(),
         });
 
+        await this.ensureNoMaximizedVisualization(page);
+
+        if (request.analysisTab?.trim()) {
+          await this.openAnalysisTab(page, request.analysisTab);
+        }
+
+        await this.ensureNoMaximizedVisualization(page);
+        await this.ensureFiltersPanel(page);
+        await this.ensureAllFiltersVisible(page);
+        await this.resetVisibleFilters(page);
+        await this.ensureAllFiltersVisible(page);
+        await this.scrollFilterPanelToBottom(page);
+
+        const availableTabs = await this.loadAvailableTabs(page);
+        const availableTables = await this.loadAvailableTables(page);
+        let filters = await this.readVisibleFilters(page);
+
+        this.logFiltersSummary(filters);
+
+        const filtersToApply = this.buildFiltersToApply(filters, request);
+
+        if (filtersToApply.length > 0) {
+          await this.applySelectedFilters(page, filtersToApply);
+          await this.ensureAllFiltersVisible(page);
+          await this.scrollFilterPanelToBottom(page);
+          filters = await this.readVisibleFilters(page);
+          this.logFiltersSummary(filters);
+        }
+
+        let exportFilePath: string | undefined;
+
+        if (request.tableTitle?.trim()) {
+          await this.ensureNoMaximizedVisualization(page);
+          await this.maximizeTable(page, request.tableTitle);
+          exportFilePath = await this.exportTable(page, outputDirectory, request);
+        }
+
         return {
-          filters: [],
-          availableTabs: [],
-          availableTables: [],
+          filters,
+          availableTabs,
+          availableTables,
+          exportFilePath,
         };
       } finally {
         if (!this.environment.spotfire.keepOpen) {
@@ -959,6 +997,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const isAllSelect = values.some((v) => v.toLowerCase().startsWith('(all)'));
     const clickValues = isAllSelect ? ['(All)'] : values;
     const isSingleExplicitSelection = !isAllSelect && clickValues.length === 1;
+    const filterHost = await this.inspectFilterHost(page, filterTitle);
 
     const readListFilterSummary = async (): Promise<{
       allRowLabel: string | null;
@@ -1102,8 +1141,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const clickValueWithFallbacks = async (searchTerm: string, allowCtrlFallback: boolean): Promise<boolean> => {
       // Re-locate the filter to ensure it's in the viewport
       await this.locateFilterElement(page, filterTitle);
-      // For Spotfire list filters like Ano, activation is more reliable one line below the title.
-      await this.activateListFilter(page, filterTitle);
+      // Right-panel filters are sensitive to activation clicks and can clear the current selection.
+      if (filterHost.resolvedHost !== 'right-panel') {
+        await this.activateListFilter(page, filterTitle);
+      }
       await new Promise((r) => setTimeout(r, 180));
 
       let item = await this.findListItemCoords(page, filterTitle, searchTerm);
@@ -1117,7 +1158,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       const primaryX = item.labelX ?? item.clickX;
       const primaryY = item.labelY ?? item.clickY;
 
-      await this.activateFilter(page, filterTitle);
+      if (filterHost.resolvedHost !== 'right-panel') {
+        await this.activateFilter(page, filterTitle);
+      }
+
       await page.mouse.click(primaryX, primaryY);
       await new Promise((r) => setTimeout(r, 200));
 
@@ -1131,6 +1175,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       let after = await this.findListItemCoords(page, filterTitle, searchTerm);
       if (after?.selected) {
         return true;
+      }
+
+      const clickedViaDom = await this.clickListItemDomFallback(page, filterTitle, searchTerm, false);
+      if (clickedViaDom) {
+        await new Promise((r) => setTimeout(r, 250));
+
+        if (isSingleExplicitSelection) {
+          const summary = await readListFilterSummary();
+          if (summary.filteredCount === 1) {
+            return true;
+          }
+        }
+
+        after = await this.findListItemCoords(page, filterTitle, searchTerm);
+        if (after?.selected) {
+          return true;
+        }
       }
 
       // Retry a second click (Spotfire sometimes ignores the first click when focus shifts)
@@ -1164,6 +1225,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         after = await this.findListItemCoords(page, filterTitle, searchTerm);
         if (after?.selected) {
           return true;
+        }
+
+        const ctrlClickedViaDom = await this.clickListItemDomFallback(page, filterTitle, searchTerm, true);
+        if (ctrlClickedViaDom) {
+          await new Promise((r) => setTimeout(r, 250));
+
+          if (isSingleExplicitSelection) {
+            const summary = await readListFilterSummary();
+            if (summary.filteredCount === 1) {
+              return true;
+            }
+          }
+
+          after = await this.findListItemCoords(page, filterTitle, searchTerm);
+          if (after?.selected) {
+            return true;
+          }
         }
       }
 
@@ -1249,6 +1327,135 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       applied: allFound,
       reason: allFound ? 'list filter applied' : `expected [${expectedNorm.join(', ')}] but found [${actualSelected.join(', ')}]`,
     };
+  }
+
+  private async clickListItemDomFallback(page: Page, filterTitle: string, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
+    return page.evaluate(async (args: { title: string; label: string; ctrlKey: boolean }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      async function wait(ms: number): Promise<void> {
+        await new Promise((r) => window.setTimeout(r, ms));
+      }
+
+      function matchLabel(candidate: string, requested: string): boolean {
+        if (candidate === requested) {
+          return true;
+        }
+
+        if (candidate.includes(requested) || requested.includes(candidate)) {
+          return true;
+        }
+
+        if (requested === '(all)') {
+          return candidate.startsWith('(all)');
+        }
+
+        return false;
+      }
+
+      function resolveFilterElement(): HTMLElement | null {
+        const t = trimColon(args.title);
+        const isReferenceFilter = t === 'data referencia';
+
+        if (isReferenceFilter) {
+          return Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+            return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+          }) ?? null;
+        }
+
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (visual) {
+          for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+            const paragraph = control.closest('p');
+            const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+            if (trimColon(labelParagraph?.textContent) === t) {
+              return control;
+            }
+          }
+        }
+
+        return Array.from(document.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === t;
+        }) ?? null;
+      }
+
+      function dispatchClick(target: HTMLElement): void {
+        const rect = target.getBoundingClientRect();
+        const clientX = rect.left + Math.min(Math.max(rect.width / 2, 6), Math.max(rect.width - 2, 6));
+        const clientY = rect.top + Math.min(Math.max(rect.height / 2, 6), Math.max(rect.height - 2, 6));
+
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+          target.dispatchEvent(new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            ctrlKey: args.ctrlKey,
+            button: 0,
+            buttons: 1,
+            clientX,
+            clientY,
+          }));
+        }
+      }
+
+      const filterEl = resolveFilterElement();
+      if (!filterEl) {
+        return false;
+      }
+
+      const requested = nc(args.label);
+      const resolvedFilterElement = filterEl;
+
+      function findItem(): HTMLElement | null {
+        return Array.from(resolvedFilterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
+          return matchLabel(nc(item.getAttribute('title') ?? item.textContent), requested);
+        }) ?? null;
+      }
+
+      let item = findItem();
+      const sc = resolvedFilterElement.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? resolvedFilterElement.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+        ?? resolvedFilterElement.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+
+      if (!item && sc) {
+        const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
+        const step = Math.max(Math.floor(sc.clientHeight * 0.75), 30);
+
+        for (let offset = 0; offset <= max && !item; offset += step) {
+          sc.scrollTop = offset;
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(80);
+          item = findItem();
+        }
+      }
+
+      if (!item) {
+        return false;
+      }
+
+      item.scrollIntoView({ block: 'center' });
+      await wait(60);
+
+      const target = item.querySelector<HTMLElement>('.sf-element-check-box')
+        ?? item.querySelector<HTMLElement>('.sf-element-text-box')
+        ?? item;
+
+      dispatchClick(target);
+      return true;
+    }, { title: filterTitle, label: itemLabel, ctrlKey });
   }
 
   private async getToggleOptions(page: Page, filterTitle: string): Promise<Array<{ label: string; checked: boolean; x: number; y: number }>> {
@@ -2561,10 +2768,75 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     const existingFiles = new Set(await readdir(outputDirectory));
     await this.openExportMenu(page, request.tableTitle);
-    await this.clickByText(page, this.environment.spotfire.exportMenuLabel, false);
+    await this.clickExportMenuAction(page);
 
     const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
+  }
+
+  private async clickExportMenuAction(page: Page): Promise<void> {
+    const clicked = await page.evaluate(async (labels: { preferred: string[]; fallback: string[] }) => {
+      function normalize(value: string | null | undefined): string {
+        return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+      }
+
+      function isVisible(element: HTMLElement): boolean {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      function menuEntries(): HTMLElement[] {
+        return Array.from(document.querySelectorAll<HTMLElement>('[title], .contextMenuItemLabel, .contextMenuItem, .MenuItem, .sfx_menu-item_497'))
+          .filter((element) => isVisible(element));
+      }
+
+      function matches(element: HTMLElement, candidates: string[]): boolean {
+        const values = [
+          normalize(element.getAttribute('title')),
+          normalize(element.getAttribute('aria-label')),
+          normalize(element.textContent),
+        ].filter((value) => value.length > 0);
+
+        return candidates.some((candidate) => values.some((value) => value === candidate || value.includes(candidate)));
+      }
+
+      function clickMatch(candidates: string[]): boolean {
+        const entry = menuEntries().find((element) => matches(element, candidates));
+        if (!entry) {
+          return false;
+        }
+
+        entry.click();
+        return true;
+      }
+
+      if (clickMatch(labels.preferred.map(normalize))) {
+        return true;
+      }
+
+      const parentClicked = clickMatch([normalize(labels.preferred[0]), normalize(labels.fallback[0]), 'export']);
+      if (parentClicked) {
+        await new Promise((resolveWait) => window.setTimeout(resolveWait, 250));
+      }
+
+      return clickMatch(labels.fallback.map(normalize));
+    }, {
+      preferred: [this.environment.spotfire.exportMenuLabel, this.environment.spotfire.exportParentMenuLabel],
+      fallback: [
+        'Data to file',
+        'Data to file...',
+        'Export data',
+        'Export visualization data',
+        'Comma-separated values',
+        'CSV',
+        'Export to file',
+      ],
+    });
+
+    if (!clicked) {
+      throw new Error(`could not find export action after opening the context menu for ${this.environment.spotfire.exportMenuLabel}`);
+    }
   }
 
   private async openExportMenu(page: Page, tableTitle?: string): Promise<void> {
@@ -2790,6 +3062,37 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
 
     return builtFilters;
+  }
+
+  private buildFiltersToApply(availableFilters: SpotfireFilter[], request: ScannerRunRequest): SpotfireFilter[] {
+    const requestedFilters = this.resolveRequestedFilters(availableFilters, request.selectedFilters ?? []);
+    const filtersToApply = [...requestedFilters];
+
+    if (!request.periodSelection) {
+      return filtersToApply;
+    }
+
+    filtersToApply.push(...this.buildYearMonthFilters(availableFilters, request.periodSelection));
+
+    const explicitReferenceFilter = this.buildReferenceDateFilter(availableFilters, request.periodSelection);
+
+    if (explicitReferenceFilter?.selectedValues.length) {
+      filtersToApply.push(explicitReferenceFilter);
+      return filtersToApply;
+    }
+
+    const generatedReferenceDates = this.generateReferenceDates(request.periodSelection);
+    const resolvedReferenceTitle = this.resolveActualFilterTitle(availableFilters, 'Data Referência') ?? 'Data Referência';
+
+    if (generatedReferenceDates.length > 0) {
+      filtersToApply.push({
+        title: resolvedReferenceTitle,
+        kind: 'list',
+        selectedValues: generatedReferenceDates,
+      });
+    }
+
+    return filtersToApply;
   }
 
   private buildReferenceDateFilter(filters: SpotfireFilter[], periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): SpotfireFilter | undefined {

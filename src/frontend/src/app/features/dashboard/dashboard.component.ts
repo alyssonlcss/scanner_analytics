@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -53,7 +53,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   imports: [CommonModule],
   template: `
     <main class="shell">
-      <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !catalogReady()">
+      <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !filtersVisible()">
         <section class="loading-popup" aria-live="polite" aria-busy="true">
           <div class="loading-spinner"></div>
           <h2>Abrindo Scanner M300</h2>
@@ -65,12 +65,12 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         <p>Aplicando filtros e baixando tabelas</p>
       </div>
 
-      <ng-container *ngIf="!catalogLoading() || catalogReady()">
+      <ng-container *ngIf="filtersVisible()">
         <button
-          *ngIf="catalogReady() && !filterDrawerOpen()"
+          *ngIf="!filterDrawerOpen()"
           type="button"
           class="filter-fab"
-          [disabled]="loading() || !catalogReady()"
+          [disabled]="loading()"
           (click)="openFilterDrawer()"
           aria-label="Abrir filtros">
             <span class="filter-fab-icon">
@@ -80,9 +80,9 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
             </span>
         </button>
 
-        <div class="drawer-backdrop" *ngIf="catalogReady() && filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
+        <div class="drawer-backdrop" *ngIf="filterDrawerOpen()" (click)="closeFilterDrawer()"></div>
 
-        <aside class="filter-drawer" [class.filter-drawer-open]="catalogReady() && filterDrawerOpen()">
+        <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
           <div class="drawer-head">
             <h2>Filtros</h2>
             <button type="button" class="drawer-submit" [disabled]="loading()" (click)="submit()">
@@ -632,7 +632,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
     `,
   ],
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly api = inject(ScannerApiService);
   protected readonly allOption = ALL_OPTION;
 
@@ -647,6 +647,7 @@ export class DashboardComponent implements OnInit {
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
   protected readonly dayRange = signal({ min: 1, max: 31 });
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
+  protected readonly filtersVisible = computed(() => this.selectFilters().length > 0);
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
   protected readonly dayLimit = computed(() => {
@@ -664,8 +665,17 @@ export class DashboardComponent implements OnInit {
     return limit > 1 ? ((this.dayRange().max - 1) / (limit - 1)) * 100 : 100;
   });
 
+  private catalogPollTimer?: ReturnType<typeof setTimeout>;
+
   public ngOnInit(): void {
+    const builtFilters = this.buildSelectFilters();
+    this.selectFilters.set(builtFilters);
+    this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     this.loadCatalog();
+  }
+
+  public ngOnDestroy(): void {
+    this.clearCatalogPoll();
   }
 
   protected openFilterDrawer(): void {
@@ -720,7 +730,7 @@ export class DashboardComponent implements OnInit {
   }
 
   protected submit(): void {
-    if (this.loading() || !this.catalogReady()) {
+    if (this.loading() || !this.filtersVisible()) {
       return;
     }
 
@@ -744,6 +754,7 @@ export class DashboardComponent implements OnInit {
   }
 
   private loadCatalog(): void {
+    this.clearCatalogPoll();
     this.catalogLoading.set(true);
     this.catalogRequestError.set(null);
 
@@ -758,15 +769,36 @@ export class DashboardComponent implements OnInit {
           this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
           this.reportTitle.set(catalog.reportTitle || DEFAULT_REPORT_TITLE);
           this.catalogLoading.set(catalog.status === 'loading');
+
+          if (catalog.status === 'loading') {
+            this.scheduleCatalogPoll();
+          }
         },
         error: (error) => {
           this.catalogLoading.set(false);
           this.catalogRequestError.set(this.describeHttpError(error));
           this.rawCatalogFilters.set([]);
-          this.selectFilters.set(this.buildSelectFilters());
-          this.dayRange.set({ min: 1, max: 31 });
+          const builtFilters = this.buildSelectFilters();
+          this.selectFilters.set(builtFilters);
+          this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
         },
       });
+  }
+
+  private scheduleCatalogPoll(): void {
+    this.clearCatalogPoll();
+    this.catalogPollTimer = setTimeout(() => {
+      this.loadCatalog();
+    }, 2000);
+  }
+
+  private clearCatalogPoll(): void {
+    if (!this.catalogPollTimer) {
+      return;
+    }
+
+    clearTimeout(this.catalogPollTimer);
+    this.catalogPollTimer = undefined;
   }
 
   private buildSelectFilters(overrideValues?: Map<FilterKey, string>): SelectFilterState[] {
