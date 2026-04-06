@@ -91,7 +91,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
     return this.runSerialized(async () => {
-      const outputDirectory = await this.prepareOutputDirectory();
+      const outputDirectory = await this.raceAbort(this.prepareOutputDirectory(), request.signal);
       this.logStep('data-download', 'START', 'starting extraction run', {
         reportTitle: request.reportTitle ?? this.environment.spotfire.defaultReportTitle,
         analysisTab: request.analysisTab ?? null,
@@ -101,54 +101,66 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         outputDirectory,
       });
 
-      const { browser, page, createdNewPage } = await this.getAutomationSession();
+      const abortHandler = () => {
+        this.logStep('data-download', 'WARN', 'aborting extraction run because a newer request replaced it');
+        void this.disposeAutomationSession().catch(() => undefined);
+      };
+
+      request.signal?.addEventListener('abort', abortHandler, { once: true });
+
+      const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), request.signal);
 
       try {
+        this.throwIfAborted(request.signal);
+
         if (createdNewPage) {
-          await page.setViewport({ width: 1600, height: 1000 });
+          await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), request.signal);
           this.logStep('browser', 'OK', 'created new browser page for extraction run', {
             width: 1600,
             height: 1000,
           });
         }
 
-        await this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle);
+        await this.raceAbort(
+          this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle),
+          request.signal,
+        );
         this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
           currentUrl: page.url(),
         });
 
-        await this.ensureNoMaximizedVisualization(page);
+        await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
 
         if (request.analysisTab?.trim()) {
-          await this.openAnalysisTab(page, request.analysisTab);
+          await this.raceAbort(this.openAnalysisTab(page, request.analysisTab), request.signal);
         }
 
-        await this.ensureNoMaximizedVisualization(page);
-        await this.ensureAllFiltersVisible(page);
-        await this.resetVisibleFilters(page);
-        await this.ensureAllFiltersVisible(page);
+        await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+        await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+        await this.raceAbort(this.resetVisibleFilters(page), request.signal);
+        await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
 
-        const availableTabs = await this.loadAvailableTabs(page);
-        const availableTables = await this.loadAvailableTables(page);
-        let filters = await this.readVisibleFilters(page);
+        const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
+        const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);
+        let filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
 
         this.logFiltersSummary(filters);
 
         const filtersToApply = this.buildFiltersToApply(filters, request);
 
         if (filtersToApply.length > 0) {
-          await this.applySelectedFilters(page, filtersToApply);
-          await this.ensureAllFiltersVisible(page);
-          filters = await this.readVisibleFilters(page);
+          await this.raceAbort(this.applySelectedFilters(page, filtersToApply), request.signal);
+          await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+          filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
           this.logFiltersSummary(filters);
         }
 
         let exportFilePath: string | undefined;
 
         if (request.tableTitle?.trim()) {
-          await this.ensureNoMaximizedVisualization(page);
-          await this.maximizeTable(page, request.tableTitle);
-          exportFilePath = await this.exportTable(page, outputDirectory, request);
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+          await this.raceAbort(this.maximizeTable(page, request.tableTitle), request.signal);
+          exportFilePath = await this.raceAbort(this.exportTable(page, outputDirectory, request), request.signal);
         }
 
         return {
@@ -158,6 +170,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           exportFilePath,
         };
       } finally {
+        request.signal?.removeEventListener('abort', abortHandler);
+
         if (!this.environment.spotfire.keepOpen) {
           this.logStep('browser', 'WARN', 'closing browser because keepOpen=false');
           await this.disposeAutomationSession();
@@ -165,7 +179,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
         }
       }
-    });
+    }, request.signal);
   }
 
   private logFiltersSummary(filters: SpotfireFilter[]): void {
@@ -2650,7 +2664,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
-  private async runSerialized<T>(task: () => Promise<T>): Promise<T> {
+  private async runSerialized<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     let release: (() => void) | undefined;
     const waiter = new Promise<void>((resolveWaiter) => {
       release = resolveWaiter;
@@ -2659,13 +2673,58 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const previous = this.activeQueue;
     this.activeQueue = previous.then(() => waiter);
 
-    await previous;
-
     try {
+      await this.raceAbort(previous, signal);
+      this.throwIfAborted(signal);
       return await task();
     } finally {
       release?.();
     }
+  }
+
+  private async raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (!signal) {
+      return promise;
+    }
+
+    this.throwIfAborted(signal);
+
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(this.toAbortError(signal.reason));
+        }, { once: true });
+      }),
+    ]);
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (!signal?.aborted) {
+      return;
+    }
+
+    throw this.toAbortError(signal.reason);
+  }
+
+  private toAbortError(reason: unknown): Error {
+    if (reason instanceof Error) {
+      if (reason.name === 'AbortError') {
+        return reason;
+      }
+
+      const error = new Error(reason.message);
+      error.name = 'AbortError';
+      return error;
+    }
+
+    const error = new Error(
+      typeof reason === 'string' && reason.trim().length > 0
+        ? reason
+        : 'spotfire extraction aborted',
+    );
+    error.name = 'AbortError';
+    return error;
   }
 
   private async launchBrowser(): Promise<Browser> {

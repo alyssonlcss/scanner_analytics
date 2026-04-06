@@ -69,6 +69,7 @@ export async function createServer() {
   const automation = new PuppeteerSpotfireAutomation(environment);
   const startScannerJob = new StartScannerJobUseCase(automation, jobStore);
   const getScannerJob = new GetScannerJobUseCase(jobStore);
+  let activeDataDownloadController: AbortController | null = null;
 
   await server.register(cors, {
     origin: true,
@@ -149,62 +150,93 @@ export async function createServer() {
     const payload = dataDownloadSchema.parse(request.body);
     const reportTitle = payload.reportTitle ?? environment.spotfire.defaultReportTitle;
     const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
+    const controller = new AbortController();
 
-    await resetDataDirectory(dataDirectory);
+    activeDataDownloadController?.abort(createAbortError('data download superseded by a newer request'));
+    activeDataDownloadController = controller;
 
-    const downloadedFiles: Array<{
-      analysisTab: string;
-      tableTitle: string;
-      fileName: string;
-      filePath: string;
-    }> = [];
+    request.raw.once('aborted', () => {
+      if (activeDataDownloadController === controller) {
+        controller.abort(createAbortError('client disconnected during data download'));
+      }
+    });
 
-    let latestCatalog: SpotfireCatalog | null = null;
+    try {
+      throwIfAborted(controller.signal);
+      await resetDataDirectory(dataDirectory);
 
-    for (const target of DATA_DOWNLOAD_TARGETS) {
-      const result = await automation.runExtraction({
-        reportTitle,
-        analysisTab: target.analysisTab,
-        tableTitle: target.tableTitle,
-        selectedFilters: payload.selectedFilters,
-        periodSelection: payload.periodSelection,
-      });
+      const downloadedFiles: Array<{
+        analysisTab: string;
+        tableTitle: string;
+        fileName: string;
+        filePath: string;
+      }> = [];
 
-      if (!result.exportFilePath) {
-        throw new Error(`export file was not generated for table: ${target.tableTitle}`);
+      let latestCatalog: SpotfireCatalog | null = null;
+
+      for (const target of DATA_DOWNLOAD_TARGETS) {
+        throwIfAborted(controller.signal);
+
+        const result = await automation.runExtraction({
+          reportTitle,
+          analysisTab: target.analysisTab,
+          tableTitle: target.tableTitle,
+          selectedFilters: payload.selectedFilters,
+          periodSelection: payload.periodSelection,
+          signal: controller.signal,
+        });
+
+        throwIfAborted(controller.signal);
+
+        if (!result.exportFilePath) {
+          throw new Error(`export file was not generated for table: ${target.tableTitle}`);
+        }
+
+        const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
+        const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
+
+        downloadedFiles.push({
+          analysisTab: target.analysisTab,
+          tableTitle: target.tableTitle,
+          fileName,
+          filePath,
+        });
+
+        latestCatalog = {
+          status: 'ready',
+          reportTitle,
+          filters: result.filters,
+          availableTabs: result.availableTabs,
+          availableTables: result.availableTables,
+          updatedAt: new Date().toISOString(),
+        } satisfies SpotfireCatalog;
       }
 
-      const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
-      const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
+      throwIfAborted(controller.signal);
+      await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
 
-      downloadedFiles.push({
-        analysisTab: target.analysisTab,
-        tableTitle: target.tableTitle,
-        fileName,
-        filePath,
-      });
-
-      latestCatalog = {
-        status: 'ready',
+      return reply.send({
+        status: 'completed',
         reportTitle,
-        filters: result.filters,
-        availableTabs: result.availableTabs,
-        availableTables: result.availableTables,
         updatedAt: new Date().toISOString(),
-      } satisfies SpotfireCatalog;
+        files: downloadedFiles,
+        filters: latestCatalog?.filters ?? [],
+        availableTabs: latestCatalog?.availableTabs ?? [],
+        availableTables: latestCatalog?.availableTables ?? [],
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        return reply.code(409).send({
+          message: normalizeAbortMessage(error),
+        });
+      }
+
+      throw error;
+    } finally {
+      if (activeDataDownloadController === controller) {
+        activeDataDownloadController = null;
+      }
     }
-
-    await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
-
-    return reply.send({
-      status: 'completed',
-      reportTitle,
-      updatedAt: new Date().toISOString(),
-      files: downloadedFiles,
-      filters: latestCatalog?.filters ?? [],
-      availableTabs: latestCatalog?.availableTabs ?? [],
-      availableTables: latestCatalog?.availableTables ?? [],
-    });
   });
 
   server.get('/api/scanner/executions/:jobId', async (request, reply) => {
@@ -300,4 +332,44 @@ async function cleanupDataDirectory(dataDirectory: string, preservedFileNames: s
       await rm(entryPath, { recursive: true, force: true });
     }
   }
+}
+
+function createAbortError(message: string): Error {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  throw normalizeAbortError(signal.reason);
+}
+
+function isAbortError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function normalizeAbortError(reason: unknown): Error {
+  if (reason instanceof Error) {
+    if (reason.name === 'AbortError') {
+      return reason;
+    }
+
+    const error = new Error(reason.message);
+    error.name = 'AbortError';
+    return error;
+  }
+
+  return createAbortError(
+    typeof reason === 'string' && reason.trim().length > 0
+      ? reason
+      : 'data download aborted',
+  );
+}
+
+function normalizeAbortMessage(error: Error): string {
+  return error.message.trim().length > 0 ? error.message : 'data download aborted';
 }

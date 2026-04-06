@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import type { Subscription } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
@@ -70,7 +71,6 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
           *ngIf="!filterDrawerOpen()"
           type="button"
           class="filter-fab"
-          [disabled]="loading()"
           (click)="openFilterDrawer()"
           aria-label="Abrir filtros">
             <span class="filter-fab-icon">
@@ -85,8 +85,8 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
           <div class="drawer-head">
             <h2>Filtros</h2>
-            <button type="button" class="drawer-submit" [disabled]="loading()" (click)="submit()">
-              {{ loading() ? 'Filtrando...' : 'Filtrar' }}
+            <button type="button" class="drawer-submit" (click)="submit()">
+              {{ loading() ? 'Reaplicar' : 'Filtrar' }}
             </button>
           </div>
 
@@ -680,6 +680,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   });
 
   private catalogPollTimer?: ReturnType<typeof setTimeout>;
+  private activeDownloadRequest?: Subscription;
   private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove' } | null = null;
   private readonly boundEndFilterDrag = () => {
     this.dragSelectionState = null;
@@ -696,6 +697,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   public ngOnDestroy(): void {
     window.removeEventListener('mouseup', this.boundEndFilterDrag);
     this.clearCatalogPoll();
+    this.cancelActiveDownloadRequest();
   }
 
   protected openFilterDrawer(): void {
@@ -703,10 +705,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   protected closeFilterDrawer(): void {
-    if (this.loading()) {
-      return;
-    }
-
     this.filterDrawerOpen.set(false);
   }
 
@@ -735,7 +733,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
-    if (this.loading() || event.button !== 0) {
+    if (event.button !== 0) {
       return;
     }
 
@@ -824,27 +822,35 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   protected submit(): void {
-    if (this.loading() || !this.filtersVisible()) {
+    if (!this.filtersVisible()) {
       return;
     }
 
     this.filterDrawerOpen.set(false);
+    this.cancelActiveDownloadRequest();
     this.loading.set(true);
 
     const selectedFilters = this.buildSelectedFilters();
 
-    this.api.dataDownload({
+    this.activeDownloadRequest = this.api.dataDownload({
       reportTitle: this.reportTitle(),
       selectedFilters,
       periodSelection: this.buildPeriodSelection(),
     }).subscribe({
       next: () => {
+        this.activeDownloadRequest = undefined;
         this.loading.set(false);
       },
       error: () => {
+        this.activeDownloadRequest = undefined;
         this.loading.set(false);
       },
     });
+  }
+
+  private cancelActiveDownloadRequest(): void {
+    this.activeDownloadRequest?.unsubscribe();
+    this.activeDownloadRequest = undefined;
   }
 
   private loadCatalog(): void {

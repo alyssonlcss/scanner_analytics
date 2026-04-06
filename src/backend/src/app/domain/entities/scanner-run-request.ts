@@ -15,4 +15,5 @@ export interface ScannerRunRequest {
   tableTitle?: string;
   selectedFilters?: SpotfireFilter[];
   periodSelection?: ScannerPeriodSelection;
+  signal?: AbortSignal;
 }
