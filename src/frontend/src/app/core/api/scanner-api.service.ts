@@ -76,8 +76,8 @@ export class ScannerApiService {
     reportTitle?: string;
     selectedFilters?: SpotfireFilter[];
     periodSelection?: {
-      year?: string;
-      month?: string;
+      year?: string[];
+      month?: string[];
       dayRange?: {
         min: number;
         max: number;

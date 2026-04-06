@@ -42,8 +42,8 @@ const dataDownloadSchema = z.object({
   reportTitle: z.string().trim().min(1).optional(),
   selectedFilters: z.array(filterSchema).optional(),
   periodSelection: z.object({
-    year: z.string().trim().optional(),
-    month: z.string().trim().optional(),
+    year: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
+    month: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
     dayRange: z.object({
       min: z.number().int().min(1),
       max: z.number().int().min(1),

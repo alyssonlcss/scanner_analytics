@@ -10,7 +10,7 @@ type ReportTypeValue = 'completo';
 type SelectFilterState = {
   key: FilterKey;
   title: string;
-  value: string;
+  value: string[];
   options: string[];
   sourceTitle?: string;
   sourceKind?: SpotfireFilter['kind'];
@@ -23,8 +23,8 @@ type ReportTypeOption = {
 };
 
 type PeriodSelectionPayload = {
-  year?: string;
-  month?: string;
+  year?: string[];
+  month?: string[];
   dayRange?: {
     min: number;
     max: number;
@@ -120,16 +120,20 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
                 <div class="period-selects">
                   <label class="select-shell" *ngFor="let filter of periodFilters()">
                     <span class="select-caption">{{ filter.title }}</span>
-                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title">
+                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true">
                       <button
                         type="button"
                         class="option-item"
                         *ngFor="let option of filter.options"
-                        [class.option-item-active]="filter.value === option"
-                        (click)="updateSelectFilter(filter.key, option)">
+                        [class.option-item-active]="isOptionSelected(filter, option)"
+                        [attr.aria-selected]="isOptionSelected(filter, option)"
+                        (mousedown)="beginOptionSelection(filter.key, option, $event)"
+                        (mouseenter)="continueOptionSelection(filter.key, option, $event)"
+                        (mouseup)="endFilterDrag()">
                         {{ option }}
                       </button>
                     </div>
+                    <span class="select-summary">{{ describeSelection(filter) }}</span>
                   </label>
                 </div>
 
@@ -165,16 +169,20 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <div class="option-list" role="listbox" [attr.aria-label]="filter.title">
+                <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true">
                   <button
                     type="button"
                     class="option-item"
                     *ngFor="let option of filter.options"
-                    [class.option-item-active]="filter.value === option"
-                    (click)="updateSelectFilter(filter.key, option)">
+                    [class.option-item-active]="isOptionSelected(filter, option)"
+                    [attr.aria-selected]="isOptionSelected(filter, option)"
+                    (mousedown)="beginOptionSelection(filter.key, option, $event)"
+                    (mouseenter)="continueOptionSelection(filter.key, option, $event)"
+                    (mouseup)="endFilterDrag()">
                     {{ option }}
                   </button>
                 </div>
+                <span class="select-summary">{{ describeSelection(filter) }}</span>
               </label>
             </article>
           </div>
@@ -421,6 +429,12 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
         color: var(--muted-strong);
       }
 
+      .select-summary {
+        font-size: 0.68rem;
+        color: var(--muted-strong);
+        min-height: 0.95rem;
+      }
+
       h2 {
         margin: 0;
         font-size: 1.08rem;
@@ -651,8 +665,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
   protected readonly dayLimit = computed(() => {
-    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
-    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
+    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? [];
+    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? [];
     const days = this.dayOptionsFromSelection(year, month);
     return days[days.length - 1] ?? 31;
   });
@@ -666,15 +680,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
   });
 
   private catalogPollTimer?: ReturnType<typeof setTimeout>;
+  private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove' } | null = null;
+  private readonly boundEndFilterDrag = () => {
+    this.dragSelectionState = null;
+  };
 
   public ngOnInit(): void {
     const builtFilters = this.buildSelectFilters();
     this.selectFilters.set(builtFilters);
     this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
+    window.addEventListener('mouseup', this.boundEndFilterDrag);
     this.loadCatalog();
   }
 
   public ngOnDestroy(): void {
+    window.removeEventListener('mouseup', this.boundEndFilterDrag);
     this.clearCatalogPoll();
   }
 
@@ -698,7 +718,81 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.reportType.set(value as ReportTypeValue);
   }
 
-  protected updateSelectFilter(key: FilterKey, value: string): void {
+  protected isOptionSelected(filter: SelectFilterState, option: string): boolean {
+    return filter.value.includes(option);
+  }
+
+  protected describeSelection(filter: SelectFilterState): string {
+    if (filter.value.includes(ALL_OPTION)) {
+      return 'Todos';
+    }
+
+    if (filter.value.length === 0) {
+      return 'Nenhum valor selecionado';
+    }
+
+    return filter.value.join(', ');
+  }
+
+  protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
+    if (this.loading() || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const filter = this.selectFilters().find((candidate) => candidate.key === key);
+    if (!filter) {
+      return;
+    }
+
+    const ctrlLike = event.ctrlKey || event.metaKey;
+    const selected = new Set(filter.value.filter((entry) => entry !== ALL_OPTION));
+
+    if (value === ALL_OPTION) {
+      this.applyFilterSelection(key, [ALL_OPTION]);
+      this.dragSelectionState = null;
+      return;
+    }
+
+    const shouldSelect = ctrlLike ? !selected.has(value) : true;
+    const nextSelected = ctrlLike ? selected : new Set<string>();
+
+    if (shouldSelect) {
+      nextSelected.add(value);
+    } else {
+      nextSelected.delete(value);
+    }
+
+    this.applyFilterSelection(key, this.orderSelection(filter.options, Array.from(nextSelected)));
+    this.dragSelectionState = { key, mode: shouldSelect ? 'add' : 'remove' };
+  }
+
+  protected continueOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
+    if (!this.dragSelectionState || this.dragSelectionState.key !== key || (event.buttons & 1) !== 1 || value === ALL_OPTION) {
+      return;
+    }
+
+    const filter = this.selectFilters().find((candidate) => candidate.key === key);
+    if (!filter) {
+      return;
+    }
+
+    const selected = new Set(filter.value.filter((entry) => entry !== ALL_OPTION));
+    if (this.dragSelectionState.mode === 'add') {
+      selected.add(value);
+    } else {
+      selected.delete(value);
+    }
+
+    this.applyFilterSelection(key, this.orderSelection(filter.options, Array.from(selected)));
+  }
+
+  protected endFilterDrag(): void {
+    this.dragSelectionState = null;
+  }
+
+  private applyFilterSelection(key: FilterKey, value: string[]): void {
     const updatedFilters = this.selectFilters().map((filter) => filter.key === key ? { ...filter, value } : filter);
 
     if (key === 'ano' || key === 'mes') {
@@ -801,16 +895,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.catalogPollTimer = undefined;
   }
 
-  private buildSelectFilters(overrideValues?: Map<FilterKey, string>): SelectFilterState[] {
+  private buildSelectFilters(overrideValues?: Map<FilterKey, string[]>): SelectFilterState[] {
     const previous = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
     const availableYears = this.yearOptions();
-    const fallbackYear = availableYears.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : (availableYears[0] ?? '');
-    const anoValue = this.resolveValue(previous.get('ano'), this.withAllOption(availableYears), fallbackYear);
+    const fallbackYear = availableYears.includes(String(new Date().getFullYear())) ? [String(new Date().getFullYear())] : (availableYears[0] ? [availableYears[0]] : []);
+    const anoValue = this.resolveValues(previous.get('ano'), this.withAllOption(availableYears), fallbackYear);
 
     const availableMonths = this.monthOptionsFromSelection(anoValue);
     const currentMonth = MONTH_OPTIONS[new Date().getMonth()];
-    const fallbackMonth = availableMonths.includes(currentMonth) ? currentMonth : (availableMonths[0] ?? '');
-    const mesValue = this.resolveValue(previous.get('mes'), this.withAllOption(availableMonths), fallbackMonth);
+    const fallbackMonth = availableMonths.includes(currentMonth) ? [currentMonth] : (availableMonths[0] ? [availableMonths[0]] : []);
+    const mesValue = this.resolveValues(previous.get('mes'), this.withAllOption(availableMonths), fallbackMonth);
 
     return [
       {
@@ -830,7 +924,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       {
         key: 'atuacaoHd',
         title: 'Atuação',
-        value: this.resolveValue(previous.get('atuacaoHd'), this.withAllOption(ATUACAO_HD_OPTIONS), ''),
+        value: this.resolveValues(previous.get('atuacaoHd'), this.withAllOption(ATUACAO_HD_OPTIONS), []),
         options: this.withAllOption(ATUACAO_HD_OPTIONS),
         sourceTitle: FILTER_SOURCE_MAP.atuacaoHd.sourceTitle,
         sourceKind: FILTER_SOURCE_MAP.atuacaoHd.sourceKind,
@@ -839,7 +933,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       {
         key: 'base',
         title: 'Base',
-        value: this.resolveValue(previous.get('base'), this.withAllOption(BASE_OPTIONS), ''),
+        value: this.resolveValues(previous.get('base'), this.withAllOption(BASE_OPTIONS), []),
         options: this.withAllOption(BASE_OPTIONS),
         sourceTitle: FILTER_SOURCE_MAP.base.sourceTitle,
         sourceKind: FILTER_SOURCE_MAP.base.sourceKind,
@@ -848,10 +942,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     ];
   }
 
-  private buildDayRange(overrideValues?: Map<FilterKey, string>): { min: number; max: number } {
+  private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
     const previous = this.dayRange();
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
-    const days = this.dayOptionsFromSelection(values.get('ano') ?? '', values.get('mes') ?? '');
+    const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);
     const minDay = days[0] ?? 1;
     const maxDay = days[days.length - 1] ?? 31;
 
@@ -866,48 +960,64 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return [String(currentYear), String(currentYear - 1)];
   }
 
-  private monthOptionsFromSelection(selectedYear: string): string[] {
-    const normalizedYear = selectedYear === ALL_OPTION ? '' : selectedYear;
+  private monthOptionsFromSelection(selectedYear: string[]): string[] {
+    const normalizedYears = selectedYear.filter((value) => value !== ALL_OPTION);
     const currentYear = new Date().getFullYear();
-    const selectedYearNumber = Number(normalizedYear);
 
-    if (normalizedYear && Number.isFinite(selectedYearNumber) && selectedYearNumber < currentYear) {
+    if (normalizedYears.length === 0) {
       return MONTH_OPTIONS;
     }
 
-    return MONTH_OPTIONS.slice(0, new Date().getMonth() + 1);
+    const includesPastYear = normalizedYears.some((value) => {
+      const year = Number(value);
+      return Number.isFinite(year) && year < currentYear;
+    });
+
+    return includesPastYear ? MONTH_OPTIONS : MONTH_OPTIONS.slice(0, new Date().getMonth() + 1);
   }
 
-  private dayOptionsFromSelection(selectedYear: string, selectedMonth: string): number[] {
-    const normalizedYear = selectedYear === ALL_OPTION ? '' : selectedYear;
-    const normalizedMonth = selectedMonth === ALL_OPTION ? '' : selectedMonth;
-    const selectedMonthIndex = MONTH_OPTIONS.indexOf(normalizedMonth);
+  private dayOptionsFromSelection(selectedYear: string[], selectedMonth: string[]): number[] {
+    const normalizedYears = selectedYear.filter((value) => value !== ALL_OPTION);
+    const normalizedMonths = selectedMonth.filter((value) => value !== ALL_OPTION);
+    const selectedMonthIndexes = normalizedMonths
+      .map((value) => MONTH_OPTIONS.indexOf(value))
+      .filter((index) => index !== -1);
 
-    if (selectedMonthIndex === -1) {
+    if (selectedMonthIndexes.length === 0) {
       return Array.from({ length: 31 }, (_, index) => index + 1);
     }
 
     const currentDate = new Date();
-    const resolvedYear = normalizedYear ? Number(normalizedYear) : currentDate.getFullYear();
-    const maxDay = new Date(resolvedYear, selectedMonthIndex + 1, 0).getDate();
-    const limitedMaxDay = normalizedYear === String(currentDate.getFullYear()) && selectedMonthIndex === currentDate.getMonth()
-      ? Math.min(maxDay, currentDate.getDate())
-      : maxDay;
+    const resolvedYears = normalizedYears
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const years = resolvedYears.length > 0 ? resolvedYears : [currentDate.getFullYear()];
+    let limit = 31;
 
-    return Array.from({ length: limitedMaxDay }, (_, index) => index + 1);
+    for (const year of years) {
+      for (const monthIndex of selectedMonthIndexes) {
+        const maxDay = new Date(year, monthIndex + 1, 0).getDate();
+        const limitedMaxDay = year === currentDate.getFullYear() && monthIndex === currentDate.getMonth()
+          ? Math.min(maxDay, currentDate.getDate())
+          : maxDay;
+        limit = Math.max(limit, limitedMaxDay);
+      }
+    }
+
+    return Array.from({ length: limit }, (_, index) => index + 1);
   }
 
   private buildSelectedFilters(): SpotfireFilter[] {
     const filters: SpotfireFilter[] = [];
 
     for (const filter of this.secondaryFilters()) {
-      if (!filter.value || !filter.enabled || !filter.sourceTitle || !filter.sourceKind) {
+      if (filter.value.length === 0 || !filter.enabled || !filter.sourceTitle || !filter.sourceKind) {
         continue;
       }
 
-      const selectedValues = filter.value === ALL_OPTION
+      const selectedValues = filter.value.includes(ALL_OPTION)
         ? filter.options.filter((option) => option !== ALL_OPTION)
-        : [filter.value];
+        : filter.value;
 
       if (selectedValues.length === 0) {
         continue;
@@ -924,11 +1034,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private buildPeriodSelection(): PeriodSelectionPayload {
-    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? '';
-    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? '';
+    const yearFilter = this.periodFilters().find((filter) => filter.key === 'ano');
+    const monthFilter = this.periodFilters().find((filter) => filter.key === 'mes');
+    const year = yearFilter?.value.includes(ALL_OPTION)
+      ? yearFilter.options.filter((option) => option !== ALL_OPTION)
+      : (yearFilter?.value ?? []);
+    const month = monthFilter?.value.includes(ALL_OPTION)
+      ? monthFilter.options.filter((option) => option !== ALL_OPTION)
+      : (monthFilter?.value ?? []);
+
     return {
-      year: year || undefined,
-      month: month || undefined,
+      year: year.length > 0 ? year : undefined,
+      month: month.length > 0 ? month : undefined,
       dayRange: {
         min: this.dayRange().min,
         max: this.dayRange().max,
@@ -936,24 +1053,31 @@ export class DashboardComponent implements OnInit, OnDestroy {
     };
   }
 
-  private resolveValue(value: string | undefined, options: string[], fallback: string): string {
-    if (value === ALL_OPTION && options.includes(ALL_OPTION)) {
-      return ALL_OPTION;
+  private resolveValues(value: string[] | undefined, options: string[], fallback: string[]): string[] {
+    if (value?.includes(ALL_OPTION) && options.includes(ALL_OPTION)) {
+      return [ALL_OPTION];
     }
 
-    if (value && options.includes(value)) {
-      return value;
+    const selected = this.orderSelection(options, (value ?? []).filter((entry) => options.includes(entry) && entry !== ALL_OPTION));
+    if (selected.length > 0) {
+      return selected;
     }
 
-    if (fallback && options.includes(fallback)) {
-      return fallback;
+    const fallbackSelection = this.orderSelection(options, fallback.filter((entry) => options.includes(entry) && entry !== ALL_OPTION));
+    if (fallbackSelection.length > 0) {
+      return fallbackSelection;
     }
 
-    return '';
+    return [];
   }
 
   private withAllOption(options: string[]): string[] {
     return [...new Set([ALL_OPTION, ...options.filter((option) => option !== ALL_OPTION)])];
+  }
+
+  private orderSelection(options: string[], selection: string[]): string[] {
+    const selected = new Set(selection.filter((entry) => entry !== ALL_OPTION));
+    return options.filter((option) => option !== ALL_OPTION && selected.has(option));
   }
 
   private describeHttpError(error: unknown): string {

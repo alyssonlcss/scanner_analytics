@@ -2926,8 +2926,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
    * periodSelection, avoiding the need to scan the virtualized list.
    */
   private generateReferenceDates(periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): string[] {
-    const year = parseInt(periodSelection.year ?? '', 10);
-    const monthIndex = MONTH_OPTIONS.indexOf((periodSelection.month ?? '').toLowerCase());
+    const year = parseInt(this.normalizePeriodSelectionValues(periodSelection.year)[0] ?? '', 10);
+    const monthIndex = MONTH_OPTIONS.indexOf((this.normalizePeriodSelectionValues(periodSelection.month)[0] ?? '').toLowerCase());
 
     if (Number.isNaN(year) || monthIndex === -1) {
       return [];
@@ -3539,19 +3539,19 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private buildYearMonthFilters(filters: SpotfireFilter[], periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): SpotfireFilter[] {
-    const yearValue = periodSelection.year ?? '';
-    const monthValue = periodSelection.month && periodSelection.month !== ALL_OPTION ? periodSelection.month : '';
+    const yearValues = this.normalizePeriodSelectionValues(periodSelection.year);
+    const monthValues = this.normalizePeriodSelectionValues(periodSelection.month);
     const builtFilters: SpotfireFilter[] = [];
     const resolvedYearTitle = this.resolveActualFilterTitle(filters, 'Ano');
     const resolvedMonthTitle = this.resolveActualFilterTitle(filters, 'Mês');
 
-    if (yearValue && resolvedYearTitle) {
+    if (yearValues.length > 0 && resolvedYearTitle) {
       const yearFilter = filters.find((filter) => this.normalizeFilterName(filter.title) === this.normalizeFilterName(resolvedYearTitle));
-      const yearSelectedValues = yearValue === ALL_OPTION
+      const yearSelectedValues = yearValues.includes(ALL_OPTION)
         ? (yearFilter?.options ?? [])
           .map((option) => option.label)
           .filter((option) => /^\d{4}$/.test(option.trim()))
-        : [yearValue];
+        : Array.from(new Set(yearValues));
 
       builtFilters.push({
         title: resolvedYearTitle,
@@ -3560,12 +3560,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
     }
 
-    if (monthValue && resolvedMonthTitle) {
+    if (monthValues.length > 0 && resolvedMonthTitle) {
       const monthFilter = filters.find((filter) => this.normalizeFilterName(filter.title) === this.normalizeFilterName(resolvedMonthTitle));
+      const monthSelectedValues = monthValues.includes(ALL_OPTION)
+        ? (monthFilter?.options ?? [])
+          .map((option) => option.label)
+          .filter((option) => option !== ALL_OPTION && option !== '...')
+        : Array.from(new Set(monthValues.filter((value) => value !== ALL_OPTION)));
+
       builtFilters.push({
         title: resolvedMonthTitle,
         kind: monthFilter?.kind ?? 'list',
-        selectedValues: [monthValue],
+        selectedValues: monthSelectedValues,
       });
     }
 
@@ -3583,8 +3589,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     filtersToApply.push(...this.buildYearMonthFilters(availableFilters, request.periodSelection));
 
     this.log('preserving period dayRange for downstream CSV filtering without applying Data Referência in Spotfire', {
-      year: request.periodSelection.year ?? null,
-      month: request.periodSelection.month ?? null,
+      year: this.normalizePeriodSelectionValues(request.periodSelection.year),
+      month: this.normalizePeriodSelectionValues(request.periodSelection.month),
       dayRange: request.periodSelection.dayRange ?? null,
     });
 
@@ -3602,9 +3608,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return undefined;
     }
 
-    const normalizedYear = periodSelection.year && periodSelection.year !== ALL_OPTION ? periodSelection.year : '';
-    const normalizedMonth = periodSelection.month && periodSelection.month !== ALL_OPTION ? periodSelection.month : '';
-    const selectedMonthIndex = MONTH_OPTIONS.indexOf(normalizedMonth.toLowerCase());
+    const normalizedYears = this.normalizePeriodSelectionValues(periodSelection.year).filter((value) => value !== ALL_OPTION);
+    const normalizedMonths = this.normalizePeriodSelectionValues(periodSelection.month).filter((value) => value !== ALL_OPTION);
+    const selectedMonthIndexes = normalizedMonths.map((value) => MONTH_OPTIONS.indexOf(value.toLowerCase())).filter((value) => value !== -1);
     const minDay = periodSelection.dayRange?.min ?? 1;
     const maxDay = periodSelection.dayRange?.max ?? 31;
 
@@ -3618,11 +3624,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           return false;
         }
 
-        if (normalizedYear && String(parsedDate.getFullYear()) !== normalizedYear) {
+        if (normalizedYears.length > 0 && !normalizedYears.includes(String(parsedDate.getFullYear()))) {
           return false;
         }
 
-        if (selectedMonthIndex !== -1 && parsedDate.getMonth() !== selectedMonthIndex) {
+        if (selectedMonthIndexes.length > 0 && !selectedMonthIndexes.includes(parsedDate.getMonth())) {
           return false;
         }
 
@@ -3632,8 +3638,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     if (!selectedValues.length) {
       this.log('period selection did not resolve any Data Referência values', {
-        year: periodSelection.year ?? null,
-        month: periodSelection.month ?? null,
+        year: normalizedYears,
+        month: normalizedMonths,
         minDay,
         maxDay,
       });
@@ -3645,6 +3651,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       kind: 'list',
       selectedValues,
     };
+  }
+
+  private normalizePeriodSelectionValues(value: string | string[] | undefined): string[] {
+    if (Array.isArray(value)) {
+      return Array.from(new Set(value.map((entry) => entry.trim()).filter((entry) => entry.length > 0)));
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return [value.trim()];
+    }
+
+    return [];
   }
 
   private resolveRequestedFilters(availableFilters: SpotfireFilter[], requestedFilters: SpotfireFilter[]): SpotfireFilter[] {

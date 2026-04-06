@@ -1,8 +1,8 @@
 import type { SpotfireFilter } from './spotfire-filter.js';
 
 export interface ScannerPeriodSelection {
-  year?: string;
-  month?: string;
+  year?: string | string[];
+  month?: string | string[];
   dayRange?: {
     min: number;
     max: number;
