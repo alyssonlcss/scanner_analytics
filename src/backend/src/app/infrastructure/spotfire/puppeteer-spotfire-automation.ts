@@ -917,6 +917,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const clickValues = isAllSelect ? ['(All)'] : values;
     const isSingleExplicitSelection = !isAllSelect && clickValues.length === 1;
     const filterHost = await this.inspectFilterHost(page, filterTitle);
+    const requiresSearchBeforeSelect = this.normalizeFilterName(filterTitle) === 'ano' && !isAllSelect;
 
     if (filterHost.resolvedHost === 'right-panel' && this.normalizeFilterName(filterTitle) === 'ano') {
       return this.applyRightPanelYearFilter(page, filterTitle, values, isAllSelect);
@@ -1104,6 +1105,21 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       allowCtrlFallback: boolean,
       useCtrlForPrimaryClick: boolean,
     ): Promise<boolean> => {
+      if (requiresSearchBeforeSelect) {
+        const inputPrepared = await this.setLeftFiltrosSearchInputValue(page, filterTitle, searchTerm);
+        this.logStep('list-filter', inputPrepared ? 'OK' : 'WARN', 'prepared left-side search input before selecting list value', {
+          filterTitle,
+          searchTerm,
+          inputPrepared,
+        });
+
+        if (!inputPrepared) {
+          return false;
+        }
+
+        await new Promise((r) => setTimeout(r, 180));
+      }
+
       // Re-locate the filter to ensure it's in the viewport
       await this.locateFilterElement(page, filterTitle);
       // Right-panel filters are sensitive to activation clicks and can clear the current selection.
@@ -1266,6 +1282,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await this.locateFilterElement(page, filterTitle);
     }
 
+    if (requiresSearchBeforeSelect) {
+      await this.setLeftFiltrosSearchInputValue(page, filterTitle, '');
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
     await this.waitForSpotfireIdle(page);
 
     // NOTE: Spotfire listboxes are virtualized. Selected items may not be rendered,
@@ -1276,6 +1297,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     if (!isAllSelect) {
       for (const verifyValue of clickValues) {
+        if (requiresSearchBeforeSelect) {
+          await this.setLeftFiltrosSearchInputValue(page, filterTitle, verifyValue);
+          await new Promise((r) => setTimeout(r, 120));
+        }
+
         await this.locateFilterElement(page, filterTitle);
         if (filterHost.resolvedHost !== 'right-panel') {
           await this.activateFilter(page, filterTitle);
@@ -1286,6 +1312,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (item?.selected) {
           verifiedSelected.push(item.label);
         }
+      }
+
+      if (requiresSearchBeforeSelect) {
+        await this.setLeftFiltrosSearchInputValue(page, filterTitle, '');
+        await new Promise((r) => setTimeout(r, 150));
       }
     }
 
@@ -1327,6 +1358,67 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       applied: allFound,
       reason: allFound ? 'list filter applied' : `expected [${expectedNorm.join(', ')}] but found [${actualSelected.join(', ')}]`,
     };
+  }
+
+  private async setLeftFiltrosSearchInputValue(page: Page, filterTitle: string, value: string): Promise<boolean> {
+    return page.evaluate((args: { title: string; value: string }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      function isVisible(element: HTMLElement | null | undefined): element is HTMLElement {
+        if (!element) {
+          return false;
+        }
+
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) {
+        return false;
+      }
+
+      let filterEl: HTMLElement | null = null;
+
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      const input = filterEl?.querySelector<HTMLInputElement>('input.SearchInput, input[placeholder*="Type to search in list"]');
+      if (!input || !isVisible(input)) {
+        return false;
+      }
+
+      input.scrollIntoView({ block: 'center' });
+      input.focus();
+      input.click();
+      input.value = args.value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keyup', {
+        bubbles: true,
+        key: args.value ? args.value.slice(-1) : 'Backspace',
+      }));
+
+      return document.activeElement === input && input.value === args.value;
+    }, { title: filterTitle, value });
   }
 
   private async applyRightPanelYearFilter(
