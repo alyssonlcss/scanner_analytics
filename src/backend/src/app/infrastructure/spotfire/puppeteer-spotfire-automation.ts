@@ -722,15 +722,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
 
       function matchLabel(candidate: string, requested: string): boolean {
-        if (candidate === requested) {
-          return true;
-        }
-        if (candidate.includes(requested) || requested.includes(candidate)) {
-          return true;
-        }
         if (requested === '(all)') {
           return candidate.startsWith('(all)');
         }
+
+        if (candidate === requested) {
+          return true;
+        }
+
         return false;
       }
 
@@ -917,9 +916,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const clickValues = isAllSelect ? ['(All)'] : values;
     const isSingleExplicitSelection = !isAllSelect && clickValues.length === 1;
     const filterHost = await this.inspectFilterHost(page, filterTitle);
-    const requiresSearchBeforeSelect = this.normalizeFilterName(filterTitle) === 'ano' && !isAllSelect;
+    const normalizedFilterTitle = this.normalizeFilterName(filterTitle);
+    const requiresSearchBeforeSelect = normalizedFilterTitle === 'ano' && !isAllSelect;
+    const requiresScrollBeforeSelect = (normalizedFilterTitle === 'mes' || normalizedFilterTitle === 'base') && !isAllSelect;
+    const requiresSingleClickSelection = (normalizedFilterTitle === 'mes' || normalizedFilterTitle === 'base') && !isAllSelect;
 
-    if (filterHost.resolvedHost === 'right-panel' && this.normalizeFilterName(filterTitle) === 'ano') {
+    if (filterHost.resolvedHost === 'right-panel' && normalizedFilterTitle === 'ano') {
       return this.applyRightPanelYearFilter(page, filterTitle, values, isAllSelect);
     }
 
@@ -1122,17 +1124,32 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       // Re-locate the filter to ensure it's in the viewport
       await this.locateFilterElement(page, filterTitle);
+
       // Right-panel filters are sensitive to activation clicks and can clear the current selection.
       if (filterHost.resolvedHost !== 'right-panel') {
         await this.activateListFilter(page, filterTitle);
       }
       await new Promise((r) => setTimeout(r, 180));
 
+      if (requiresScrollBeforeSelect) {
+        const scrolled = await this.scrollListItemIntoView(page, filterTitle, searchTerm);
+        this.logStep('list-filter', scrolled ? 'OK' : 'WARN', 'scrolled list to requested value before selection', {
+          filterTitle,
+          searchTerm,
+          scrolled,
+        });
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
       let item = await this.findListItemCoords(page, filterTitle, searchTerm);
 
       if (!item) {
         this.logStep('list-filter', 'WARN', 'list item not found', { filterTitle, searchTerm });
         return false;
+      }
+
+      if (item.selected) {
+        return true;
       }
 
       // Click near the left side (on top of the text) – this matches the user's manual interaction.
@@ -1158,43 +1175,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return this.clickListItemDomFallback(page, filterTitle, searchTerm, useCtrlForPrimaryClick);
       };
 
-      if (filterHost.resolvedHost === 'right-panel') {
-        const clickedViaDom = await performDomClick();
-        if (clickedViaDom) {
-          await new Promise((r) => setTimeout(r, 250));
-
-          if (isSingleExplicitSelection) {
-            const summary = await readListFilterSummary();
-            if (summary.filteredCount === 1) {
-              return true;
-            }
-          }
-
-          let afterDomClick = await this.findListItemCoords(page, filterTitle, searchTerm);
-          if (afterDomClick?.selected) {
-            return true;
-          }
-        }
-      }
-
-      await performMouseClick();
-      await new Promise((r) => setTimeout(r, 200));
-
-      if (isSingleExplicitSelection) {
-        const summary = await readListFilterSummary();
-        if (summary.filteredCount === 1) {
+      const verifySelected = async (): Promise<boolean> => {
+        const after = await this.findListItemCoords(page, filterTitle, searchTerm);
+        if (after?.selected) {
           return true;
         }
-      }
-
-      let after = await this.findListItemCoords(page, filterTitle, searchTerm);
-      if (after?.selected) {
-        return true;
-      }
-
-      const clickedViaDom = await performDomClick();
-      if (clickedViaDom) {
-        await new Promise((r) => setTimeout(r, 250));
 
         if (isSingleExplicitSelection) {
           const summary = await readListFilterSummary();
@@ -1203,8 +1188,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           }
         }
 
-        after = await this.findListItemCoords(page, filterTitle, searchTerm);
-        if (after?.selected) {
+        return false;
+      };
+
+      if (filterHost.resolvedHost === 'right-panel') {
+        const clickedViaDom = await performDomClick();
+        if (clickedViaDom) {
+          await new Promise((r) => setTimeout(r, 250));
+
+          if (await verifySelected()) {
+            return true;
+          }
+        }
+      }
+
+      await performMouseClick();
+      await new Promise((r) => setTimeout(r, 200));
+
+      if (await verifySelected()) {
+        return true;
+      }
+
+      if (requiresSingleClickSelection) {
+        await this.waitForSpotfireIdle(page, 8000);
+        await this.scrollListItemIntoView(page, filterTitle, searchTerm);
+        return verifySelected();
+      }
+
+      const clickedViaDom = await performDomClick();
+      if (clickedViaDom) {
+        await new Promise((r) => setTimeout(r, 250));
+
+        if (await verifySelected()) {
           return true;
         }
       }
@@ -1213,14 +1228,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await performMouseClick();
       await new Promise((r) => setTimeout(r, 200));
 
-      if (isSingleExplicitSelection) {
-        const summary = await readListFilterSummary();
-        if (summary.filteredCount === 1) {
-          return true;
-        }
-      }
-      after = await this.findListItemCoords(page, filterTitle, searchTerm);
-      if (after?.selected) {
+      if (await verifySelected()) {
         return true;
       }
 
@@ -1231,14 +1239,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         await page.keyboard.up('Control');
         await new Promise((r) => setTimeout(r, 250));
 
-        if (isSingleExplicitSelection) {
-          const summary = await readListFilterSummary();
-          if (summary.filteredCount === 1) {
-            return true;
-          }
-        }
-        after = await this.findListItemCoords(page, filterTitle, searchTerm);
-        if (after?.selected) {
+        if (await verifySelected()) {
           return true;
         }
 
@@ -1246,15 +1247,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (ctrlClickedViaDom) {
           await new Promise((r) => setTimeout(r, 250));
 
-          if (isSingleExplicitSelection) {
-            const summary = await readListFilterSummary();
-            if (summary.filteredCount === 1) {
-              return true;
-            }
-          }
-
-          after = await this.findListItemCoords(page, filterTitle, searchTerm);
-          if (after?.selected) {
+          if (await verifySelected()) {
             return true;
           }
         }
@@ -1300,6 +1293,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (requiresSearchBeforeSelect) {
           await this.setLeftFiltrosSearchInputValue(page, filterTitle, verifyValue);
           await new Promise((r) => setTimeout(r, 120));
+        }
+
+        if (requiresScrollBeforeSelect) {
+          await this.scrollListItemIntoView(page, filterTitle, verifyValue);
         }
 
         await this.locateFilterElement(page, filterTitle);
@@ -1419,6 +1416,88 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       return document.activeElement === input && input.value === args.value;
     }, { title: filterTitle, value });
+  }
+
+  private async scrollListItemIntoView(page: Page, filterTitle: string, itemLabel: string): Promise<boolean> {
+    return page.evaluate(async (args: { title: string; label: string }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      async function wait(ms: number): Promise<void> {
+        await new Promise((r) => window.setTimeout(r, ms));
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) {
+        return false;
+      }
+
+      let filterEl: HTMLElement | null = null;
+
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      if (!filterEl) {
+        return false;
+      }
+
+      const requested = nc(args.label);
+      const sc = filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+        ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+
+      function findItem(): HTMLElement | null {
+        return Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
+          const candidate = nc(item.getAttribute('title') ?? item.textContent);
+          return requested === '(all)' ? candidate.startsWith('(all)') : candidate === requested;
+        }) ?? null;
+      }
+
+      if (!sc) {
+        const item = findItem();
+        item?.scrollIntoView({ block: 'center' });
+        return item !== null;
+      }
+
+      sc.scrollTop = 0;
+      sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await wait(100);
+
+      let item = findItem();
+      const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
+      const step = Math.max(Math.floor(sc.clientHeight * 0.6), 30);
+
+      for (let offset = 0; offset <= max && !item; offset += step) {
+        sc.scrollTop = offset;
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(100);
+        item = findItem();
+      }
+
+      if (!item) {
+        return false;
+      }
+
+      item.scrollIntoView({ block: 'center' });
+      await wait(80);
+      return true;
+    }, { title: filterTitle, label: itemLabel });
   }
 
   private async applyRightPanelYearFilter(
@@ -1836,16 +1915,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
 
       function matchLabel(candidate: string, requested: string): boolean {
-        if (candidate === requested) {
-          return true;
-        }
-
-        if (candidate.includes(requested) || requested.includes(candidate)) {
-          return true;
-        }
-
         if (requested === '(all)') {
           return candidate.startsWith('(all)');
+        }
+
+        if (candidate === requested) {
+          return true;
         }
 
         return false;
@@ -3583,7 +3658,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const filtersToApply = [...requestedFilters];
 
     if (!request.periodSelection) {
-      return filtersToApply;
+      return this.orderFiltersForApplication(filtersToApply);
     }
 
     filtersToApply.push(...this.buildYearMonthFilters(availableFilters, request.periodSelection));
@@ -3594,7 +3669,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       dayRange: request.periodSelection.dayRange ?? null,
     });
 
-    return filtersToApply;
+    return this.orderFiltersForApplication(filtersToApply);
+  }
+
+  private orderFiltersForApplication(filters: SpotfireFilter[]): SpotfireFilter[] {
+    const orderedTitles = ['ano', 'mes', 'atuacao', 'base'];
+
+    return [...filters]
+      .map((filter, index) => ({ filter, index }))
+      .sort((left, right) => {
+        const leftPriority = this.filterApplicationPriority(left.filter.title, orderedTitles);
+        const rightPriority = this.filterApplicationPriority(right.filter.title, orderedTitles);
+
+        if (leftPriority !== rightPriority) {
+          return leftPriority - rightPriority;
+        }
+
+        return left.index - right.index;
+      })
+      .map((entry) => entry.filter);
+  }
+
+  private filterApplicationPriority(filterTitle: string, orderedTitles: string[]): number {
+    const normalized = this.normalizeFilterName(filterTitle);
+    const matchedIndex = orderedTitles.findIndex((title) => {
+      if (title === 'atuacao') {
+        return normalized === 'atuacao' || normalized === 'atuacaohd';
+      }
+
+      return normalized === title;
+    });
+
+    return matchedIndex === -1 ? orderedTitles.length : matchedIndex;
   }
 
   private buildReferenceDateFilter(filters: SpotfireFilter[], periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): SpotfireFilter | undefined {
