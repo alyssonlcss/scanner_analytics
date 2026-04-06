@@ -917,9 +917,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const isSingleExplicitSelection = !isAllSelect && clickValues.length === 1;
     const filterHost = await this.inspectFilterHost(page, filterTitle);
     const normalizedFilterTitle = this.normalizeFilterName(filterTitle);
+
+    if (this.usesScrollableListSelectionWorkflow(filterTitle)) {
+      return this.applyScrollableListFilterPhysical(page, filterTitle, clickValues, isAllSelect);
+    }
+
     const requiresSearchBeforeSelect = normalizedFilterTitle === 'ano' && !isAllSelect;
     const requiresScrollBeforeSelect = (normalizedFilterTitle === 'mes' || normalizedFilterTitle === 'base') && !isAllSelect;
     const requiresSingleClickSelection = (normalizedFilterTitle === 'mes' || normalizedFilterTitle === 'base') && !isAllSelect;
+    const requiresExactDomSelection = normalizedFilterTitle === 'mes' && !isAllSelect;
+    const requiresAtomicScrolledDomSelection = normalizedFilterTitle === 'mes' && !isAllSelect;
 
     if (filterHost.resolvedHost === 'right-panel' && normalizedFilterTitle === 'ano') {
       return this.applyRightPanelYearFilter(page, filterTitle, values, isAllSelect);
@@ -1148,7 +1155,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return false;
       }
 
-      if (item.selected) {
+      const mustReapplyExactBaseline = requiresAtomicScrolledDomSelection && !useCtrlForPrimaryClick;
+
+      if (item.selected && !mustReapplyExactBaseline) {
         return true;
       }
 
@@ -1156,7 +1165,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       const primaryX = item.labelX ?? item.clickX;
       const primaryY = item.labelY ?? item.clickY;
 
-      if (filterHost.resolvedHost !== 'right-panel') {
+      if (filterHost.resolvedHost !== 'right-panel' && !requiresExactDomSelection) {
         await this.activateFilter(page, filterTitle);
       }
 
@@ -1200,6 +1209,26 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             return true;
           }
         }
+      }
+
+      if (requiresAtomicScrolledDomSelection) {
+        const clickedViaDom = await this.scrollAndClickExactListItem(page, filterTitle, searchTerm, useCtrlForPrimaryClick);
+        if (!clickedViaDom) {
+          return false;
+        }
+
+        await new Promise((r) => setTimeout(r, 250));
+        return verifySelected();
+      }
+
+      if (requiresExactDomSelection) {
+        const clickedViaDom = await performDomClick();
+        if (!clickedViaDom) {
+          return false;
+        }
+
+        await new Promise((r) => setTimeout(r, 250));
+        return verifySelected();
       }
 
       await performMouseClick();
@@ -1317,25 +1346,48 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
     }
 
-    // For debugging only: capture any currently-visible selected items too
-    const visibleSelected = await this.getSelectedListItems(page, filterTitle);
-    const actualSelected = Array.from(new Set([...verifiedSelected, ...visibleSelected]));
+    const evaluateSelectionState = async (): Promise<{
+      actualSelected: string[];
+      summary: Awaited<ReturnType<typeof readListFilterSummary>>;
+      summaryLabels: string[];
+      allFound: boolean;
+    }> => {
+      const visibleSelected = await this.getSelectedListItems(page, filterTitle);
+      const actualSelected = Array.from(new Set([...verifiedSelected, ...visibleSelected]));
+      const summary = await readListFilterSummary();
+      const summaryLabels = summarySelectedLabels(summary);
+      const expectedCount = isAllSelect ? null : clickValues.length;
+      const labelsMatchExpected = expectedNorm.every((exp) => actualSelected.some((act) => act.includes(exp) || exp.includes(act)));
+      const summaryLabelsMatchExpected = summaryLabels.length > 0
+        && expectedNorm.every((exp) => summaryLabels.some((act) => act.includes(exp) || exp.includes(act)));
+      const countMatches = expectedCount !== null
+        && summary.filteredCount !== null
+        && summary.filteredCount === expectedCount
+        && (!actualSelected.length || labelsMatchExpected || summaryLabelsMatchExpected);
 
-    const summary = await readListFilterSummary();
-    const summaryLabels = summarySelectedLabels(summary);
-    const expectedCount = isAllSelect ? null : clickValues.length;
-    const labelsMatchExpected = expectedNorm.every((exp) => actualSelected.some((act) => act.includes(exp) || exp.includes(act)));
-    const summaryLabelsMatchExpected = summaryLabels.length > 0
-      && expectedNorm.every((exp) => summaryLabels.some((act) => act.includes(exp) || exp.includes(act)));
-    const countMatches = expectedCount !== null
-      && summary.filteredCount !== null
-      && summary.filteredCount === expectedCount
-      && (!actualSelected.length || labelsMatchExpected || summaryLabelsMatchExpected);
+      return {
+        actualSelected,
+        summary,
+        summaryLabels,
+        allFound: isAllSelect || labelsMatchExpected || summaryLabelsMatchExpected || countMatches,
+      };
+    };
 
-    const allFound = isAllSelect
-      || labelsMatchExpected
-      || summaryLabelsMatchExpected
-      || countMatches;
+    let { actualSelected, summary, summaryLabels, allFound } = await evaluateSelectionState();
+
+    if (!allFound && normalizedFilterTitle === 'mes' && !isAllSelect) {
+      const reconciled = await this.reconcileExactMonthSelection(page, filterTitle, clickValues);
+      this.logStep('list-filter', reconciled ? 'OK' : 'WARN', 'reconciled month selection after mismatch', {
+        filterTitle,
+        expected: clickValues,
+        reconciled,
+      });
+
+      if (reconciled) {
+        await this.waitForSpotfireIdle(page, 8000);
+        ({ actualSelected, summary, summaryLabels, allFound } = await evaluateSelectionState());
+      }
+    }
 
     this.logStep('list-filter', allFound ? 'OK' : 'WARN', `list verification for ${filterTitle}`, {
       expected: expectedNorm,
@@ -1354,6 +1406,94 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     return {
       applied: allFound,
       reason: allFound ? 'list filter applied' : `expected [${expectedNorm.join(', ')}] but found [${actualSelected.join(', ')}]`,
+    };
+  }
+
+  private usesScrollableListSelectionWorkflow(filterTitle: string): boolean {
+    const normalized = this.normalizeFilterName(filterTitle);
+
+    return normalized === 'ano'
+      || normalized === 'mes'
+      || normalized === 'atuacao'
+      || normalized === 'atuacaohd'
+      || normalized === 'base'
+      || normalized === 'periodo'
+      || normalized === 'equipe';
+  }
+
+  private async applyScrollableListFilterPhysical(
+    page: Page,
+    filterTitle: string,
+    selectedValues: string[],
+    isAllSelect: boolean,
+  ): Promise<{ applied: boolean; reason: string }> {
+    await this.locateFilterElement(page, filterTitle);
+    await this.activateListFilter(page, filterTitle);
+    await new Promise((r) => setTimeout(r, 180));
+
+    const allClicked = await this.scrollAndClickExactListItem(page, filterTitle, '(All)', false);
+    this.logStep('list-filter', allClicked ? 'OK' : 'WARN', 'activated internal list scroll by clicking (All)', {
+      filterTitle,
+      allClicked,
+    });
+
+    await this.waitForSpotfireIdle(page, 8000);
+
+    if (isAllSelect) {
+      return {
+        applied: allClicked,
+        reason: allClicked ? 'list filter applied' : 'could not click (All) to activate list',
+      };
+    }
+
+    for (let index = 0; index < selectedValues.length; index += 1) {
+      const value = selectedValues[index];
+
+      await this.locateFilterElement(page, filterTitle);
+      await this.activateListFilter(page, filterTitle);
+      await new Promise((r) => setTimeout(r, 120));
+
+      const clicked = await this.scrollAndClickExactListItem(page, filterTitle, value, index > 0);
+      this.logStep('list-filter', clicked ? 'OK' : 'WARN', 'selected list item using internal scroll workflow', {
+        filterTitle,
+        value,
+        ctrlKey: index > 0,
+        clicked,
+      });
+
+      if (!clicked) {
+        return { applied: false, reason: `could not select ${value}` };
+      }
+
+      await this.waitForSpotfireIdle(page, 8000);
+    }
+
+    const verifiedSelected: string[] = [];
+
+    for (const value of selectedValues) {
+      await this.locateFilterElement(page, filterTitle);
+      await this.activateListFilter(page, filterTitle);
+      await new Promise((r) => setTimeout(r, 100));
+      await this.scrollListItemIntoView(page, filterTitle, value);
+
+      const item = await this.findListItemCoords(page, filterTitle, value);
+      if (item?.selected) {
+        verifiedSelected.push(item.label);
+      }
+    }
+
+    const expectedNorm = selectedValues.map((value) => this.normalizeForCompare(value));
+    const actualNorm = verifiedSelected.map((value) => this.normalizeForCompare(value));
+    const allFound = expectedNorm.every((value) => actualNorm.includes(value)) && actualNorm.length === expectedNorm.length;
+
+    this.logStep('list-filter', allFound ? 'OK' : 'WARN', `internal-scroll verification for ${filterTitle}`, {
+      expected: expectedNorm,
+      actual: actualNorm,
+    });
+
+    return {
+      applied: allFound,
+      reason: allFound ? 'list filter applied' : `expected [${expectedNorm.join(', ')}] but found [${actualNorm.join(', ')}]`,
     };
   }
 
@@ -1498,6 +1638,143 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await wait(80);
       return true;
     }, { title: filterTitle, label: itemLabel });
+  }
+
+  private async scrollAndClickExactListItem(page: Page, filterTitle: string, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
+    return page.evaluate(async (args: { title: string; label: string; ctrlKey: boolean }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      async function wait(ms: number): Promise<void> {
+        await new Promise((r) => window.setTimeout(r, ms));
+      }
+
+      function resolveFilterElement(): HTMLElement | null {
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (!visual) {
+          return null;
+        }
+
+        for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+          const paragraph = control.closest('p');
+          const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+          if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+            return control;
+          }
+        }
+
+        return null;
+      }
+
+      function dispatchClick(target: HTMLElement): void {
+        const rect = target.getBoundingClientRect();
+        const clientX = rect.left + Math.min(Math.max(rect.width / 2, 6), Math.max(rect.width - 2, 6));
+        const clientY = rect.top + Math.min(Math.max(rect.height / 2, 6), Math.max(rect.height - 2, 6));
+
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+          target.dispatchEvent(new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            ctrlKey: args.ctrlKey,
+            button: 0,
+            buttons: 1,
+            clientX,
+            clientY,
+          }));
+        }
+      }
+
+      const filterEl = resolveFilterElement();
+      if (!filterEl) {
+        return false;
+      }
+
+      const resolvedFilterEl = filterEl;
+
+      const requested = nc(args.label);
+      const sc = resolvedFilterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? resolvedFilterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+        ?? resolvedFilterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+
+      function findItem(): HTMLElement | null {
+        return Array.from(resolvedFilterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
+          const candidate = nc(item.getAttribute('title') ?? item.textContent);
+          return requested === '(all)' ? candidate.startsWith('(all)') : candidate === requested;
+        }) ?? null;
+      }
+
+      if (sc) {
+        sc.scrollTop = 0;
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(80);
+
+        let item = findItem();
+        const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
+        const step = Math.max(Math.floor(sc.clientHeight * 0.55), 24);
+
+        for (let offset = 0; offset <= max && !item; offset += step) {
+          sc.scrollTop = offset;
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(80);
+          item = findItem();
+        }
+
+        if (!item) {
+          return false;
+        }
+
+        item.scrollIntoView({ block: 'center' });
+        await wait(60);
+        item = findItem() ?? item;
+        dispatchClick(item);
+        return true;
+      }
+
+      const item = findItem();
+      if (!item) {
+        return false;
+      }
+
+      item.scrollIntoView({ block: 'center' });
+      await wait(60);
+      dispatchClick(item);
+      return true;
+    }, { title: filterTitle, label: itemLabel, ctrlKey });
+  }
+
+  private async reconcileExactMonthSelection(page: Page, filterTitle: string, requestedMonths: string[]): Promise<boolean> {
+    if (requestedMonths.length === 0) {
+      return true;
+    }
+
+    const firstSelected = await this.scrollAndClickExactListItem(page, filterTitle, requestedMonths[0], false);
+    if (!firstSelected) {
+      return false;
+    }
+
+    await this.waitForSpotfireIdle(page, 8000);
+
+    for (let index = 1; index < requestedMonths.length; index += 1) {
+      const selected = await this.scrollAndClickExactListItem(page, filterTitle, requestedMonths[index], true);
+      if (!selected) {
+        return false;
+      }
+
+      await this.waitForSpotfireIdle(page, 8000);
+    }
+
+    return true;
   }
 
   private async applyRightPanelYearFilter(
