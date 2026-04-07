@@ -207,8 +207,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async applySelectedFilters(page: Page, filters: SpotfireFilter[]): Promise<void> {
-    this.log('applying selected filters from request', {
+    this.log('applying selected filters from request (sequential with validation)', {
       count: filters.length,
+      order: filters.map((f) => f.title),
       filters: filters.map((filter) => ({
         title: filter.title,
         kind: filter.kind,
@@ -220,17 +221,32 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       })),
     });
 
-    for (const filter of filters) {
+    const appliedFilters: string[] = [];
+    const failedFilters: Array<{ title: string; reason: string }> = [];
+
+    for (let filterIndex = 0; filterIndex < filters.length; filterIndex += 1) {
+      const filter = filters[filterIndex];
+
       if (!this.hasRequestedFilterValue(filter)) {
+        this.log('skipping filter without requested value', { title: filter.title, filterIndex });
         continue;
       }
 
+      this.logStep('filter-sequence', 'START', `starting filter ${filterIndex + 1}/${filters.length}`, {
+        title: filter.title,
+        kind: filter.kind,
+        selectedValues: filter.selectedValues,
+        previouslyApplied: appliedFilters,
+      });
+
       let result: { applied: boolean; reason: string } = { applied: false, reason: 'not attempted' };
+      let lastAttemptReason = 'not attempted';
 
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         result = await this.applySingleFilter(page, filter);
+        lastAttemptReason = result.reason;
 
-        this.log('filter application result', {
+        this.log('filter application attempt result', {
           title: filter.title,
           kind: filter.kind,
           attempt,
@@ -243,7 +259,39 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         await this.waitForSpotfireIdle(page);
       }
+
+      if (!result.applied) {
+        this.logStep('filter-sequence', 'FAIL', `filter validation FAILED - stopping sequence`, {
+          title: filter.title,
+          reason: lastAttemptReason,
+          filterIndex,
+          appliedFilters,
+          remainingFilters: filters.slice(filterIndex + 1).map((f) => f.title),
+        });
+
+        failedFilters.push({ title: filter.title, reason: lastAttemptReason });
+
+        throw new Error(
+          `Filter "${filter.title}" failed validation after 3 attempts: ${lastAttemptReason}. ` +
+          `Applied filters: [${appliedFilters.join(', ')}]. Stopping filter sequence.`
+        );
+      }
+
+      appliedFilters.push(filter.title);
+
+      this.logStep('filter-sequence', 'OK', `filter ${filterIndex + 1}/${filters.length} validated - proceeding to next`, {
+        title: filter.title,
+        appliedFilters,
+        remainingFilters: filters.slice(filterIndex + 1).map((f) => f.title),
+      });
+
+      await this.waitForSpotfireIdle(page);
     }
+
+    this.logStep('filter-sequence', 'OK', 'all filters applied and validated successfully', {
+      totalFilters: filters.length,
+      appliedFilters,
+    });
 
     await this.waitForSpotfireIdle(page);
   }
