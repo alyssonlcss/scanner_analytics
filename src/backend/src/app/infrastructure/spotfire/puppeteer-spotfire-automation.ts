@@ -781,39 +781,79 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
 
       const reqLabel = nc(args.label);
+      const sc = filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
+        ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable');
 
-      function findItem(): HTMLElement | null {
-        return Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
-          return matchLabel(nc(item.getAttribute('title') ?? item.textContent), reqLabel);
-        }) ?? null;
+      const listItems = filterEl.querySelector<HTMLElement>('.ListItems');
+      const scrollArea = filterEl.querySelector<HTMLElement>('.ScrollArea');
+
+      function isElementVisibleInContainer(el: HTMLElement, container: HTMLElement | null): boolean {
+        if (!container) return true;
+        const elRect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        return elRect.top >= containerRect.top - 5 && elRect.bottom <= containerRect.bottom + 5;
       }
 
-      let item = findItem();
-
-      if (!item) {
-        const sc = filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
-          ?? filterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
-          ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
-
-        if (sc) {
-          const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
-          const step = Math.max(Math.floor(sc.clientHeight * 0.75), 30);
-
-          for (let o = 0; o <= max && !item; o += step) {
-            sc.scrollTop = o;
-            sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-            await wait(80);
-            item = findItem();
+      function findVisibleItemByTitle(): HTMLElement | null {
+        const allItems = Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of allItems) {
+          const itemTitle = (item.getAttribute('title') ?? '').trim();
+          if (itemTitle === args.label && isElementVisibleInContainer(item, sc)) {
+            return item;
           }
         }
+        return null;
+      }
+
+      let item: HTMLElement | null = null;
+
+      if (sc) {
+        // Reset scroll to top
+        sc.scrollTop = 0;
+        if (listItems) {
+          listItems.style.top = '0px';
+        }
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(100);
+
+        // Full sweep through the scroll range
+        const itemHeight = 15;
+        const containerHeight = sc.clientHeight || 60;
+        const scrollAreaHeight = scrollArea?.scrollHeight || sc.scrollHeight || 200;
+        const maxScroll = Math.max(scrollAreaHeight - containerHeight, 0);
+        const step = itemHeight;
+
+        item = findVisibleItemByTitle();
+        
+        for (let offset = 0; offset <= maxScroll + itemHeight && !item; offset += step) {
+          sc.scrollTop = offset;
+          if (listItems) {
+            listItems.style.top = `-${offset}px`;
+          }
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(80);
+          item = findVisibleItemByTitle();
+        }
+
+        if (!item) {
+          // Final attempt: scroll to very end
+          sc.scrollTop = maxScroll;
+          if (listItems) {
+            listItems.style.top = `-${maxScroll}px`;
+          }
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(100);
+          item = findVisibleItemByTitle();
+        }
+      } else {
+        item = findVisibleItemByTitle();
       }
 
       if (!item) {
         return null;
       }
-
-      item.scrollIntoView({ block: 'center' });
-      await wait(50);
 
       // Try to click the visible label text first (more reliable than clicking the row center)
       const labelEl = item.querySelector<HTMLElement>('.sf-element-text-box')
@@ -1612,44 +1652,81 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
 
       const requested = nc(args.label);
+      const safeTitle = args.label.replace(/"/g, '\\"');
       const sc = filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
         ?? filterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
-        ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+        ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable');
 
-      function findItem(): HTMLElement | null {
-        return Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
-          const candidate = nc(item.getAttribute('title') ?? item.textContent);
-          return requested === '(all)' ? candidate.startsWith('(all)') : candidate === requested;
-        }) ?? null;
+      function isElementVisibleInContainer(el: HTMLElement, container: HTMLElement | null): boolean {
+        if (!container) return true;
+        const elRect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        return elRect.top >= containerRect.top - 5 && elRect.bottom <= containerRect.bottom + 5;
       }
 
+      function findVisibleItemByTitle(): HTMLElement | null {
+        const allItems = Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of allItems) {
+          const itemTitle = (item.getAttribute('title') ?? '').trim();
+          if (itemTitle === args.label && isElementVisibleInContainer(item, sc)) {
+            return item;
+          }
+        }
+        return null;
+      }
+
+      const listItems = filterEl.querySelector<HTMLElement>('.ListItems');
+      const scrollArea = filterEl.querySelector<HTMLElement>('.ScrollArea');
+
       if (!sc) {
-        const item = findItem();
+        const item = findVisibleItemByTitle();
         item?.scrollIntoView({ block: 'center' });
         return item !== null;
       }
 
+      // Reset scroll to top
       sc.scrollTop = 0;
+      if (listItems) {
+        listItems.style.top = '0px';
+      }
       sc.dispatchEvent(new Event('scroll', { bubbles: true }));
       await wait(100);
 
-      let item = findItem();
-      const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
-      const step = Math.max(Math.floor(sc.clientHeight * 0.6), 30);
+      // Full sweep through the scroll range
+      const itemHeight = 15;
+      const containerHeight = sc.clientHeight || 60;
+      const scrollAreaHeight = scrollArea?.scrollHeight || sc.scrollHeight || 200;
+      const maxScroll = Math.max(scrollAreaHeight - containerHeight, 0);
+      const step = itemHeight;
 
-      for (let offset = 0; offset <= max && !item; offset += step) {
+      let item = findVisibleItemByTitle();
+      
+      for (let offset = 0; offset <= maxScroll + itemHeight && !item; offset += step) {
         sc.scrollTop = offset;
+        if (listItems) {
+          listItems.style.top = `-${offset}px`;
+        }
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(80);
+        item = findVisibleItemByTitle();
+      }
+
+      if (!item) {
+        // Final attempt: scroll to very end
+        sc.scrollTop = maxScroll;
+        if (listItems) {
+          listItems.style.top = `-${maxScroll}px`;
+        }
         sc.dispatchEvent(new Event('scroll', { bubbles: true }));
         await wait(100);
-        item = findItem();
+        item = findVisibleItemByTitle();
       }
 
       if (!item) {
         return false;
       }
 
-      item.scrollIntoView({ block: 'center' });
-      await wait(80);
       return true;
     }, { title: filterTitle, label: itemLabel });
   }
@@ -1719,49 +1796,83 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       const requested = nc(args.label);
       const sc = resolvedFilterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
         ?? resolvedFilterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
-        ?? resolvedFilterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+        ?? resolvedFilterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+        ?? resolvedFilterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable');
 
-      function findItem(): HTMLElement | null {
-        return Array.from(resolvedFilterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
-          const candidate = nc(item.getAttribute('title') ?? item.textContent);
-          return requested === '(all)' ? candidate.startsWith('(all)') : candidate === requested;
-        }) ?? null;
+      const listItems = resolvedFilterEl.querySelector<HTMLElement>('.ListItems');
+      const scrollArea = resolvedFilterEl.querySelector<HTMLElement>('.ScrollArea');
+
+      function isElementVisibleInContainer(el: HTMLElement, container: HTMLElement | null): boolean {
+        if (!container) return true;
+        const elRect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        return elRect.top >= containerRect.top - 5 && elRect.bottom <= containerRect.bottom + 5;
+      }
+
+      function findVisibleItemByTitle(): HTMLElement | null {
+        const allItems = Array.from(resolvedFilterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of allItems) {
+          const itemTitle = (item.getAttribute('title') ?? '').trim();
+          if (itemTitle === args.label && isElementVisibleInContainer(item, sc)) {
+            return item;
+          }
+        }
+        return null;
       }
 
       if (sc) {
+        // Reset scroll to top
         sc.scrollTop = 0;
+        if (listItems) {
+          listItems.style.top = '0px';
+        }
         sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-        await wait(80);
+        await wait(100);
 
-        let item = findItem();
-        const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
-        const step = Math.max(Math.floor(sc.clientHeight * 0.55), 24);
+        // Full sweep through the scroll range
+        const itemHeight = 15;
+        const containerHeight = sc.clientHeight || 60;
+        const scrollAreaHeight = scrollArea?.scrollHeight || sc.scrollHeight || 200;
+        const maxScroll = Math.max(scrollAreaHeight - containerHeight, 0);
+        const step = itemHeight;
 
-        for (let offset = 0; offset <= max && !item; offset += step) {
+        let item = findVisibleItemByTitle();
+        
+        for (let offset = 0; offset <= maxScroll + itemHeight && !item; offset += step) {
           sc.scrollTop = offset;
+          if (listItems) {
+            listItems.style.top = `-${offset}px`;
+          }
           sc.dispatchEvent(new Event('scroll', { bubbles: true }));
           await wait(80);
-          item = findItem();
+          item = findVisibleItemByTitle();
+        }
+
+        if (!item) {
+          // Final attempt: scroll to very end
+          sc.scrollTop = maxScroll;
+          if (listItems) {
+            listItems.style.top = `-${maxScroll}px`;
+          }
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(100);
+          item = findVisibleItemByTitle();
         }
 
         if (!item) {
           return false;
         }
 
-        item.scrollIntoView({ block: 'center' });
-        await wait(60);
-        item = findItem() ?? item;
         dispatchClick(item);
         return true;
       }
 
-      const item = findItem();
+      // No scroll container - try to find item directly
+      const item = findVisibleItemByTitle();
       if (!item) {
         return false;
       }
 
-      item.scrollIntoView({ block: 'center' });
-      await wait(60);
       dispatchClick(item);
       return true;
     }, { title: filterTitle, label: itemLabel, ctrlKey });
@@ -2095,8 +2206,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return null;
       }
 
-      const target = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-        .find((item) => (item.getAttribute('title') ?? item.textContent ?? '').replace(/\s+/g, ' ').trim() === args.label) ?? null;
+      const safeTitle = args.label.replace(/"/g, '\\"');
+      let target: HTMLElement | null = filterEl.querySelector<HTMLElement>(`[title="${safeTitle}"]`);
+
+      if (!target || !isVisible(target)) {
+        target = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
+          .find((item) => (item.getAttribute('title') ?? item.textContent ?? '').replace(/\s+/g, ' ').trim() === args.label) ?? null;
+      }
 
       if (!target || !isVisible(target)) {
         return null;
@@ -2281,36 +2397,81 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       const requested = nc(args.label);
       const resolvedFilterElement = filterEl;
-
-      function findItem(): HTMLElement | null {
-        return Array.from(resolvedFilterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item')).find((item) => {
-          return matchLabel(nc(item.getAttribute('title') ?? item.textContent), requested);
-        }) ?? null;
-      }
-
-      let item = findItem();
       const sc = resolvedFilterElement.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
         ?? resolvedFilterElement.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
-        ?? resolvedFilterElement.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable');
+        ?? resolvedFilterElement.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
+        ?? resolvedFilterElement.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable');
 
-      if (!item && sc) {
-        const max = Math.max(sc.scrollHeight - sc.clientHeight, 0);
-        const step = Math.max(Math.floor(sc.clientHeight * 0.75), 30);
+      const listItems = resolvedFilterElement.querySelector<HTMLElement>('.ListItems');
+      const scrollArea = resolvedFilterElement.querySelector<HTMLElement>('.ScrollArea');
 
-        for (let offset = 0; offset <= max && !item; offset += step) {
+      function isElementVisibleInContainer(el: HTMLElement, container: HTMLElement | null): boolean {
+        if (!container) return true;
+        const elRect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        return elRect.top >= containerRect.top - 5 && elRect.bottom <= containerRect.bottom + 5;
+      }
+
+      function findVisibleItemByTitle(): HTMLElement | null {
+        const allItems = Array.from(resolvedFilterElement.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of allItems) {
+          const itemTitle = (item.getAttribute('title') ?? '').trim();
+          const itemTitleNorm = nc(itemTitle);
+          const matches = requested === '(all)' ? itemTitleNorm.startsWith('(all)') : itemTitle === args.label;
+          if (matches && isElementVisibleInContainer(item, sc)) {
+            return item;
+          }
+        }
+        return null;
+      }
+
+      let item: HTMLElement | null = null;
+
+      if (sc) {
+        // Reset scroll to top
+        sc.scrollTop = 0;
+        if (listItems) {
+          listItems.style.top = '0px';
+        }
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+        await wait(100);
+
+        // Full sweep through the scroll range
+        const itemHeight = 15;
+        const containerHeight = sc.clientHeight || 60;
+        const scrollAreaHeight = scrollArea?.scrollHeight || sc.scrollHeight || 200;
+        const maxScroll = Math.max(scrollAreaHeight - containerHeight, 0);
+        const step = itemHeight;
+
+        item = findVisibleItemByTitle();
+        
+        for (let offset = 0; offset <= maxScroll + itemHeight && !item; offset += step) {
           sc.scrollTop = offset;
+          if (listItems) {
+            listItems.style.top = `-${offset}px`;
+          }
           sc.dispatchEvent(new Event('scroll', { bubbles: true }));
           await wait(80);
-          item = findItem();
+          item = findVisibleItemByTitle();
         }
+
+        if (!item) {
+          // Final attempt: scroll to very end
+          sc.scrollTop = maxScroll;
+          if (listItems) {
+            listItems.style.top = `-${maxScroll}px`;
+          }
+          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+          await wait(100);
+          item = findVisibleItemByTitle();
+        }
+      } else {
+        item = findVisibleItemByTitle();
       }
 
       if (!item) {
         return false;
       }
-
-      item.scrollIntoView({ block: 'center' });
-      await wait(60);
 
       const target = item;
 
