@@ -1550,22 +1550,47 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     for (let index = 0; index < selectedValues.length; index += 1) {
       const value = selectedValues[index];
+      const useCtrl = index > 0;
 
       await this.locateFilterElement(page, filterTitle);
       await this.activateListFilter(page, filterTitle);
       await new Promise((r) => setTimeout(r, 120));
 
-      const clicked = await this.scrollAndClickExactListItem(page, filterTitle, value, index > 0);
-      this.logStep('list-filter', clicked ? 'OK' : 'WARN', 'selected list item using internal scroll workflow', {
+      // Step 1: Scroll the item into view (without clicking)
+      const scrolled = await this.scrollListItemIntoView(page, filterTitle, value);
+      if (!scrolled) {
+        this.logStep('list-filter', 'WARN', 'could not scroll item into view', { filterTitle, value });
+        return { applied: false, reason: `could not scroll ${value} into view` };
+      }
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Step 2: Get the item coordinates for a real mouse click
+      const item = await this.findListItemCoords(page, filterTitle, value);
+      if (!item) {
+        this.logStep('list-filter', 'WARN', 'could not find item coordinates', { filterTitle, value });
+        return { applied: false, reason: `could not find ${value} coordinates` };
+      }
+
+      // Step 3: Perform a real Puppeteer mouse click (not synthetic DOM event)
+      const clickX = item.labelX ?? item.clickX;
+      const clickY = item.labelY ?? item.clickY;
+
+      if (useCtrl) {
+        await page.keyboard.down('Control');
+      }
+      await page.mouse.click(clickX, clickY);
+      if (useCtrl) {
+        await page.keyboard.up('Control');
+      }
+
+      this.logStep('list-filter', 'OK', 'clicked list item using real mouse click', {
         filterTitle,
         value,
-        ctrlKey: index > 0,
-        clicked,
+        ctrlKey: useCtrl,
+        clickX,
+        clickY,
       });
-
-      if (!clicked) {
-        return { applied: false, reason: `could not select ${value}` };
-      }
 
       await this.waitForSpotfireIdle(page, 8000);
     }
