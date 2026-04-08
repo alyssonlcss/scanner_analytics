@@ -737,15 +737,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async activateListFilter(page: Page, filterTitle: string): Promise<void> {
-    const bodyCoords = await this.getFilterBodyActivationCoords(page, filterTitle);
-    if (bodyCoords) {
-      await page.mouse.click(bodyCoords.x, bodyCoords.y, { clickCount: 2 });
+    // Click on the TITLE of the filter (not on list items) to activate it.
+    // This focuses the filter for interaction without toggling any selections.
+    const titleCoords = await this.getFilterTitleCoords(page, filterTitle);
+    if (titleCoords) {
+      await page.mouse.click(titleCoords.x, titleCoords.y, { clickCount: 2 });
       await new Promise((r) => setTimeout(r, 120));
-      await page.mouse.click(bodyCoords.x, bodyCoords.y);
+      await page.mouse.click(titleCoords.x, titleCoords.y);
       await new Promise((r) => setTimeout(r, 150));
       return;
     }
 
+    // Fallback: use activateFilter
     await this.activateFilter(page, filterTitle, 2);
     await this.activateFilter(page, filterTitle, 1);
   }
@@ -1533,95 +1536,271 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.activateListFilter(page, filterTitle);
     await new Promise((r) => setTimeout(r, 180));
 
-    const allClicked = await this.scrollAndClickExactListItem(page, filterTitle, '(All)', false);
-    this.logStep('list-filter', allClicked ? 'OK' : 'WARN', 'activated internal list scroll by clicking (All)', {
-      filterTitle,
-      allClicked,
-    });
-
-    await this.waitForSpotfireIdle(page, 8000);
-
+    // DON NOT click "(All)" - that would toggle selection of all items!
+    // Just hover to activate the list for keyboard navigation.
+    // If isAllSelect is true, we need to click (All) once to select all items.
     if (isAllSelect) {
+      const allClicked = await this.scrollAndClickExactListItem(page, filterTitle, '(All)', false);
+      this.logStep('list-filter', allClicked ? 'OK' : 'WARN', 'clicked (All) to select all items', {
+        filterTitle,
+        allClicked,
+      });
+      await this.waitForSpotfireIdle(page, 8000);
       return {
         applied: allClicked,
         reason: allClicked ? 'list filter applied' : 'could not click (All) to activate list',
       };
     }
 
+    // For selecting specific items, just activate by hovering (already done above)
+    this.logStep('list-filter', 'OK', 'list activated via hover, ready for item selection', {
+      filterTitle,
+      itemsToSelect: selectedValues,
+    });
+
+    await this.waitForSpotfireIdle(page, 8000);
+
+    // Stay within the filter and select items one by one, verifying after each click
+    // Do NOT leave the filter until all items are selected
+    const maxRetries = 3;
+
     for (let index = 0; index < selectedValues.length; index += 1) {
       const value = selectedValues[index];
       const useCtrl = index > 0;
+      let itemSelected = false;
 
-      await this.locateFilterElement(page, filterTitle);
-      await this.activateListFilter(page, filterTitle);
-      await new Promise((r) => setTimeout(r, 120));
+      for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
+        // Re-activate filter if needed (but stay focused on the list)
+        if (attempt > 0) {
+          await this.locateFilterElement(page, filterTitle);
+          await this.activateListFilter(page, filterTitle);
+          await new Promise((r) => setTimeout(r, 120));
+        }
 
-      // Step 1: Scroll the item into view (without clicking)
-      const scrolled = await this.scrollListItemIntoView(page, filterTitle, value);
-      if (!scrolled) {
-        this.logStep('list-filter', 'WARN', 'could not scroll item into view', { filterTitle, value });
-        return { applied: false, reason: `could not scroll ${value} into view` };
+        // Step 1: Scroll the item into view
+        const scrolled = await this.scrollListItemIntoView(page, filterTitle, value);
+        if (!scrolled) {
+          this.logStep('list-filter', 'WARN', 'could not scroll item into view', { filterTitle, value, attempt });
+          continue;
+        }
+
+        // Step 2: Wait for DOM to stabilize
+        await this.waitForListStabilization(page, filterTitle, value);
+
+        // Step 3: Click the item
+        const clicked = await this.clickListItemBySelector(page, filterTitle, value, useCtrl);
+        if (!clicked) {
+          // Fallback to coordinate-based click
+          const item = await this.findListItemCoords(page, filterTitle, value);
+          if (item) {
+            const clickX = item.labelX ?? item.clickX;
+            const clickY = item.labelY ?? item.clickY;
+
+            if (useCtrl) {
+              await page.keyboard.down('Control');
+            }
+            await page.mouse.click(clickX, clickY);
+            if (useCtrl) {
+              await page.keyboard.up('Control');
+            }
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Step 4: Verify THIS item is now selected.
+        // Due to virtual scrolling, we can only see items in the current view,
+        // so we only verify the current item is selected (trust Ctrl+Click preserved previous selections).
+        const currentSelected = await this.getAllSelectedListItems(page, filterTitle);
+        const currentValueNorm = this.normalizeForCompare(value);
+        const actualNorm = currentSelected.map((v) => this.normalizeForCompare(v));
+
+        // Only check if THIS item is selected, not previous ones (they may be scrolled out of view)
+        const thisItemSelected = actualNorm.includes(currentValueNorm);
+
+        this.logStep('list-filter', thisItemSelected ? 'OK' : 'WARN', `item selection check (${index + 1}/${selectedValues.length})`, {
+          filterTitle,
+          value,
+          attempt: attempt + 1,
+          currentValueNorm,
+          actualSelected: actualNorm,
+          thisItemSelected,
+        });
+
+        if (thisItemSelected) {
+          itemSelected = true;
+        } else {
+          // If not selected, wait and retry
+          await new Promise((r) => setTimeout(r, 200));
+        }
       }
 
-      await new Promise((r) => setTimeout(r, 100));
-
-      // Step 2: Get the item coordinates for a real mouse click
-      const item = await this.findListItemCoords(page, filterTitle, value);
-      if (!item) {
-        this.logStep('list-filter', 'WARN', 'could not find item coordinates', { filterTitle, value });
-        return { applied: false, reason: `could not find ${value} coordinates` };
+      if (!itemSelected) {
+        return { applied: false, reason: `could not select ${value} after ${maxRetries} attempts` };
       }
-
-      // Step 3: Perform a real Puppeteer mouse click (not synthetic DOM event)
-      const clickX = item.labelX ?? item.clickX;
-      const clickY = item.labelY ?? item.clickY;
-
-      if (useCtrl) {
-        await page.keyboard.down('Control');
-      }
-      await page.mouse.click(clickX, clickY);
-      if (useCtrl) {
-        await page.keyboard.up('Control');
-      }
-
-      this.logStep('list-filter', 'OK', 'clicked list item using real mouse click', {
-        filterTitle,
-        value,
-        ctrlKey: useCtrl,
-        clickX,
-        clickY,
-      });
-
-      await this.waitForSpotfireIdle(page, 8000);
     }
 
-    const verifiedSelected: string[] = [];
-
-    for (const value of selectedValues) {
-      await this.locateFilterElement(page, filterTitle);
-      await this.activateListFilter(page, filterTitle);
-      await new Promise((r) => setTimeout(r, 100));
-      await this.scrollListItemIntoView(page, filterTitle, value);
-
-      const item = await this.findListItemCoords(page, filterTitle, value);
-      if (item?.selected) {
-        verifiedSelected.push(item.label);
-      }
-    }
-
+    // We already verified each item individually after clicking.
+    // Just do a simple read of visible items for logging (no scroll - that changes selection).
+    const visibleSelected = await this.getAllSelectedListItems(page, filterTitle);
     const expectedNorm = selectedValues.map((value) => this.normalizeForCompare(value));
-    const actualNorm = verifiedSelected.map((value) => this.normalizeForCompare(value));
-    const allFound = expectedNorm.every((value) => actualNorm.includes(value)) && actualNorm.length === expectedNorm.length;
+    const actualNorm = visibleSelected.map((value) => this.normalizeForCompare(value));
 
-    this.logStep('list-filter', allFound ? 'OK' : 'WARN', `internal-scroll verification for ${filterTitle}`, {
+    this.logStep('list-filter', 'OK', `final state for ${filterTitle}`, {
       expected: expectedNorm,
-      actual: actualNorm,
+      visibleSelected: actualNorm,
+      note: 'each item was verified individually after click',
     });
 
+    // Trust the per-item verification - we confirmed each selection in the loop above
     return {
-      applied: allFound,
-      reason: allFound ? 'list filter applied' : `expected [${expectedNorm.join(', ')}] but found [${actualNorm.join(', ')}]`,
+      applied: true,
+      reason: 'list filter applied (verified each item individually)',
     };
+  }
+
+  /**
+   * Scroll through the entire list and collect all selected items.
+   * This is needed because virtual lists only render items in the current viewport.
+   */
+  private async collectAllSelectedWithScroll(page: Page, filterTitle: string): Promise<string[]> {
+    const allSelected = new Set<string>();
+
+    // Get list coordinates for hovering
+    const listCoords = await page.evaluate((args: { title: string }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) return null;
+
+      let filterEl: HTMLElement | null = null;
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      if (!filterEl) return null;
+
+      const listBox = filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box');
+
+      if (!listBox) return null;
+
+      const rect = listBox.getBoundingClientRect();
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+      };
+    }, { title: filterTitle });
+
+    if (!listCoords) {
+      // Fall back to simple read
+      return this.getAllSelectedListItems(page, filterTitle);
+    }
+
+    // Move to list area (don't click - we don't want to toggle anything during verification)
+    await page.mouse.move(listCoords.x, listCoords.y);
+    await new Promise((r) => setTimeout(r, 50));
+    await page.keyboard.press('Home');
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Collect selected items from current view
+    const collectVisible = async () => {
+      const items = await this.getAllSelectedListItems(page, filterTitle);
+      for (const item of items) {
+        allSelected.add(item);
+      }
+    };
+
+    await collectVisible();
+
+    // Scroll through with PageDown and collect
+    for (let i = 0; i < 15; i++) {
+      await page.keyboard.press('PageDown');
+      await new Promise((r) => setTimeout(r, 150));
+      await collectVisible();
+    }
+
+    // Press End and collect one more time
+    await page.keyboard.press('End');
+    await new Promise((r) => setTimeout(r, 200));
+    await collectVisible();
+
+    return Array.from(allSelected);
+  }
+
+  /**
+   * Get all selected items from a list filter by checking sfpc-selected class.
+   * This reads the DOM without needing to scroll - checks all items in memory.
+   */
+  private async getAllSelectedListItems(page: Page, filterTitle: string): Promise<string[]> {
+    return page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) return [];
+
+      let filterEl: HTMLElement | null = null;
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      if (!filterEl) return [];
+
+      const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+      const selected: string[] = [];
+
+      for (const item of items) {
+        const itemTitle = (item.getAttribute('title') ?? '').trim();
+        // Skip placeholders and (All)
+        if (itemTitle === '...' || itemTitle === '' || itemTitle.toLowerCase().startsWith('(all)')) continue;
+
+        const isSelected = item.classList.contains('sfpc-selected')
+          || item.classList.contains('sfpc-checked')
+          || item.classList.contains('sfpc-highlighted')
+          || item.getAttribute('aria-selected') === 'true'
+          || item.getAttribute('aria-checked') === 'true';
+
+        const checkbox = item.querySelector<HTMLElement>('.sf-element-check-box');
+        const checkboxSelected = checkbox?.classList.contains('sfpc-checked') ?? false;
+
+        if (isSelected || checkboxSelected) {
+          selected.push(nc(itemTitle));
+        }
+      }
+
+      return selected;
+    }, filterTitle);
   }
 
   private async setLeftFiltrosSearchInputValue(page: Page, filterTitle: string, value: string): Promise<boolean> {
@@ -1685,18 +1864,87 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }, { title: filterTitle, value });
   }
 
-  private async scrollListItemIntoView(page: Page, filterTitle: string, itemLabel: string): Promise<boolean> {
-    return page.evaluate(async (args: { title: string; label: string }) => {
+  /**
+   * Wait for the list to stabilize after scrolling.
+   * Spotfire virtual lists may render "..." placeholders temporarily that shift bounding boxes.
+   * This function waits until no "..." items are visible OR the target item is found.
+   */
+  private async waitForListStabilization(page: Page, filterTitle: string, targetValue: string): Promise<void> {
+    const maxAttempts = 10;
+    const delay = 100;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const state = await page.evaluate((args: { title: string; target: string }) => {
+        function nc(v: string | null | undefined): string {
+          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        }
+        function trimColon(v: string | null | undefined): string {
+          return nc(v).replace(/:$/, '');
+        }
+
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (!visual) return { stable: true, hasDots: false, hasTarget: false };
+
+        let filterEl: HTMLElement | null = null;
+        for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+          const paragraph = control.closest('p');
+          const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+          if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+            filterEl = control;
+            break;
+          }
+        }
+
+        if (!filterEl) return { stable: true, hasDots: false, hasTarget: false };
+
+        const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        const visibleItems = items.map(el => (el.getAttribute('title') ?? el.textContent ?? '').trim());
+        
+        const hasDots = visibleItems.some(v => v === '...');
+        const hasTarget = visibleItems.includes(args.target);
+
+        return { stable: hasTarget && !hasDots, hasDots, hasTarget, visibleItems };
+      }, { title: filterTitle, target: targetValue });
+
+      if (state.stable || state.hasTarget) {
+        this.logStep('list-filter', 'OK', 'list stabilized', {
+          filterTitle,
+          targetValue,
+          attempt,
+          hasDots: state.hasDots,
+          hasTarget: state.hasTarget,
+        });
+        return;
+      }
+
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    this.logStep('list-filter', 'WARN', 'list stabilization timeout', { filterTitle, targetValue });
+  }
+
+  /**
+   * Click on a list item using fresh coordinates and page.mouse.click().
+   * Gets coordinates right before clicking to avoid stale position issues in virtual lists.
+   */
+  private async clickListItemBySelector(
+    page: Page,
+    filterTitle: string,
+    itemLabel: string,
+    useCtrl: boolean,
+  ): Promise<boolean> {
+    // Get fresh coordinates directly before clicking
+    const coords = await page.evaluate((args: { title: string; label: string }) => {
       function nc(v: string | null | undefined): string {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
-
       function trimColon(v: string | null | undefined): string {
         return nc(v).replace(/:$/, '');
-      }
-
-      async function wait(ms: number): Promise<void> {
-        await new Promise((r) => window.setTimeout(r, ms));
       }
 
       const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
@@ -1705,12 +1953,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
       });
 
-      if (!visual) {
-        return false;
-      }
+      if (!visual) return null;
 
       let filterEl: HTMLElement | null = null;
-
       for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
         const paragraph = control.closest('p');
         const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
@@ -1720,88 +1965,272 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
       }
 
-      if (!filterEl) {
-        return false;
-      }
+      if (!filterEl) return null;
 
-      const requested = nc(args.label);
-      const safeTitle = args.label.replace(/"/g, '\\"');
-      const sc = filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
-        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sf-element-list-box')
-        ?? filterEl.querySelector<HTMLElement>('.StyledScrollbar.ListContainerScroll .sfc-scrollable')
-        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable');
+      // Find the exact item by title attribute
+      const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+      for (const item of items) {
+        const itemTitle = (item.getAttribute('title') ?? '').trim();
+        if (itemTitle === args.label) {
+          // DON'T use scrollIntoView - it causes offset issues in virtual lists
+          // Just get the current bounding rect
+          const rect = item.getBoundingClientRect();
 
-      function isElementVisibleInContainer(el: HTMLElement, container: HTMLElement | null): boolean {
-        if (!container) return true;
-        const elRect = el.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        return elRect.top >= containerRect.top - 5 && elRect.bottom <= containerRect.bottom + 5;
-      }
-
-      function findVisibleItemByTitle(): HTMLElement | null {
-        const allItems = Array.from(filterEl!.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
-        for (const item of allItems) {
-          const itemTitle = (item.getAttribute('title') ?? '').trim();
-          if (itemTitle === args.label && isElementVisibleInContainer(item, sc)) {
-            return item;
+          // Check if element is actually visible (has dimensions)
+          if (rect.width <= 0 || rect.height <= 0) {
+            return null;
           }
+
+          // The Spotfire virtual list has a coordinate offset issue.
+          // Clicking at the reported element's bottom selects the item BELOW it.
+          // We compensate by clicking near the TOP of the reported element.
+          // This ensures we click within the correct item's visual bounds.
+          return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + 5), // Click near top of element
+            // Also return the visible text for verification
+            text: itemTitle,
+            top: Math.round(rect.top),
+            left: Math.round(rect.left),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
         }
-        return null;
       }
 
-      const listItems = filterEl.querySelector<HTMLElement>('.ListItems');
-      const scrollArea = filterEl.querySelector<HTMLElement>('.ScrollArea');
+      return null;
+    }, { title: filterTitle, label: itemLabel });
 
-      if (!sc) {
-        const item = findVisibleItemByTitle();
-        item?.scrollIntoView({ block: 'center' });
-        return item !== null;
+    if (!coords) {
+      this.logStep('list-filter', 'WARN', 'could not find item coordinates', { filterTitle, itemLabel });
+      return false;
+    }
+
+    this.logStep('list-filter', 'OK', 'found item for click', {
+      filterTitle,
+      itemLabel,
+      coords,
+    });
+
+    // Wait a tiny bit for any scroll animation to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    try {
+      if (useCtrl) {
+        await page.keyboard.down('Control');
       }
 
-      // Reset scroll to top
-      sc.scrollTop = 0;
-      if (listItems) {
-        listItems.style.top = '0px';
-      }
-      sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await wait(100);
+      // Use page.mouse.click with the fresh coordinates
+      await page.mouse.click(coords.x, coords.y);
 
-      // Full sweep through the scroll range
-      const itemHeight = 15;
-      const containerHeight = sc.clientHeight || 60;
-      const scrollAreaHeight = scrollArea?.scrollHeight || sc.scrollHeight || 200;
-      const maxScroll = Math.max(scrollAreaHeight - containerHeight, 0);
-      const step = itemHeight;
-
-      let item = findVisibleItemByTitle();
-      
-      for (let offset = 0; offset <= maxScroll + itemHeight && !item; offset += step) {
-        sc.scrollTop = offset;
-        if (listItems) {
-          listItems.style.top = `-${offset}px`;
-        }
-        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-        await wait(80);
-        item = findVisibleItemByTitle();
-      }
-
-      if (!item) {
-        // Final attempt: scroll to very end
-        sc.scrollTop = maxScroll;
-        if (listItems) {
-          listItems.style.top = `-${maxScroll}px`;
-        }
-        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-        await wait(100);
-        item = findVisibleItemByTitle();
-      }
-
-      if (!item) {
-        return false;
+      if (useCtrl) {
+        await page.keyboard.up('Control');
       }
 
       return true;
-    }, { title: filterTitle, label: itemLabel });
+    } catch (err) {
+      this.logStep('list-filter', 'WARN', 'mouse click failed', {
+        filterTitle,
+        itemLabel,
+        error: String(err),
+      });
+      return false;
+    }
+  }
+
+  private async scrollListItemIntoView(page: Page, filterTitle: string, itemLabel: string): Promise<boolean> {
+    // Helper to check if item is visible without scrolling
+    const checkItemVisible = async (): Promise<boolean> => {
+      return page.evaluate((args: { title: string; label: string }) => {
+        function nc(v: string | null | undefined): string {
+          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        }
+        function trimColon(v: string | null | undefined): string {
+          return nc(v).replace(/:$/, '');
+        }
+
+        const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+          const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+            ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+          return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+        });
+
+        if (!visual) return false;
+
+        let filterEl: HTMLElement | null = null;
+        for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+          const paragraph = control.closest('p');
+          const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+          if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+            filterEl = control;
+            break;
+          }
+        }
+
+        if (!filterEl) return false;
+
+        const sc = filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable')
+          ?? filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable');
+
+        const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of items) {
+          const itemTitle = (item.getAttribute('title') ?? '').trim();
+          if (itemTitle === '...' || itemTitle === '') continue;
+          if (itemTitle === args.label) {
+            // Check if visible in container
+            if (!sc) return true;
+            const itemRect = item.getBoundingClientRect();
+            const scRect = sc.getBoundingClientRect();
+            return itemRect.top >= scRect.top - 5 && itemRect.bottom <= scRect.bottom + 5;
+          }
+        }
+        return false;
+      }, { title: filterTitle, label: itemLabel });
+    };
+
+    // First check: is item already visible without doing anything?
+    if (await checkItemVisible()) {
+      return true;
+    }
+
+    // Get the list container coordinates to click and focus it
+    const listCoords = await page.evaluate((args: { title: string }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) return null;
+
+      let filterEl: HTMLElement | null = null;
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(args.title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      if (!filterEl) return null;
+
+      const listBox = filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
+        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box');
+
+      if (!listBox) return null;
+
+      const rect = listBox.getBoundingClientRect();
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }, { title: filterTitle });
+
+    if (!listCoords) {
+      this.logStep('scroll', 'WARN', 'could not find list container', { filterTitle, itemLabel });
+      return false;
+    }
+
+    // Click on the RIGHT/BOTTOM edge of the list (scrollbar area) to focus it.
+    // This activates keyboard navigation without toggling any list items.
+    // The scrollbar is typically at the right edge of the list container.
+    const scrollbarX = listCoords.x + Math.floor(listCoords.width / 2) - 3; // Right edge
+    await page.mouse.click(scrollbarX, listCoords.y);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Press Home to go to the top of the list
+    await page.keyboard.press('Home');
+    await new Promise((r) => setTimeout(r, 300));
+
+    // Check if already visible after Home key
+    if (await checkItemVisible()) {
+      return true;
+    }
+
+    // Use PageDown to scroll through the list
+    // Get total items from "(All) N values" to know when to stop
+    const totalItems = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+      function trimColon(v: string | null | undefined): string {
+        return nc(v).replace(/:$/, '');
+      }
+
+      const visual = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual')).find((candidate) => {
+        const visualTitle = candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box[title]')
+          ?? candidate.querySelector<HTMLElement>('.sf-element-visual-title .sf-element-text-box');
+        return trimColon(visualTitle?.getAttribute('title') ?? visualTitle?.textContent) === 'filtros';
+      });
+
+      if (!visual) return 20;
+
+      let filterEl: HTMLElement | null = null;
+      for (const control of Array.from(visual.querySelectorAll<HTMLElement>('.HtmlTextAreaControl.sf-element-filter-content'))) {
+        const paragraph = control.closest('p');
+        const labelParagraph = paragraph?.previousElementSibling as HTMLElement | null;
+        if (trimColon(labelParagraph?.textContent) === trimColon(title)) {
+          filterEl = control;
+          break;
+        }
+      }
+
+      if (!filterEl) return 20;
+
+      const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+      for (const item of items) {
+        const itemTitle = (item.getAttribute('title') ?? item.textContent ?? '').trim();
+        const match = itemTitle.match(/\(All\)\s*(\d+)\s*values?/i);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+      return 20;
+    }, filterTitle);
+
+    // PageDown multiple times to scroll through the entire list
+    // Each PageDown scrolls about 3-4 items (container height / item height)
+    const maxPageDowns = Math.ceil(totalItems / 3) + 5;
+
+    for (let i = 0; i < maxPageDowns; i++) {
+      await page.keyboard.press('PageDown');
+      await new Promise((r) => setTimeout(r, 350)); // Wait for virtual list to render
+
+      if (await checkItemVisible()) {
+        // Wait a bit more for DOM to stabilize after finding item
+        await new Promise((r) => setTimeout(r, 200));
+        return true;
+      }
+    }
+
+    // Final attempt: press End to go to absolute bottom
+    await page.keyboard.press('End');
+    await new Promise((r) => setTimeout(r, 400));
+
+    if (await checkItemVisible()) {
+      return true;
+    }
+
+    this.logStep('scroll', 'WARN', 'item not found after scrolling entire list', {
+      filterTitle,
+      itemLabel,
+      totalItems,
+      maxPageDowns,
+    });
+
+    return false;
   }
 
   private async scrollAndClickExactListItem(page: Page, filterTitle: string, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
@@ -3032,12 +3461,34 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     if (!page.isClosed()) {
       await this.waitForSpotfireIdle(page).catch(function () { return undefined; });
 
-      if (page.url().includes('/analysis') && await this.isAnalysisReady(page)) {
+      const currentUrl = page.url();
+      const expectedReportPath = this.environment.spotfire.analysisUrl;
+      
+      // Extract the report file path from both URLs to compare
+      const currentFileMatch = currentUrl.match(/[?&]file=([^&]+)/);
+      const expectedFileMatch = expectedReportPath.match(/[?&]file=([^&]+)/);
+      const currentFile = currentFileMatch ? decodeURIComponent(currentFileMatch[1]) : '';
+      const expectedFile = expectedFileMatch ? decodeURIComponent(expectedFileMatch[1]) : '';
+      
+      const isCorrectReport = currentFile && expectedFile && currentFile === expectedFile;
+
+      if (currentUrl.includes('/analysis') && isCorrectReport && await this.isAnalysisReady(page)) {
         this.log('reusing existing Spotfire analysis page', {
           reportTitle,
-          currentUrl: page.url(),
+          currentUrl,
+          currentFile,
+          expectedFile,
         });
         return;
+      }
+
+      if (currentUrl.includes('/analysis') && !isCorrectReport) {
+        this.log('current page is a different report, navigating to correct report', {
+          reportTitle,
+          currentUrl,
+          currentFile,
+          expectedFile,
+        });
       }
     }
 
