@@ -182,12 +182,16 @@ export async function createServer() {
 
         server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle }, `downloading table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length}`);
 
+        // Apply filters only on the first table extraction
+        const isFirstExtraction = i === 0;
+
         const result = await automation.runExtraction({
           reportTitle,
           analysisTab: target.analysisTab,
           tableTitle: target.tableTitle,
-          selectedFilters: payload.selectedFilters,
-          periodSelection: payload.periodSelection,
+          selectedFilters: isFirstExtraction ? payload.selectedFilters : undefined,
+          periodSelection: isFirstExtraction ? payload.periodSelection : undefined,
+          skipFilterReset: !isFirstExtraction,
           signal: controller.signal,
         });
 

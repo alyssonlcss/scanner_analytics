@@ -137,8 +137,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
         await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
-        await this.raceAbort(this.resetVisibleFilters(page), request.signal);
-        await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+        
+        if (!request.skipFilterReset) {
+          await this.raceAbort(this.resetVisibleFilters(page), request.signal);
+          await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+        } else {
+          this.log('skipping filter reset because skipFilterReset=true');
+        }
 
         const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
         const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);

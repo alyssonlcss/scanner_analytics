@@ -21,5 +21,6 @@ export interface ScannerRunRequest {
   tablesToExport?: TableExportConfig[];
   selectedFilters?: SpotfireFilter[];
   periodSelection?: ScannerPeriodSelection;
+  skipFilterReset?: boolean;
   signal?: AbortSignal;
 }
