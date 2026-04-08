@@ -6,6 +6,7 @@ export interface ScannerAutomationResult {
   availableTabs: string[];
   availableTables: string[];
   exportFilePath?: string;
+  exportedFiles?: string[];
 }
 
 export interface ScannerAutomationPort {

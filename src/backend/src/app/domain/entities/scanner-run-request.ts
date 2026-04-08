@@ -9,10 +9,16 @@ export interface ScannerPeriodSelection {
   };
 }
 
+export interface TableExportConfig {
+  tab: string;
+  tableTitle: string;
+}
+
 export interface ScannerRunRequest {
   analysisTab?: string;
   reportTitle?: string;
   tableTitle?: string;
+  tablesToExport?: TableExportConfig[];
   selectedFilters?: SpotfireFilter[];
   periodSelection?: ScannerPeriodSelection;
   signal?: AbortSignal;

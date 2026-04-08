@@ -155,19 +155,70 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           this.logFiltersSummary(filters);
         }
 
-        let exportFilePath: string | undefined;
+        const exportedFiles: string[] = [];
 
-        if (request.tableTitle?.trim()) {
+        // New multi-table export logic
+        if (request.tablesToExport && request.tablesToExport.length > 0) {
+          this.logStep('export', 'START', `starting multi-table export for ${request.tablesToExport.length} tables`);
+          
+          for (let i = 0; i < request.tablesToExport.length; i++) {
+            const tableConfig = request.tablesToExport[i];
+            this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
+            
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+            this.log(`navigating to tab: ${tableConfig.tab}`);
+            await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+            this.log(`maximizing table: ${tableConfig.tableTitle}`);
+            await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
+            
+            const exportedFile = await this.raceAbort(
+              this.exportTable(page, outputDirectory, {
+                ...request,
+                analysisTab: tableConfig.tab,
+                tableTitle: tableConfig.tableTitle,
+              }),
+              request.signal,
+            );
+            
+            if (exportedFile) {
+              exportedFiles.push(exportedFile);
+              this.logStep('export', 'OK', `[${i + 1}/${request.tablesToExport.length}] downloaded "${tableConfig.tableTitle}" -> ${exportedFile}`);
+            } else {
+              this.logStep('export', 'FAIL', `[${i + 1}/${request.tablesToExport.length}] failed to download "${tableConfig.tableTitle}"`);
+            }
+            
+            // Minimize the table after export before going to next tab
+            this.log(`minimizing table "${tableConfig.tableTitle}" after export`);
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+          }
+          
+          this.logStep('export', 'OK', `multi-table export completed: ${exportedFiles.length}/${request.tablesToExport.length} files downloaded`);
+        } else if (request.tableTitle?.trim()) {
+          // Legacy single table export
+          this.logStep('export', 'START', `single table export: "${request.tableTitle}"`);
           await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
           await this.raceAbort(this.maximizeTable(page, request.tableTitle), request.signal);
-          exportFilePath = await this.raceAbort(this.exportTable(page, outputDirectory, request), request.signal);
+          const exportedFile = await this.raceAbort(this.exportTable(page, outputDirectory, request), request.signal);
+          if (exportedFile) {
+            exportedFiles.push(exportedFile);
+            this.logStep('export', 'OK', `downloaded "${request.tableTitle}" -> ${exportedFile}`);
+          } else {
+            this.logStep('export', 'FAIL', `failed to download "${request.tableTitle}"`);
+          }
+          // Minimize after single table export
+          this.log(`minimizing table "${request.tableTitle}" after export`);
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
         }
+
+        this.log(`export summary: ${exportedFiles.length} files downloaded`, { exportedFiles });
 
         return {
           filters,
           availableTabs,
           availableTables,
-          exportFilePath,
+          exportFilePath: exportedFiles[0],
+          exportedFiles,
         };
       } finally {
         request.signal?.removeEventListener('abort', abortHandler);
@@ -4317,14 +4368,21 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private async maximizeTable(page: Page, tableTitle: string): Promise<void> {
-    const maximized = await page.evaluate(function (requestedTableTitle) {
+    this.log(`attempting to maximize table: "${tableTitle}"`);
+    
+    const result = await page.evaluate(function (requestedTableTitle) {
       function normalize(value: string | null | undefined): string {
         return (value ?? '').replace(/\s+/g, ' ').trim();
       }
 
       const requested = normalize(requestedTableTitle);
-
+      
       const titles = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual-title'));
+      const allTitles = titles.map(function (titleElement) {
+        const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
+        return normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
+      });
+      
       const matchingTitle = titles.find(function (titleElement) {
         const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
         const title = normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
@@ -4332,26 +4390,31 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
 
       if (!matchingTitle) {
-        return false;
+        return { success: false, reason: 'no matching title found', allTitles, requested };
       }
 
       const maximizeButton = matchingTitle.querySelector<HTMLElement>('[title="Maximize visualization"], .sfc-maximize-visual-button');
       if (!maximizeButton) {
-        return false;
+        return { success: false, reason: 'no maximize button found', allTitles, requested };
       }
 
       maximizeButton.click();
-      return true;
+      return { success: true, allTitles, requested };
     }, tableTitle);
 
-    if (!maximized) {
-      throw new Error(`could not maximize table: ${tableTitle}`);
+    this.log(`maximize result for "${tableTitle}":`, result);
+
+    if (!result.success) {
+      throw new Error(`could not maximize table: ${tableTitle} - ${result.reason}. Available titles: ${result.allTitles?.join(', ')}`);
     }
 
     await this.waitForSpotfireIdle(page);
+    this.log(`table "${tableTitle}" maximized successfully`);
   }
 
   private async exportTable(page: Page, outputDirectory: string, request: ScannerRunRequest): Promise<string | undefined> {
+    this.log(`starting export for table: "${request.tableTitle}" to directory: ${outputDirectory}`);
+    
     const cdpSession = await page.createCDPSession();
     await cdpSession.send('Page.setDownloadBehavior', {
       behavior: 'allow',
@@ -4359,15 +4422,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
 
     const existingFiles = new Set(await readdir(outputDirectory));
+    this.log(`existing files in output directory: ${Array.from(existingFiles).join(', ') || '(none)'}`);
+    
+    this.log(`opening export menu for table: "${request.tableTitle}"`);
     await this.openExportMenu(page, request.tableTitle);
+    
+    this.log('clicking export menu action...');
     await this.clickExportMenuAction(page);
 
+    this.log('waiting for download to complete...');
     const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
+    this.log(`download result: ${downloadedFile ?? '(no file downloaded)'}`);
+    
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
   }
 
   private async clickExportMenuAction(page: Page): Promise<void> {
-    const clicked = await page.evaluate(async (labels: { preferred: string[]; fallback: string[] }) => {
+    const result = await page.evaluate(async () => {
       function normalize(value: string | null | undefined): string {
         return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
       }
@@ -4379,55 +4450,81 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
 
       function menuEntries(): HTMLElement[] {
-        return Array.from(document.querySelectorAll<HTMLElement>('[title], .contextMenuItemLabel, .contextMenuItem, .MenuItem, .sfx_menu-item_497'))
+        return Array.from(document.querySelectorAll<HTMLElement>('.contextMenuItemLabel, .contextMenuItem, [title]'))
           .filter((element) => isVisible(element));
       }
 
-      function matches(element: HTMLElement, candidates: string[]): boolean {
-        const values = [
-          normalize(element.getAttribute('title')),
-          normalize(element.getAttribute('aria-label')),
-          normalize(element.textContent),
-        ].filter((value) => value.length > 0);
-
-        return candidates.some((candidate) => values.some((value) => value === candidate || value.includes(candidate)));
+      function getMenuInfo(): Array<{ title: string; text: string }> {
+        return menuEntries().map((el) => ({
+          title: el.getAttribute('title') ?? '',
+          text: (el.textContent ?? '').trim(),
+        }));
       }
 
-      function clickMatch(candidates: string[]): boolean {
-        const entry = menuEntries().find((element) => matches(element, candidates));
-        if (!entry) {
-          return false;
+      function findMenuItem(label: string): HTMLElement | null {
+        const normalizedLabel = normalize(label);
+        return menuEntries().find((element) => {
+          const title = normalize(element.getAttribute('title'));
+          const text = normalize(element.textContent);
+          return title === normalizedLabel || text === normalizedLabel;
+        }) ?? null;
+      }
+
+      const menuInfo = getMenuInfo();
+
+      // Step 1: Try to click "Export table" directly
+      const exportTableDirect = findMenuItem('Export table');
+      if (exportTableDirect) {
+        exportTableDirect.click();
+        return { clicked: true, step: 'direct Export table', menuInfo };
+      }
+
+      // Step 2: Look for "Export" parent menu (has submenu arrow)
+      const exportParent = findMenuItem('Export');
+      if (exportParent) {
+        // Hover to open submenu
+        exportParent.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        exportParent.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        
+        await new Promise((resolveWait) => window.setTimeout(resolveWait, 300));
+
+        // Now look for "Export table" in the submenu
+        const exportTableInSubmenu = findMenuItem('Export table');
+        if (exportTableInSubmenu) {
+          exportTableInSubmenu.click();
+          return { clicked: true, step: 'Export -> Export table', menuInfo };
         }
 
-        entry.click();
-        return true;
+        // Click the parent anyway if submenu didn't open properly
+        exportParent.click();
+        await new Promise((resolveWait) => window.setTimeout(resolveWait, 300));
+
+        const exportTableAfterClick = findMenuItem('Export table');
+        if (exportTableAfterClick) {
+          exportTableAfterClick.click();
+          return { clicked: true, step: 'Export click -> Export table', menuInfo };
+        }
+
+        return { clicked: false, step: 'Export parent found but no Export table in submenu', menuInfo: getMenuInfo() };
       }
 
-      if (clickMatch(labels.preferred.map(normalize))) {
-        return true;
+      // Step 3: Fallback - try other common export labels
+      const fallbacks = ['Data to file', 'Data to file...', 'Export data', 'CSV'];
+      for (const label of fallbacks) {
+        const item = findMenuItem(label);
+        if (item) {
+          item.click();
+          return { clicked: true, step: `fallback: ${label}`, menuInfo };
+        }
       }
 
-      const parentClicked = clickMatch([normalize(labels.preferred[0]), normalize(labels.fallback[0]), 'export']);
-      if (parentClicked) {
-        await new Promise((resolveWait) => window.setTimeout(resolveWait, 250));
-      }
-
-      return clickMatch(labels.fallback.map(normalize));
-    }, {
-      preferred: [this.environment.spotfire.exportMenuLabel, this.environment.spotfire.exportParentMenuLabel],
-      fallback: [
-        'Data to file',
-        'Data to file...',
-        'Export data',
-        'Export visualization data',
-        'Comma-separated values',
-        'CSV',
-        'Export to file',
-      ],
+      return { clicked: false, step: 'no export option found', menuInfo };
     });
 
-    if (!clicked) {
-      throw new Error(`could not find export action after opening the context menu for ${this.environment.spotfire.exportMenuLabel}`);
+    this.log('clickExportMenuAction result:', result);
+
+    if (!result.clicked) {
+      throw new Error(`could not find export action after opening the context menu for ${this.environment.spotfire.exportMenuLabel}. Available menu items: ${JSON.stringify(result.menuInfo)}`);
     }
   }
 
@@ -4478,6 +4575,50 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return hasExportAction();
       }
 
+      // PRIORITY 1: If there is a maximized visualization, export from it directly
+      const restoreButton = document.querySelector<HTMLElement>('.sfc-maximize-visual-button[title="Restore visualization layout"]');
+      if (restoreButton && isVisible(restoreButton)) {
+        // Find the maximized visualization container
+        const maximizedVisual = restoreButton.closest<HTMLElement>('.sf-element-visual-title, .sfpc-visual, [class*="visual"]');
+        if (maximizedVisual) {
+          const contextButton = maximizedVisual.querySelector<HTMLElement>('.ContextButton');
+          if (contextButton && isVisible(contextButton)) {
+            contextButton.click();
+            await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, 250); });
+
+            if (hasExportAction()) {
+              return true;
+            }
+          }
+
+          // Try context menu on the maximized visual itself
+          if (await dispatchContextMenu(maximizedVisual)) {
+            return true;
+          }
+        }
+
+        // Try finding the visual container via parent traversal
+        let parent: HTMLElement | null = restoreButton.parentElement;
+        for (let i = 0; i < 5 && parent; i++) {
+          const contextButton = parent.querySelector<HTMLElement>('.ContextButton');
+          if (contextButton && isVisible(contextButton)) {
+            contextButton.click();
+            await new Promise(function (resolveWait) { return window.setTimeout(resolveWait, 250); });
+
+            if (hasExportAction()) {
+              return true;
+            }
+          }
+
+          if (await dispatchContextMenu(parent)) {
+            return true;
+          }
+
+          parent = parent.parentElement;
+        }
+      }
+
+      // PRIORITY 2: Find by requested table title
       if (requestedTableTitle) {
         const requested = normalize(requestedTableTitle);
         const titleContainers = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual-title'));
@@ -4505,6 +4646,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
       }
 
+      // PRIORITY 3: Fallback to any visible context button (excluding filters)
       const contextButtons = Array.from(document.querySelectorAll<HTMLElement>('.ContextButton'))
         .filter(function (element) { return isVisible(element); })
         .filter(function (element) { return !element.closest('.sfc-filter-panel') && !element.closest('.FilterPanelScroll'); });

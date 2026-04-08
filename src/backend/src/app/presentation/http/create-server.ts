@@ -54,7 +54,7 @@ const dataDownloadSchema = z.object({
 const DATA_DOWNLOAD_TARGETS = [
   {
     analysisTab: 'Tab Completa',
-    tableTitle: 'Tabela Completa todas Colunas',
+    tableTitle: 'Deslocamentos',
   },
   {
     analysisTab: 'Ranking',
@@ -174,8 +174,13 @@ export async function createServer() {
 
       let latestCatalog: SpotfireCatalog | null = null;
 
-      for (const target of DATA_DOWNLOAD_TARGETS) {
+      server.log.info({ targetCount: DATA_DOWNLOAD_TARGETS.length, targets: DATA_DOWNLOAD_TARGETS }, 'starting data download for configured tables');
+
+      for (let i = 0; i < DATA_DOWNLOAD_TARGETS.length; i++) {
+        const target = DATA_DOWNLOAD_TARGETS[i];
         throwIfAborted(controller.signal);
+
+        server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle }, `downloading table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length}`);
 
         const result = await automation.runExtraction({
           reportTitle,
@@ -189,11 +194,14 @@ export async function createServer() {
         throwIfAborted(controller.signal);
 
         if (!result.exportFilePath) {
+          server.log.error({ tab: target.analysisTab, table: target.tableTitle }, 'export file was not generated');
           throw new Error(`export file was not generated for table: ${target.tableTitle}`);
         }
 
         const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
         const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
+
+        server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length} downloaded successfully`);
 
         downloadedFiles.push({
           analysisTab: target.analysisTab,
@@ -211,6 +219,8 @@ export async function createServer() {
           updatedAt: new Date().toISOString(),
         } satisfies SpotfireCatalog;
       }
+
+      server.log.info({ downloadedCount: downloadedFiles.length, files: downloadedFiles.map(f => f.fileName) }, 'all tables downloaded successfully');
 
       throwIfAborted(controller.signal);
       await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
