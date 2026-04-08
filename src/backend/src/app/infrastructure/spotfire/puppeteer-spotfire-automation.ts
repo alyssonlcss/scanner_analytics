@@ -1561,82 +1561,88 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.waitForSpotfireIdle(page, 8000);
 
     // Stay within the filter and select items one by one, verifying after each click
-    // Do NOT leave the filter until all items are selected
+    // IMPORTANT: Hold Ctrl CONTINUOUSLY after the first selection to preserve previous selections
     const maxRetries = 3;
+    let ctrlHeld = false;
 
-    for (let index = 0; index < selectedValues.length; index += 1) {
-      const value = selectedValues[index];
-      const useCtrl = index > 0;
-      let itemSelected = false;
+    try {
+      for (let index = 0; index < selectedValues.length; index += 1) {
+        const value = selectedValues[index];
+        const useCtrl = index > 0;
+        let itemSelected = false;
 
-      for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
-        // Re-activate filter if needed (but stay focused on the list)
-        if (attempt > 0) {
-          await this.locateFilterElement(page, filterTitle);
-          await this.activateListFilter(page, filterTitle);
-          await new Promise((r) => setTimeout(r, 120));
+        // Hold Ctrl from the second item onwards and KEEP IT HELD
+        if (useCtrl && !ctrlHeld) {
+          await page.keyboard.down('Control');
+          ctrlHeld = true;
+          this.logStep('list-filter', 'OK', 'holding Ctrl for multi-select', { filterTitle, index });
         }
 
-        // Step 1: Scroll the item into view
-        const scrolled = await this.scrollListItemIntoView(page, filterTitle, value);
-        if (!scrolled) {
-          this.logStep('list-filter', 'WARN', 'could not scroll item into view', { filterTitle, value, attempt });
-          continue;
-        }
+        for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
+          // Re-activate filter if needed (but stay focused on the list)
+          if (attempt > 0) {
+            await this.locateFilterElement(page, filterTitle);
+            await this.activateListFilter(page, filterTitle);
+            await new Promise((r) => setTimeout(r, 120));
+          }
 
-        // Step 2: Wait for DOM to stabilize
-        await this.waitForListStabilization(page, filterTitle, value);
+          // Step 1: Scroll the item into view (Ctrl is already held if needed)
+          const scrolled = await this.scrollListItemIntoView(page, filterTitle, value);
+          if (!scrolled) {
+            this.logStep('list-filter', 'WARN', 'could not scroll item into view', { filterTitle, value, attempt });
+            continue;
+          }
 
-        // Step 3: Click the item
-        const clicked = await this.clickListItemBySelector(page, filterTitle, value, useCtrl);
-        if (!clicked) {
-          // Fallback to coordinate-based click
-          const item = await this.findListItemCoords(page, filterTitle, value);
-          if (item) {
-            const clickX = item.labelX ?? item.clickX;
-            const clickY = item.labelY ?? item.clickY;
+          // Step 2: Wait for DOM to stabilize
+          await this.waitForListStabilization(page, filterTitle, value);
 
-            if (useCtrl) {
-              await page.keyboard.down('Control');
+          // Step 3: Click the item (Ctrl is already held via keyboard.down if useCtrl)
+          const clicked = await this.clickListItemBySelector(page, filterTitle, value, false); // Don't pass useCtrl - we're holding it globally
+          if (!clicked) {
+            // Fallback to coordinate-based click
+            const item = await this.findListItemCoords(page, filterTitle, value);
+            if (item) {
+              const clickX = item.labelX ?? item.clickX;
+              const clickY = item.labelY ?? item.clickY;
+              await page.mouse.click(clickX, clickY);
             }
-            await page.mouse.click(clickX, clickY);
-            if (useCtrl) {
-              await page.keyboard.up('Control');
-            }
+          }
+
+          await new Promise((r) => setTimeout(r, 300));
+
+          // Step 4: Verify THIS item is now selected.
+          const currentSelected = await this.getAllSelectedListItems(page, filterTitle);
+          const currentValueNorm = this.normalizeForCompare(value);
+          const actualNorm = currentSelected.map((v) => this.normalizeForCompare(v));
+
+          const thisItemSelected = actualNorm.includes(currentValueNorm);
+
+          this.logStep('list-filter', thisItemSelected ? 'OK' : 'WARN', `item selection check (${index + 1}/${selectedValues.length})`, {
+            filterTitle,
+            value,
+            attempt: attempt + 1,
+            currentValueNorm,
+            actualSelected: actualNorm,
+            thisItemSelected,
+            ctrlHeld,
+          });
+
+          if (thisItemSelected) {
+            itemSelected = true;
+          } else {
+            await new Promise((r) => setTimeout(r, 200));
           }
         }
 
-        await new Promise((r) => setTimeout(r, 300));
-
-        // Step 4: Verify THIS item is now selected.
-        // Due to virtual scrolling, we can only see items in the current view,
-        // so we only verify the current item is selected (trust Ctrl+Click preserved previous selections).
-        const currentSelected = await this.getAllSelectedListItems(page, filterTitle);
-        const currentValueNorm = this.normalizeForCompare(value);
-        const actualNorm = currentSelected.map((v) => this.normalizeForCompare(v));
-
-        // Only check if THIS item is selected, not previous ones (they may be scrolled out of view)
-        const thisItemSelected = actualNorm.includes(currentValueNorm);
-
-        this.logStep('list-filter', thisItemSelected ? 'OK' : 'WARN', `item selection check (${index + 1}/${selectedValues.length})`, {
-          filterTitle,
-          value,
-          attempt: attempt + 1,
-          currentValueNorm,
-          actualSelected: actualNorm,
-          thisItemSelected,
-        });
-
-        if (thisItemSelected) {
-          itemSelected = true;
-        } else {
-          // If not selected, wait and retry
-          await new Promise((r) => setTimeout(r, 200));
+        if (!itemSelected) {
+          return { applied: false, reason: `could not select ${value} after ${maxRetries} attempts` };
         }
       }
-
-      if (!itemSelected) {
-        return { applied: false, reason: `could not select ${value} after ${maxRetries} attempts` };
+    } finally {
+      // Always release Ctrl when done
+      if (ctrlHeld) {
+        await page.keyboard.up('Control');
+        this.logStep('list-filter', 'OK', 'released Ctrl after multi-select', { filterTitle });
       }
     }
 
@@ -2093,12 +2099,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return true;
     }
 
-    // Get the list container coordinates to click and focus it
-    const listCoords = await page.evaluate((args: { title: string }) => {
+    // Get scroll button coordinates - using buttons doesn't affect selection!
+    const scrollButtons = await page.evaluate((args: { title: string }) => {
       function nc(v: string | null | undefined): string {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
-
       function trimColon(v: string | null | undefined): string {
         return nc(v).replace(/:$/, '');
       }
@@ -2123,44 +2128,39 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       if (!filterEl) return null;
 
-      const listBox = filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable')
-        ?? filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable')
-        ?? filterEl.querySelector<HTMLElement>('.sf-element-list-box');
+      // Find scroll buttons: .ScrollbarButton.sfpc-top (up) and .ScrollbarButton.sfpc-bottom (down)
+      const upButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-top');
+      const downButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-bottom');
 
-      if (!listBox) return null;
+      if (!upButton || !downButton) return null;
 
-      const rect = listBox.getBoundingClientRect();
+      const upRect = upButton.getBoundingClientRect();
+      const downRect = downButton.getBoundingClientRect();
+
       return {
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        up: { x: Math.round(upRect.left + upRect.width / 2), y: Math.round(upRect.top + upRect.height / 2) },
+        down: { x: Math.round(downRect.left + downRect.width / 2), y: Math.round(downRect.top + downRect.height / 2) },
       };
     }, { title: filterTitle });
 
-    if (!listCoords) {
-      this.logStep('scroll', 'WARN', 'could not find list container', { filterTitle, itemLabel });
+    if (!scrollButtons) {
+      this.logStep('scroll', 'WARN', 'could not find scroll buttons', { filterTitle, itemLabel });
       return false;
     }
 
-    // Click on the RIGHT/BOTTOM edge of the list (scrollbar area) to focus it.
-    // This activates keyboard navigation without toggling any list items.
-    // The scrollbar is typically at the right edge of the list container.
-    const scrollbarX = listCoords.x + Math.floor(listCoords.width / 2) - 3; // Right edge
-    await page.mouse.click(scrollbarX, listCoords.y);
-    await new Promise((r) => setTimeout(r, 100));
+    // Click UP button multiple times to go to top
+    for (let i = 0; i < 20; i++) {
+      await page.mouse.click(scrollButtons.up.x, scrollButtons.up.y);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    await new Promise((r) => setTimeout(r, 200));
 
-    // Press Home to go to the top of the list
-    await page.keyboard.press('Home');
-    await new Promise((r) => setTimeout(r, 300));
-
-    // Check if already visible after Home key
+    // Check if already visible after going to top
     if (await checkItemVisible()) {
       return true;
     }
 
-    // Use PageDown to scroll through the list
-    // Get total items from "(All) N values" to know when to stop
+    // Get total items to know when to stop
     const totalItems = await page.evaluate((title: string) => {
       function nc(v: string | null | undefined): string {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -2200,34 +2200,28 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return 20;
     }, filterTitle);
 
-    // PageDown multiple times to scroll through the entire list
-    // Each PageDown scrolls about 3-4 items (container height / item height)
-    const maxPageDowns = Math.ceil(totalItems / 3) + 5;
+    // Click DOWN button to scroll through the list - each click scrolls ~1 item
+    const maxClicks = totalItems + 10;
 
-    for (let i = 0; i < maxPageDowns; i++) {
-      await page.keyboard.press('PageDown');
-      await new Promise((r) => setTimeout(r, 350)); // Wait for virtual list to render
+    for (let i = 0; i < maxClicks; i++) {
+      // Click down button
+      await page.mouse.click(scrollButtons.down.x, scrollButtons.down.y);
+      await new Promise((r) => setTimeout(r, 80));
 
-      if (await checkItemVisible()) {
-        // Wait a bit more for DOM to stabilize after finding item
-        await new Promise((r) => setTimeout(r, 200));
-        return true;
+      // Check every few clicks if item is visible
+      if (i % 2 === 0) {
+        if (await checkItemVisible()) {
+          await new Promise((r) => setTimeout(r, 150));
+          return true;
+        }
       }
-    }
-
-    // Final attempt: press End to go to absolute bottom
-    await page.keyboard.press('End');
-    await new Promise((r) => setTimeout(r, 400));
-
-    if (await checkItemVisible()) {
-      return true;
     }
 
     this.logStep('scroll', 'WARN', 'item not found after scrolling entire list', {
       filterTitle,
       itemLabel,
       totalItems,
-      maxPageDowns,
+      maxClicks,
     });
 
     return false;
