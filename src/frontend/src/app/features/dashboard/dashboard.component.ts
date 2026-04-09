@@ -150,11 +150,11 @@ type SavedFilterState = {
                     <span class="select-caption">Dia</span>
                     <div class="day-range-display">
                       <div>
-                        <strong>{{ resolvedDayRange().min }}</strong>
+                        <input type="number" class="day-input" min="1" [max]="dayLimit()" [value]="resolvedDayRange().min" (change)="updateDayRangeFromInput('min', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia inicial" />
                       </div>
 
                       <div>
-                        <strong>{{ resolvedDayRange().max }}</strong>
+                        <input type="number" class="day-input" min="1" [max]="dayLimit()" [value]="resolvedDayRange().max" (change)="updateDayRangeFromInput('max', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia final" />
                       </div>
                     </div>
                   </div>
@@ -545,14 +545,37 @@ type SavedFilterState = {
       }
 
       .day-range-display > div {
-        padding: 6px 8px;
-        border-radius: 10px;
+        padding: 2px 4px;
+        border-radius: 6px;
         background: rgba(255, 255, 255, 0.66);
         border: 1px solid rgba(23, 26, 31, 0.08);
       }
 
       .day-range-display strong {
         font-size: 0.88rem;
+      }
+
+      .day-input {
+        width: 100%;
+        border: none;
+        background: transparent;
+        font-weight: 700;
+        font-size: 0.78rem;
+        text-align: center;
+        color: inherit;
+        outline: none;
+        -moz-appearance: textfield;
+      }
+
+      .day-input::-webkit-inner-spin-button,
+      .day-input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      .day-input:focus {
+        outline: 1.5px solid var(--accent);
+        border-radius: 4px;
       }
 
       .dual-slider {
@@ -843,6 +866,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
         max: boundary === 'max' ? value : range.max,
       };
     });
+    this.saveToStorage();
+  }
+
+  protected updateDayRangeFromInput(boundary: 'min' | 'max', event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const raw = Number(input.value);
+    const limit = this.dayLimit();
+    const clamped = Math.max(1, Math.min(Number.isFinite(raw) ? Math.round(raw) : 1, limit));
+
+    this.dayRange.update((range) => {
+      const a = boundary === 'min' ? clamped : range.min;
+      const b = boundary === 'max' ? clamped : range.max;
+      return { min: Math.min(a, b), max: Math.max(a, b) };
+    });
+
+    input.value = String(boundary === 'min' ? this.resolvedDayRange().min : this.resolvedDayRange().max);
     this.saveToStorage();
   }
 
