@@ -150,11 +150,11 @@ type SavedFilterState = {
                     <span class="select-caption">Dia</span>
                     <div class="day-range-display">
                       <div>
-                        <strong>{{ dayRange().min }}</strong>
+                        <strong>{{ resolvedDayRange().min }}</strong>
                       </div>
 
                       <div>
-                        <strong>{{ dayRange().max }}</strong>
+                        <strong>{{ resolvedDayRange().max }}</strong>
                       </div>
                     </div>
                   </div>
@@ -669,7 +669,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('completo');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
-  protected readonly dayRange = signal(this.defaultDayRange());
+  protected readonly dayRange = signal({ min: 1, max: 31 });
+  protected readonly resolvedDayRange = computed(() => {
+    const r = this.dayRange();
+    return { min: Math.min(r.min, r.max), max: Math.max(r.min, r.max) };
+  });
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
   protected readonly filtersVisible = computed(() => this.selectFilters().length > 0);
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
@@ -682,11 +686,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
   });
   protected readonly dayRangeStart = computed(() => {
     const limit = this.dayLimit();
-    return limit > 1 ? ((this.dayRange().min - 1) / (limit - 1)) * 100 : 0;
+    return limit > 1 ? ((this.resolvedDayRange().min - 1) / (limit - 1)) * 100 : 0;
   });
   protected readonly dayRangeEnd = computed(() => {
     const limit = this.dayLimit();
-    return limit > 1 ? ((this.dayRange().max - 1) / (limit - 1)) * 100 : 100;
+    return limit > 1 ? ((this.resolvedDayRange().max - 1) / (limit - 1)) * 100 : 100;
   });
 
   private catalogPollTimer?: ReturnType<typeof setTimeout>;
@@ -705,6 +709,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (saved) {
       this.reportType.set(saved.reportType);
       this.dayRange.set(saved.dayRange);
+    } else {
+      const d2 = Math.max(new Date().getDate() - 2, 1);
+      this.dayRange.set({ min: d2, max: d2 });
     }
     this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     window.addEventListener('mouseup', this.boundEndFilterDrag);
@@ -831,9 +838,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     this.dayRange.update((range) => {
-      const nextMin = boundary === 'min' ? Math.min(value, range.max) : range.min;
-      const nextMax = boundary === 'max' ? Math.max(value, range.min) : range.max;
-      return { min: nextMin, max: nextMax };
+      return {
+        min: boundary === 'min' ? value : range.min,
+        max: boundary === 'max' ? value : range.max,
+      };
     });
     this.saveToStorage();
   }
@@ -994,7 +1002,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
-    const previous = this.dayRange();
+    const previous = this.resolvedDayRange();
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
     const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);
     const minDay = days[0] ?? 1;
@@ -1115,8 +1123,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       year: year.length > 0 ? year : undefined,
       month: month.length > 0 ? month : undefined,
       dayRange: {
-        min: this.dayRange().min,
-        max: this.dayRange().max,
+        min: this.resolvedDayRange().min,
+        max: this.resolvedDayRange().max,
       },
     };
   }
@@ -1169,11 +1177,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return 'falha ao carregar o catálogo do backend';
   }
 
-  private defaultDayRange(): { min: number; max: number } {
-    const d2 = Math.max(new Date().getDate() - 2, 1);
-    return { min: d2, max: d2 };
-  }
-
   private saveToStorage(): void {
     const filters = {} as Record<FilterKey, string[]>;
     for (const f of this.selectFilters()) {
@@ -1181,7 +1184,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
     const state: SavedFilterState = {
       filters,
-      dayRange: this.dayRange(),
+      dayRange: this.resolvedDayRange(),
       reportType: this.reportType(),
     };
     try {
