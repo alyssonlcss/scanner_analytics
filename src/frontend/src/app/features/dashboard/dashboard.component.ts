@@ -126,13 +126,13 @@ type SavedFilterState = {
 
               <div class="period-shell">
                 <div class="period-selects">
-                  <label class="select-shell" *ngFor="let filter of periodFilters()">
+                  <label class="select-shell" *ngFor="let filter of periodFilters(); trackBy: trackByFilterKey">
                     <span class="select-caption">{{ filter.title }}</span>
                     <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true">
                       <button
                         type="button"
                         class="option-item"
-                        *ngFor="let option of filter.options"
+                        *ngFor="let option of filter.options; trackBy: trackByOption"
                         [class.option-item-active]="isOptionSelected(filter, option)"
                         [attr.aria-selected]="isOptionSelected(filter, option)"
                         (mousedown)="beginOptionSelection(filter.key, option, $event)"
@@ -170,7 +170,7 @@ type SavedFilterState = {
               </div>
             </article>
 
-            <article class="drawer-card" *ngFor="let filter of secondaryFilters()">
+            <article class="drawer-card" *ngFor="let filter of secondaryFilters(); trackBy: trackByFilterKey">
               <div class="drawer-card-head">
                 <h3>{{ filter.title }}</h3>
               </div>
@@ -181,7 +181,7 @@ type SavedFilterState = {
                   <button
                     type="button"
                     class="option-item"
-                    *ngFor="let option of filter.options"
+                    *ngFor="let option of filter.options; trackBy: trackByOption"
                     [class.option-item-active]="isOptionSelected(filter, option)"
                     [attr.aria-selected]="isOptionSelected(filter, option)"
                     (mousedown)="beginOptionSelection(filter.key, option, $event)"
@@ -762,6 +762,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     this.reportType.set(value as ReportTypeValue);
     this.saveToStorage();
+  }
+
+  protected trackByFilterKey(_index: number, filter: SelectFilterState): string {
+    return filter.key;
+  }
+
+  protected trackByOption(_index: number, option: string): string {
+    return option;
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {
