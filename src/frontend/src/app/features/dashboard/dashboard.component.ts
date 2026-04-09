@@ -1143,16 +1143,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
-    const previous = this.resolvedDayRange();
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
     const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);
     const minDay = days[0] ?? 1;
     const maxDay = days[days.length - 1] ?? 31;
 
-    return {
-      min: Math.max(minDay, Math.min(previous.min, maxDay)),
-      max: Math.max(Math.max(minDay, previous.min), Math.min(previous.max, maxDay)),
-    };
+    return { min: minDay, max: maxDay };
   }
 
   private yearOptions(): string[] {
@@ -1260,13 +1256,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
       ? monthFilter.options.filter((option) => option !== ALL_OPTION)
       : (monthFilter?.value ?? []);
 
+    const resolved = this.resolvedDayRange();
+    const limit = this.dayLimit();
+    const isFullRange = resolved.min <= 1 && resolved.max >= limit;
+
     return {
       year: year.length > 0 ? year : undefined,
       month: month.length > 0 ? month : undefined,
-      dayRange: {
-        min: this.resolvedDayRange().min,
-        max: this.resolvedDayRange().max,
-      },
+      dayRange: isFullRange ? undefined : { min: resolved.min, max: resolved.max },
     };
   }
 
