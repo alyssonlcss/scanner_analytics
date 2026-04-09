@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
@@ -63,7 +63,7 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
         <div class="loading-spinner"></div>
-        <p>Aplicando filtros e baixando tabelas</p>
+        <p>{{ progressMessage() || 'Aplicando filtros e baixando tabelas' }}</p>
       </div>
 
       <ng-container *ngIf="filtersVisible()">
@@ -648,9 +648,11 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
 })
 export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly api = inject(ScannerApiService);
+  private readonly zone = inject(NgZone);
   protected readonly allOption = ALL_OPTION;
 
   protected readonly loading = signal(false);
+  protected readonly progressMessage = signal('');
   protected readonly catalogLoading = signal(true);
   protected readonly catalog = signal<SpotfireCatalog | null>(null);
   protected readonly catalogRequestError = signal<string | null>(null);
@@ -681,6 +683,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private catalogPollTimer?: ReturnType<typeof setTimeout>;
   private activeDownloadRequest?: Subscription;
+  private activeDownloadAbort?: AbortController;
   private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove' } | null = null;
   private readonly boundEndFilterDrag = () => {
     this.dragSelectionState = null;
@@ -829,26 +832,50 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.filterDrawerOpen.set(false);
     this.cancelActiveDownloadRequest();
     this.loading.set(true);
+    this.progressMessage.set('');
 
     const selectedFilters = this.buildSelectedFilters();
+    const abortController = new AbortController();
+    this.activeDownloadAbort = abortController;
 
-    this.activeDownloadRequest = this.api.dataDownload({
-      reportTitle: this.reportTitle(),
-      selectedFilters,
-      periodSelection: this.buildPeriodSelection(),
-    }).subscribe({
-      next: () => {
-        this.activeDownloadRequest = undefined;
-        this.loading.set(false);
+    this.api.dataDownloadWithProgress(
+      {
+        reportTitle: this.reportTitle(),
+        selectedFilters,
+        periodSelection: this.buildPeriodSelection(),
       },
-      error: () => {
-        this.activeDownloadRequest = undefined;
-        this.loading.set(false);
+      {
+        onProgress: (message) => {
+          this.zone.run(() => this.progressMessage.set(message));
+        },
+        onResult: () => {
+          this.zone.run(() => {
+            this.loading.set(false);
+            this.progressMessage.set('');
+            this.activeDownloadAbort = undefined;
+          });
+        },
+        onError: () => {
+          this.zone.run(() => {
+            this.loading.set(false);
+            this.progressMessage.set('');
+            this.activeDownloadAbort = undefined;
+          });
+        },
       },
+      abortController.signal,
+    ).catch(() => {
+      this.zone.run(() => {
+        this.loading.set(false);
+        this.progressMessage.set('');
+        this.activeDownloadAbort = undefined;
+      });
     });
   }
 
   private cancelActiveDownloadRequest(): void {
+    this.activeDownloadAbort?.abort();
+    this.activeDownloadAbort = undefined;
     this.activeDownloadRequest?.unsubscribe();
     this.activeDownloadRequest = undefined;
   }

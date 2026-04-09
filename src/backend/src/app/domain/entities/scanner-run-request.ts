@@ -23,4 +23,5 @@ export interface ScannerRunRequest {
   periodSelection?: ScannerPeriodSelection;
   skipFilterReset?: boolean;
   signal?: AbortSignal;
+  onProgress?: (message: string) => void;
 }

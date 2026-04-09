@@ -161,8 +161,27 @@ export async function createServer() {
       }
     });
 
+    reply.hijack();
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': request.headers.origin ?? '*',
+      'Access-Control-Allow-Credentials': 'true',
+    });
+
+    const sendEvent = (event: string, data: unknown) => {
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const onProgress = (message: string) => {
+      sendEvent('progress', { message });
+    };
+
     try {
       throwIfAborted(controller.signal);
+      onProgress('Preparando diretório de dados...');
       await resetDataDirectory(dataDirectory);
 
       const downloadedFiles: Array<{
@@ -175,6 +194,7 @@ export async function createServer() {
       let latestCatalog: SpotfireCatalog | null = null;
 
       server.log.info({ targetCount: DATA_DOWNLOAD_TARGETS.length, targets: DATA_DOWNLOAD_TARGETS }, 'starting data download for configured tables');
+      onProgress('Iniciando download das tabelas...');
 
       for (let i = 0; i < DATA_DOWNLOAD_TARGETS.length; i++) {
         const target = DATA_DOWNLOAD_TARGETS[i];
@@ -193,6 +213,7 @@ export async function createServer() {
           periodSelection: isFirstExtraction ? payload.periodSelection : undefined,
           skipFilterReset: !isFirstExtraction,
           signal: controller.signal,
+          onProgress,
         });
 
         throwIfAborted(controller.signal);
@@ -206,6 +227,7 @@ export async function createServer() {
         const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
 
         server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length} downloaded successfully`);
+        onProgress(`Tabela "${target.tableTitle}" baixada com sucesso (${i + 1}/${DATA_DOWNLOAD_TARGETS.length})`);
 
         downloadedFiles.push({
           analysisTab: target.analysisTab,
@@ -227,9 +249,10 @@ export async function createServer() {
       server.log.info({ downloadedCount: downloadedFiles.length, files: downloadedFiles.map(f => f.fileName) }, 'all tables downloaded successfully');
 
       throwIfAborted(controller.signal);
+      onProgress('Finalizando...');
       await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
 
-      return reply.send({
+      sendEvent('result', {
         status: 'completed',
         reportTitle,
         updatedAt: new Date().toISOString(),
@@ -238,14 +261,18 @@ export async function createServer() {
         availableTabs: latestCatalog?.availableTabs ?? [],
         availableTables: latestCatalog?.availableTables ?? [],
       });
+
+      reply.raw.end();
     } catch (error) {
       if (isAbortError(error)) {
-        return reply.code(409).send({
-          message: normalizeAbortMessage(error),
-        });
+        sendEvent('error', { message: normalizeAbortMessage(error) });
+        reply.raw.end();
+        return;
       }
 
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : 'unknown error';
+      sendEvent('error', { message: errorMessage });
+      reply.raw.end();
     } finally {
       if (activeDataDownloadController === controller) {
         activeDataDownloadController = null;

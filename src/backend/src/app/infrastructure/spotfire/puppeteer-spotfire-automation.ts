@@ -89,9 +89,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
   }
 
+  private emitProgress(request: ScannerRunRequest, message: string): void {
+    request.onProgress?.(message);
+  }
+
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
     return this.runSerialized(async () => {
       const outputDirectory = await this.raceAbort(this.prepareOutputDirectory(), request.signal);
+      this.emitProgress(request, 'Iniciando extração de dados...');
       this.logStep('data-download', 'START', 'starting extraction run', {
         reportTitle: request.reportTitle ?? this.environment.spotfire.defaultReportTitle,
         analysisTab: request.analysisTab ?? null,
@@ -132,13 +137,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
 
         if (request.analysisTab?.trim()) {
+          this.emitProgress(request, `Abrindo aba "${request.analysisTab}"...`);
           await this.raceAbort(this.openAnalysisTab(page, request.analysisTab), request.signal);
         }
 
         await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+        this.emitProgress(request, 'Carregando filtros...');
         await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
         
         if (!request.skipFilterReset) {
+          this.emitProgress(request, 'Resetando filtros...');
           await this.raceAbort(this.resetVisibleFilters(page), request.signal);
           await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
         } else {
@@ -154,6 +162,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         const filtersToApply = this.buildFiltersToApply(filters, request);
 
         if (filtersToApply.length > 0) {
+          this.emitProgress(request, `Aplicando ${filtersToApply.length} filtro(s)...`);
           await this.raceAbort(this.applySelectedFilters(page, filtersToApply), request.signal);
           await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
           filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
@@ -169,6 +178,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           for (let i = 0; i < request.tablesToExport.length; i++) {
             const tableConfig = request.tablesToExport[i];
             this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
+            this.emitProgress(request, `Baixando tabela ${i + 1}/${request.tablesToExport.length}: "${tableConfig.tableTitle}"...`);
             
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
             this.log(`navigating to tab: ${tableConfig.tab}`);
@@ -202,6 +212,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         } else if (request.tableTitle?.trim()) {
           // Legacy single table export
           this.logStep('export', 'START', `single table export: "${request.tableTitle}"`);
+          this.emitProgress(request, `Baixando tabela "${request.tableTitle}"...`);
           await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
           await this.raceAbort(this.maximizeTable(page, request.tableTitle), request.signal);
           const exportedFile = await this.raceAbort(this.exportTable(page, outputDirectory, request), request.signal);

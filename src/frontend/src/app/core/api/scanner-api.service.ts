@@ -38,6 +38,12 @@ export interface ScannerJob {
   errorMessage?: string;
 }
 
+export interface DataDownloadCallbacks {
+  onProgress?: (message: string) => void;
+  onResult?: (result: ScannerDataDownloadResult) => void;
+  onError?: (error: string) => void;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ScannerApiService {
   private readonly http = inject(HttpClient);
@@ -85,6 +91,71 @@ export class ScannerApiService {
     };
   }): Observable<ScannerDataDownloadResult> {
     return this.http.post<ScannerDataDownloadResult>(`${this.baseUrl}/scanner/data-download`, payload);
+  }
+
+  public async dataDownloadWithProgress(
+    payload: {
+      reportTitle?: string;
+      selectedFilters?: SpotfireFilter[];
+      periodSelection?: {
+        year?: string[];
+        month?: string[];
+        dayRange?: { min: number; max: number };
+      };
+    },
+    callbacks: DataDownloadCallbacks,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/scanner/data-download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    if (!response.ok || !response.body) {
+      callbacks.onError?.(`HTTP ${response.status}`);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let currentEvent = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+
+          try {
+            const parsed = JSON.parse(data);
+
+            if (currentEvent === 'progress') {
+              callbacks.onProgress?.(parsed.message);
+            } else if (currentEvent === 'result') {
+              callbacks.onResult?.(parsed as ScannerDataDownloadResult);
+            } else if (currentEvent === 'error') {
+              callbacks.onError?.(parsed.message);
+            }
+          } catch {
+            // ignore malformed JSON
+          }
+
+          currentEvent = '';
+        }
+      }
+    }
   }
 
   public getExportDownloadUrl(jobId: string): string {
