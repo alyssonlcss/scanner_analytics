@@ -5562,13 +5562,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return false;
     }
 
-    // Scroll to top first
-    for (let i = 0; i < 20; i++) {
-      await page.mouse.click(scrollButtons.up.x, scrollButtons.up.y);
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    await new Promise((r) => setTimeout(r, 200));
-
+    // Only scroll DOWN — dates are applied in ascending order and scroll
+    // already starts at the top after the initial filter reset.
     if (await checkVisible()) return true;
 
     // Scroll down step by step
