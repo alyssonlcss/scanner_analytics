@@ -48,6 +48,14 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   },
 ];
 
+const STORAGE_KEY = 'scanner_filter_state';
+
+type SavedFilterState = {
+  filters: Record<FilterKey, string[]>;
+  dayRange: { min: number; max: number };
+  reportType: ReportTypeValue;
+};
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -661,7 +669,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('completo');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
-  protected readonly dayRange = signal({ min: 1, max: 31 });
+  protected readonly dayRange = signal(this.defaultDayRange());
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
   protected readonly filtersVisible = computed(() => this.selectFilters().length > 0);
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
@@ -690,8 +698,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
   };
 
   public ngOnInit(): void {
-    const builtFilters = this.buildSelectFilters();
+    const saved = this.loadFromStorage();
+    const overrides = saved ? new Map(Object.entries(saved.filters) as [FilterKey, string[]][]) : undefined;
+    const builtFilters = this.buildSelectFilters(overrides);
     this.selectFilters.set(builtFilters);
+    if (saved) {
+      this.reportType.set(saved.reportType);
+      this.dayRange.set(saved.dayRange);
+    }
     this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     window.addEventListener('mouseup', this.boundEndFilterDrag);
     this.loadCatalog();
@@ -717,6 +731,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     this.reportType.set(value as ReportTypeValue);
+    this.saveToStorage();
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {
@@ -801,10 +816,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const rebuiltFilters = this.buildSelectFilters(overrideValues);
       this.selectFilters.set(rebuiltFilters);
       this.dayRange.set(this.buildDayRange(new Map(rebuiltFilters.map((filter) => [filter.key, filter.value]))));
+      this.saveToStorage();
       return;
     }
 
     this.selectFilters.set(updatedFilters);
+    this.saveToStorage();
   }
 
   protected updateDayRange(boundary: 'min' | 'max', event: Event): void {
@@ -818,6 +835,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const nextMax = boundary === 'max' ? Math.max(value, range.min) : range.max;
       return { min: nextMin, max: nextMax };
     });
+    this.saveToStorage();
   }
 
   protected catalogReady(): boolean {
@@ -1149,5 +1167,37 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     return 'falha ao carregar o catálogo do backend';
+  }
+
+  private defaultDayRange(): { min: number; max: number } {
+    const d2 = Math.max(new Date().getDate() - 2, 1);
+    return { min: d2, max: d2 };
+  }
+
+  private saveToStorage(): void {
+    const filters = {} as Record<FilterKey, string[]>;
+    for (const f of this.selectFilters()) {
+      filters[f.key] = f.value;
+    }
+    const state: SavedFilterState = {
+      filters,
+      dayRange: this.dayRange(),
+      reportType: this.reportType(),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch { /* quota exceeded – silent */ }
+  }
+
+  private loadFromStorage(): SavedFilterState | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && parsed.filters && parsed.dayRange) {
+        return parsed as SavedFilterState;
+      }
+    } catch { /* corrupt data – ignore */ }
+    return null;
   }
 }
