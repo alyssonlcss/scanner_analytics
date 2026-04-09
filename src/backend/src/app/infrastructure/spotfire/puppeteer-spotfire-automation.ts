@@ -114,11 +114,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       request.signal?.addEventListener('abort', abortHandler, { once: true });
 
       const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), request.signal);
+      const errorMonitor = this.startErrorPopupMonitor(page, request);
 
       try {
         this.throwIfAborted(request.signal);
 
         if (createdNewPage) {
+          this.emitProgress(request, 'Preparando navegador...');
           await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), request.signal);
           this.logStep('browser', 'OK', 'created new browser page for extraction run', {
             width: 1600,
@@ -126,6 +128,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           });
         }
 
+        this.emitProgress(request, 'Abrindo análise no Spotfire...');
         await this.raceAbort(
           this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle),
           request.signal,
@@ -134,6 +137,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           currentUrl: page.url(),
         });
 
+        this.emitProgress(request, 'Preparando visualização...');
         await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
 
         if (request.analysisTab?.trim()) {
@@ -154,7 +158,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
+        this.emitProgress(request, 'Lendo tabelas disponíveis...');
         const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);
+        this.emitProgress(request, 'Lendo estado dos filtros...');
         let filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
 
         this.logFiltersSummary(filters);
@@ -180,18 +186,22 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         // New multi-table export logic
         if (request.tablesToExport && request.tablesToExport.length > 0) {
           this.logStep('export', 'START', `starting multi-table export for ${request.tablesToExport.length} tables`);
+          this.emitProgress(request, 'Preparando exportação das tabelas...');
           
           for (let i = 0; i < request.tablesToExport.length; i++) {
             const tableConfig = request.tablesToExport[i];
             this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
-            this.emitProgress(request, `Exportando tabela ${i + 1}/${request.tablesToExport.length}: "${tableConfig.tableTitle}"...`);
+            this.emitProgress(request, `Navegando para aba "${tableConfig.tab}"...`);
             
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
             this.log(`navigating to tab: ${tableConfig.tab}`);
             await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+            this.emitProgress(request, `Maximizando tabela "${tableConfig.tableTitle}"...`);
             this.log(`maximizing table: ${tableConfig.tableTitle}`);
             await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
+            
+            this.emitProgress(request, `Exportando tabela "${tableConfig.tableTitle}"...`);
             
             const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
             const { existingFiles } = await this.raceAbort(
@@ -209,6 +219,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
           // Now wait for all downloads in parallel
           this.emitProgress(request, 'Aguardando downloads...');
+          const remaining = new Set(pendingDownloads.map(p => p.tableTitle));
           const downloadResults = await Promise.all(
             pendingDownloads.map(async (pending) => {
               const file = await this.raceAbort(
@@ -216,9 +227,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
                 request.signal,
               );
               if (file) {
+                remaining.delete(pending.tableTitle);
                 this.logStep('export', 'OK', `downloaded "${pending.tableTitle}" -> ${file}`);
-                this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada`);
+                const stillPending = Array.from(remaining);
+                if (stillPending.length > 0) {
+                  this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada. Aguardando: ${stillPending.join(', ')}...`);
+                } else {
+                  this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada`);
+                }
               } else {
+                remaining.delete(pending.tableTitle);
                 this.logStep('export', 'FAIL', `failed to download "${pending.tableTitle}"`);
               }
               return file;
@@ -269,6 +287,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           exportedFiles,
         };
       } finally {
+        errorMonitor.stop();
         request.signal?.removeEventListener('abort', abortHandler);
 
         if (!this.environment.spotfire.keepOpen) {
@@ -4512,6 +4531,112 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
     this.log(`download result for "${request.tableTitle}": ${downloadedFile ?? '(no file downloaded)'}`);
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
+  }
+
+  private async detectAndDismissErrorPopup(page: Page): Promise<string | null> {
+    try {
+      return await page.evaluate(() => {
+        function isVisible(el: HTMLElement): boolean {
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+        }
+
+      // Spotfire error/notification popups: look for modal dialogs, message boxes, notification bars
+      const selectors = [
+        '.sf-element-modal-dialog',
+        '.sfpc-modal-dialog',
+        '.sfc-notification-dialog',
+        '.sf-element-notification',
+        '.MessageDialog',
+        '.sf-element-dialog',
+        '[class*="modal-dialog"]',
+        '[class*="error-dialog"]',
+        '[class*="notification-dialog"]',
+        '[role="alertdialog"]',
+        '[role="dialog"]',
+      ];
+
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll<HTMLElement>(selector);
+        for (const el of elements) {
+          if (!isVisible(el)) continue;
+
+          const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+          // Only treat as error if it has meaningful content (not just filter/settings dialogs)
+          const lowerText = text.toLowerCase();
+          if (
+            lowerText.includes('error') ||
+            lowerText.includes('erro') ||
+            lowerText.includes('fail') ||
+            lowerText.includes('exception') ||
+            lowerText.includes('unable') ||
+            lowerText.includes('cannot') ||
+            lowerText.includes('could not') ||
+            lowerText.includes('não foi possível')
+          ) {
+            // Try to dismiss it
+            const closeButtons = el.querySelectorAll<HTMLElement>(
+              'button, [role="button"], .sf-element-modal-dialog-close, [title="Close"], [title="OK"], [title="Fechar"]'
+            );
+            for (const btn of closeButtons) {
+              if (isVisible(btn)) {
+                const btnText = (btn.textContent ?? '').trim().toLowerCase();
+                const btnTitle = (btn.getAttribute('title') ?? '').toLowerCase();
+                if (
+                  btnText === 'ok' || btnText === 'close' || btnText === 'fechar' ||
+                  btnTitle === 'close' || btnTitle === 'ok' || btnTitle === 'fechar' ||
+                  btn.classList.contains('sf-element-modal-dialog-close')
+                ) {
+                  btn.click();
+                  break;
+                }
+              }
+            }
+
+            // Extract just the message content (truncate long texts)
+            const message = text.length > 200 ? text.slice(0, 200) + '...' : text;
+            return message;
+          }
+        }
+      }
+
+      return null;
+    });
+    } catch {
+      // Ignore errors from popup detection (e.g. page navigating, session closed)
+      return null;
+    }
+  }
+
+  private startErrorPopupMonitor(
+    page: Page,
+    request: ScannerRunRequest,
+  ): { stop: () => void; getLastError: () => string | null } {
+    let lastError: string | null = null;
+    let running = true;
+
+    const poll = async () => {
+      while (running) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (!running) break;
+
+        const errorMessage = await this.detectAndDismissErrorPopup(page);
+        if (errorMessage) {
+          lastError = errorMessage;
+          this.logStep('popup-monitor', 'WARN', `Spotfire error popup detected: ${errorMessage}`);
+          this.emitProgress(request, `Erro no Spotfire: ${errorMessage}`);
+        }
+      }
+    };
+
+    // Fire-and-forget — runs concurrently
+    void poll();
+
+    return {
+      stop: () => { running = false; },
+      getLastError: () => lastError,
+    };
   }
 
   private async clickExportMenuAction(page: Page): Promise<void> {
