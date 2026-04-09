@@ -5765,13 +5765,26 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       this.emitProgress(request, 'Spotfire recarregou, aguardando estabilização...');
     }
 
-    // Wait for navigation to finish (if one is in progress)
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(() => undefined);
+    // Wait a moment for the page to start reloading
+    await new Promise((r) => setTimeout(r, 3000));
 
-    // Wait for Spotfire UI to be idle
+    // If a navigation is in progress, wait for it to finish (short timeout — don't block if already done)
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => undefined);
+
+    // Wait for Spotfire analysis elements to appear (proves the page loaded fully)
+    const analysisReady = await this.isAnalysisReady(page);
+    if (!analysisReady) {
+      this.log('analysis not ready after reload, waiting longer...');
+      await page.waitForSelector(
+        '.sf-element-page-tab, .sfx_page-tab_204, .sf-element-visual-title, .sf-element-filter, .FilterPanelScroll, [title="Reset Visible Filters"]',
+        { timeout: 120000 },
+      ).catch(() => undefined);
+    }
+
+    // Now wait for Spotfire UI to be idle (no spinners / busy indicators)
     await this.waitForSpotfireIdle(page, 120000);
 
-    // Ensure the analysis is still loaded
+    // Final check — if analysis still isn't loaded, re-open it
     if (!await this.isAnalysisReady(page)) {
       this.log('analysis not ready after reload, re-opening...');
       await this.openAnalysis(page, this.environment.spotfire.defaultReportTitle);
