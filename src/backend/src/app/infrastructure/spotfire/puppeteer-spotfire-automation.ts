@@ -83,7 +83,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       try {
         this.throwIfAborted(request.signal);
 
-        if (createdNewPage) {
+        if (createdNewPage && !this.usesExternalBrowserConnection()) {
           this.emitProgress(request, 'Preparando navegador...');
           await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), request.signal);
           this.logStep('browser', 'OK', 'created new browser page for extraction run', {
@@ -3511,7 +3511,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       try {
         return await puppeteer.connect({
           browserWSEndpoint: this.environment.spotfire.browserWSEndpoint,
-          defaultViewport: { width: 1600, height: 1000 },
+          defaultViewport: null,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -3530,7 +3530,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       try {
         return await puppeteer.connect({
           browserURL: this.environment.spotfire.browserUrl,
-          defaultViewport: { width: 1600, height: 1000 },
+          defaultViewport: null,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
