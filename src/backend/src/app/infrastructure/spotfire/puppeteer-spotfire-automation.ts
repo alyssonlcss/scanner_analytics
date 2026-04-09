@@ -183,6 +183,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           return { availableTabs, availableTables, filters };
         }, request);
 
+        // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
+        if (request.periodSelection?.dayRange) {
+          await this.withSpotfireRecovery(page, async () => {
+            await this.raceAbort(
+              this.applyDataReferenciaFilter(page, request.periodSelection!, request),
+              request.signal,
+            );
+          }, request);
+        }
+
         const exportedFiles: string[] = [];
         const pendingDownloads: Array<{
           tableTitle: string;
@@ -4146,14 +4156,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   /**
-   * Build date strings (M/D/YYYY) for Data Referência directly from the
-   * periodSelection, avoiding the need to scan the virtualized list.
+   * Build date strings (DD/MM/YYYY) for the right-panel Data Referência filter
+   * from the periodSelection. Generates one date per day in the dayRange.
    */
   private generateReferenceDates(periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): string[] {
-    const year = parseInt(this.normalizePeriodSelectionValues(periodSelection.year)[0] ?? '', 10);
-    const monthIndex = MONTH_OPTIONS.indexOf((this.normalizePeriodSelectionValues(periodSelection.month)[0] ?? '').toLowerCase());
+    const years = this.normalizePeriodSelectionValues(periodSelection.year);
+    const months = this.normalizePeriodSelectionValues(periodSelection.month);
 
-    if (Number.isNaN(year) || monthIndex === -1) {
+    if (years.length === 0 || months.length === 0) {
       return [];
     }
 
@@ -4161,12 +4171,24 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const maxDay = periodSelection.dayRange?.max ?? 31;
     const dates: string[] = [];
 
-    for (let day = minDay; day <= maxDay; day += 1) {
-      const d = new Date(year, monthIndex, day);
-      // Stop if the date rolls into the next month (e.g. Feb 30 → Mar 2)
-      if (d.getMonth() !== monthIndex) break;
-      // Spotfire shows dates as M/D/YYYY (no leading zeros)
-      dates.push(`${monthIndex + 1}/${day}/${year}`);
+    for (const yearStr of years) {
+      const year = parseInt(yearStr, 10);
+      if (Number.isNaN(year)) continue;
+
+      for (const monthStr of months) {
+        const monthIndex = MONTH_OPTIONS.indexOf(monthStr.toLowerCase());
+        if (monthIndex === -1) continue;
+
+        for (let day = minDay; day <= maxDay; day += 1) {
+          const d = new Date(year, monthIndex, day);
+          // Stop if the date rolls into the next month (e.g. Feb 30 → Mar 2)
+          if (d.getMonth() !== monthIndex) break;
+          // Spotfire shows dates as DD/MM/YYYY (leading zeros, Brazilian format)
+          const dd = String(day).padStart(2, '0');
+          const mm = String(monthIndex + 1).padStart(2, '0');
+          dates.push(`${dd}/${mm}/${year}`);
+        }
+      }
     }
 
     this.log('generated Data Referência date strings', { count: dates.length, sample: dates.slice(0, 5) });
@@ -5038,7 +5060,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     filtersToApply.push(...this.buildYearMonthFilters(availableFilters, request.periodSelection));
 
-    this.log('preserving period dayRange for downstream CSV filtering without applying Data Referência in Spotfire', {
+    this.log('period selection resolved — Data Referência will be applied in right panel after left-panel filters', {
       year: this.normalizePeriodSelectionValues(request.periodSelection.year),
       month: this.normalizePeriodSelectionValues(request.periodSelection.month),
       dayRange: request.periodSelection.dayRange ?? null,
@@ -5348,6 +5370,377 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       },
       { timeout: timeoutMs },
     ).catch(() => undefined);
+  }
+
+  // ── Right-panel "Data Referência" filter ──────────────────────────────
+
+  /**
+   * Opens the right-side Filters panel via View > Filters menu if not already open.
+   * Checks for the panel header `.sf-element-panel-header` with text "Filters".
+   */
+  private async ensureRightFiltersPanelOpen(page: Page): Promise<void> {
+    this.logStep('right-panel', 'START', 'checking if Filters panel is already open');
+
+    const alreadyOpen = await page.evaluate(function () {
+      function isVisible(el: HTMLElement | null | undefined): el is HTMLElement {
+        if (!el) return false;
+        const s = window.getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return s.visibility !== 'hidden' && s.display !== 'none' && r.width > 0 && r.height > 0;
+      }
+
+      // Check for filter panel header with "Filters" text
+      const headers = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-panel-header'));
+      for (const header of headers) {
+        const span = header.querySelector<HTMLElement>('span.sf-element-text-box');
+        if (span && (span.textContent ?? '').trim().toLowerCase() === 'filters' && isVisible(header)) {
+          return true;
+        }
+      }
+
+      // Also check for sfc-filter-panel or FilterPanelScroll
+      const panel = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+      return panel !== null && isVisible(panel);
+    });
+
+    if (alreadyOpen) {
+      this.logStep('right-panel', 'OK', 'Filters panel is already open');
+      return;
+    }
+
+    // Open via View > Filters menu
+    this.logStep('right-panel', 'START', 'opening Filters panel via View > Filters menu');
+
+    const resolveMenuCoords = async (label: string): Promise<{ x: number; y: number } | null> => {
+      return page.evaluate((requestedLabel: string) => {
+        function normalize(v: string | null | undefined): string {
+          return (v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        function isVisible(el: HTMLElement | null | undefined): el is HTMLElement {
+          if (!el) return false;
+          const s = window.getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return s.visibility !== 'hidden' && s.display !== 'none' && r.width > 0 && r.height > 0;
+        }
+
+        const wanted = normalize(requestedLabel);
+        const el = Array.from(document.querySelectorAll<HTMLElement>('[title], .contextMenuItemLabel, .sfx_menu-item_497, button, div, span, label'))
+          .filter((c) => isVisible(c))
+          .find((c) => {
+            const title = normalize(c.getAttribute('title'));
+            const text = normalize(c.textContent);
+            return title === wanted || text === wanted;
+          });
+
+        if (!el) return null;
+
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        const rect = el.getBoundingClientRect();
+        return { x: rect.left + (rect.width / 2), y: rect.top + (rect.height / 2) };
+      }, label);
+    };
+
+    const viewMenu = await resolveMenuCoords('View');
+    if (!viewMenu) {
+      this.logStep('right-panel', 'FAIL', 'could not find View menu');
+      throw new Error('View menu entry not found for opening Filters panel');
+    }
+
+    await page.mouse.click(viewMenu.x, viewMenu.y);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const filtersItem = await resolveMenuCoords('Filters');
+    if (!filtersItem) {
+      // Close menu by pressing Escape
+      await page.keyboard.press('Escape');
+      this.logStep('right-panel', 'FAIL', 'could not find Filters menu item');
+      throw new Error('Filters menu item not found under View menu');
+    }
+
+    await page.mouse.click(filtersItem.x, filtersItem.y);
+    await new Promise((r) => setTimeout(r, 500));
+    await this.waitForSpotfireIdle(page);
+    this.logStep('right-panel', 'OK', 'Filters panel opened via View > Filters');
+  }
+
+  /**
+   * Scrolls to an item in the right-panel Data Referência filter using scroll buttons.
+   * Returns true if the item was found and scrolled into view.
+   */
+  private async scrollRightPanelItemIntoView(
+    page: Page,
+    filterTitle: string,
+    itemLabel: string,
+  ): Promise<boolean> {
+    // Check if item is already visible
+    const checkVisible = async (): Promise<boolean> => {
+      return page.evaluate((args: { title: string; label: string }) => {
+        function nc(v: string | null | undefined): string {
+          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        }
+
+        const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+          ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+
+        if (!panelRoot) return false;
+
+        const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.title);
+        });
+
+        if (!filterEl) return false;
+
+        const sc = filterEl.querySelector<HTMLElement>('.sf-element-list-box.sfc-scrollable')
+          ?? filterEl.querySelector<HTMLElement>('.ListContainer .sfc-scrollable');
+
+        const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+        for (const item of items) {
+          const t = (item.getAttribute('title') ?? '').trim();
+          if (t === '...' || t === '') continue;
+          if (t === args.label) {
+            if (!sc) return true;
+            const itemRect = item.getBoundingClientRect();
+            const scRect = sc.getBoundingClientRect();
+            return itemRect.top >= scRect.top - 5 && itemRect.bottom <= scRect.bottom + 5;
+          }
+        }
+        return false;
+      }, { title: filterTitle, label: itemLabel });
+    };
+
+    if (await checkVisible()) return true;
+
+    // Get scroll button coordinates from right panel
+    const scrollButtons = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+
+      if (!panelRoot) return null;
+
+      const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
+      });
+
+      if (!filterEl) return null;
+
+      const upButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-top');
+      const downButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-bottom');
+
+      if (!upButton || !downButton) return null;
+
+      const upRect = upButton.getBoundingClientRect();
+      const downRect = downButton.getBoundingClientRect();
+
+      // Also get total items from "(All) X values"
+      let totalItems = 20;
+      const items = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'));
+      for (const item of items) {
+        const match = (item.getAttribute('title') ?? '').match(/\(All\)\s*(\d+)\s*values?/i);
+        if (match) {
+          totalItems = parseInt(match[1], 10);
+          break;
+        }
+      }
+
+      return {
+        up: { x: Math.round(upRect.left + upRect.width / 2), y: Math.round(upRect.top + upRect.height / 2) },
+        down: { x: Math.round(downRect.left + downRect.width / 2), y: Math.round(downRect.top + downRect.height / 2) },
+        totalItems,
+      };
+    }, filterTitle);
+
+    if (!scrollButtons) {
+      this.logStep('scroll', 'WARN', 'could not find scroll buttons in right panel', { filterTitle, itemLabel });
+      return false;
+    }
+
+    // Scroll to top first
+    for (let i = 0; i < 20; i++) {
+      await page.mouse.click(scrollButtons.up.x, scrollButtons.up.y);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    await new Promise((r) => setTimeout(r, 200));
+
+    if (await checkVisible()) return true;
+
+    // Scroll down step by step
+    const maxClicks = scrollButtons.totalItems + 10;
+    for (let i = 0; i < maxClicks; i++) {
+      await page.mouse.click(scrollButtons.down.x, scrollButtons.down.y);
+      await new Promise((r) => setTimeout(r, 80));
+
+      if (i % 2 === 0 && await checkVisible()) {
+        await new Promise((r) => setTimeout(r, 150));
+        return true;
+      }
+    }
+
+    this.logStep('scroll', 'WARN', 'right-panel item not found after scrolling', { filterTitle, itemLabel });
+    return false;
+  }
+
+  /**
+   * Clicks a list item inside the right-panel Data Referência filter via DOM dispatch.
+   */
+  private async clickRightPanelDateItem(page: Page, filterTitle: string, itemLabel: string, ctrlKey: boolean): Promise<boolean> {
+    return page.evaluate((args: { title: string; label: string; ctrlKey: boolean }) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+
+      if (!panelRoot) return false;
+
+      const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.title);
+      });
+
+      if (!filterEl) return false;
+
+      const target = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
+        .find((item) => (item.getAttribute('title') ?? item.textContent ?? '').trim() === args.label);
+
+      if (!target) return false;
+
+      const rect = target.getBoundingClientRect();
+      const clientX = rect.left + Math.min(Math.max(rect.width / 2, 6), rect.width - 2);
+      const clientY = rect.top + Math.min(Math.max(rect.height / 2, 6), rect.height - 2);
+
+      for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+        target.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          ctrlKey: args.ctrlKey,
+          button: 0,
+          buttons: 1,
+          clientX,
+          clientY,
+        }));
+      }
+
+      return true;
+    }, { title: filterTitle, label: itemLabel, ctrlKey });
+  }
+
+  /**
+   * Applies the "Data Referência" filter inside the right-side Filters panel.
+   * Opens the panel, generates dates from periodSelection, and selects them
+   * using scroll buttons + click (same approach as left-panel filters).
+   * This is the LAST filter to be applied.
+   */
+  private async applyDataReferenciaFilter(
+    page: Page,
+    periodSelection: NonNullable<ScannerRunRequest['periodSelection']>,
+    request: ScannerRunRequest,
+  ): Promise<void> {
+    const dates = this.generateReferenceDates(periodSelection);
+    if (dates.length === 0) {
+      this.log('no Data Referência dates to apply (empty dayRange or invalid period)');
+      return;
+    }
+
+    this.emitProgress(request, 'Abrindo painel de filtros do Spotfire...');
+    await this.ensureRightFiltersPanelOpen(page);
+
+    const filterTitle = 'Data Referência';
+    this.logStep('data-referencia', 'START', `applying ${dates.length} date(s) in right panel`, {
+      dates,
+    });
+
+    this.emitProgress(request, `Aplicando filtro Data Referência (${dates.length} dia(s))...`);
+
+    const maxRetries = 3;
+    let ctrlHeld = false;
+
+    try {
+      for (let index = 0; index < dates.length; index += 1) {
+        const dateValue = dates[index];
+        const useCtrl = index > 0;
+        let selected = false;
+
+        // Hold Ctrl from the second item onwards
+        if (useCtrl && !ctrlHeld) {
+          await page.keyboard.down('Control');
+          ctrlHeld = true;
+        }
+
+        for (let attempt = 0; attempt < maxRetries && !selected; attempt++) {
+          // Scroll item into view
+          const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
+          if (!scrolled) {
+            this.logStep('data-referencia', 'WARN', 'could not scroll date into view', { dateValue, attempt });
+            continue;
+          }
+
+          await new Promise((r) => setTimeout(r, 120));
+
+          // Try DOM click
+          const clicked = await this.clickRightPanelDateItem(page, filterTitle, dateValue, useCtrl && !ctrlHeld);
+          if (!clicked) {
+            // Fallback: mouse click via coordinates
+            const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
+            if (coords) {
+              await page.mouse.click(coords.x, coords.y);
+            }
+          }
+
+          await new Promise((r) => setTimeout(r, 300));
+
+          // Verify the click registered by checking if item is selected
+          const isSelected = await page.evaluate((args: { title: string; label: string }) => {
+            function nc(v: string | null | undefined): string {
+              return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            }
+
+            const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+              ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+            if (!panelRoot) return false;
+
+            const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+              const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+              return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.title);
+            });
+            if (!filterEl) return false;
+
+            const item = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
+              .find((it) => (it.getAttribute('title') ?? '').trim() === args.label);
+
+            return item?.classList.contains('sfpc-selected') ?? false;
+          }, { title: filterTitle, label: dateValue });
+
+          if (isSelected) {
+            selected = true;
+            this.logStep('data-referencia', 'OK', `selected date ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
+          }
+        }
+
+        if (!selected) {
+          this.logStep('data-referencia', 'WARN', `could not select date "${dateValue}" after ${maxRetries} attempts`);
+        }
+
+        await this.waitForSpotfireIdle(page, 8000);
+      }
+    } finally {
+      if (ctrlHeld) {
+        await page.keyboard.up('Control');
+      }
+    }
+
+    await this.waitForSpotfireIdle(page);
+    this.logStep('data-referencia', 'OK', `Data Referência filter applied with ${dates.length} date(s)`);
+    this.emitProgress(request, 'Filtro Data Referência aplicado');
   }
 
   private isSpotfireReloadError(error: unknown): boolean {

@@ -995,7 +995,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private monthOptionsFromSelection(selectedYear: string[]): string[] {
     const normalizedYears = selectedYear.filter((value) => value !== ALL_OPTION);
-    const currentYear = new Date().getFullYear();
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
 
     if (normalizedYears.length === 0) {
       return MONTH_OPTIONS;
@@ -1006,7 +1007,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
       return Number.isFinite(year) && year < currentYear;
     });
 
-    return includesPastYear ? MONTH_OPTIONS : MONTH_OPTIONS.slice(0, new Date().getMonth() + 1);
+    if (includesPastYear) {
+      return MONTH_OPTIONS;
+    }
+
+    // Current year only: limit to months that have scanner data (up to yesterday)
+    // If today is day 1, yesterday was last month so current month has no data yet
+    const lastAvailableMonth = currentDate.getDate() <= 1
+      ? currentDate.getMonth() - 1
+      : currentDate.getMonth();
+
+    return MONTH_OPTIONS.slice(0, Math.max(lastAvailableMonth + 1, 1));
   }
 
   private dayOptionsFromSelection(selectedYear: string[], selectedMonth: string[]): number[] {
@@ -1025,16 +1036,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value));
     const years = resolvedYears.length > 0 ? resolvedYears : [currentDate.getFullYear()];
-    let limit = 31;
+    let limit = 0;
 
     for (const year of years) {
       for (const monthIndex of selectedMonthIndexes) {
         const maxDay = new Date(year, monthIndex + 1, 0).getDate();
-        const limitedMaxDay = year === currentDate.getFullYear() && monthIndex === currentDate.getMonth()
-          ? Math.min(maxDay, currentDate.getDate())
+        // Scanner only has data up to yesterday, so for the current month/year cap to day-1
+        const isCurrentPeriod = year === currentDate.getFullYear() && monthIndex === currentDate.getMonth();
+        const limitedMaxDay = isCurrentPeriod
+          ? Math.min(maxDay, currentDate.getDate() - 1)
           : maxDay;
         limit = Math.max(limit, limitedMaxDay);
       }
+    }
+
+    if (limit <= 0) {
+      return [1];
     }
 
     return Array.from({ length: limit }, (_, index) => index + 1);
