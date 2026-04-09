@@ -129,51 +129,59 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         this.emitProgress(request, 'Abrindo análise no Spotfire...');
-        await this.raceAbort(
-          this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle),
-          request.signal,
-        );
+        await this.withSpotfireRecovery(page, async () => {
+          await this.raceAbort(
+            this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle),
+            request.signal,
+          );
+        }, request);
         this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
           currentUrl: page.url(),
         });
 
         this.emitProgress(request, 'Preparando visualização...');
-        await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+        await this.withSpotfireRecovery(page, async () => {
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
 
-        if (request.analysisTab?.trim()) {
-          this.emitProgress(request, `Abrindo aba "${request.analysisTab}"...`);
-          await this.raceAbort(this.openAnalysisTab(page, request.analysisTab), request.signal);
-        }
+          if (request.analysisTab?.trim()) {
+            this.emitProgress(request, `Abrindo aba "${request.analysisTab}"...`);
+            await this.raceAbort(this.openAnalysisTab(page, request.analysisTab), request.signal);
+          }
 
-        await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-        this.emitProgress(request, 'Carregando filtros...');
-        await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
-        
-        if (!request.skipFilterReset) {
-          this.emitProgress(request, 'Resetando filtros...');
-          await this.raceAbort(this.resetVisibleFilters(page), request.signal);
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+        }, request);
+        const { availableTabs, availableTables, filters } = await this.withSpotfireRecovery(page, async () => {
+          this.emitProgress(request, 'Carregando filtros...');
           await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
-        } else {
-          this.log('skipping filter reset because skipFilterReset=true');
-        }
+          
+          if (!request.skipFilterReset) {
+            this.emitProgress(request, 'Resetando filtros...');
+            await this.raceAbort(this.resetVisibleFilters(page), request.signal);
+            await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+          } else {
+            this.log('skipping filter reset because skipFilterReset=true');
+          }
 
-        const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
-        this.emitProgress(request, 'Lendo tabelas disponíveis...');
-        const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);
-        this.emitProgress(request, 'Lendo estado dos filtros...');
-        let filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
+          const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
+          this.emitProgress(request, 'Lendo tabelas disponíveis...');
+          const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);
+          this.emitProgress(request, 'Lendo estado dos filtros...');
+          let filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
 
-        this.logFiltersSummary(filters);
-
-        const filtersToApply = this.buildFiltersToApply(filters, request);
-
-        if (filtersToApply.length > 0) {
-          this.emitProgress(request, `Aplicando ${filtersToApply.length} filtro(s)...`);
-          await this.raceAbort(this.applySelectedFilters(page, filtersToApply), request.signal);
-          await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
-          filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
           this.logFiltersSummary(filters);
-        }
+
+          const filtersToApply = this.buildFiltersToApply(filters, request);
+
+          if (filtersToApply.length > 0) {
+            this.emitProgress(request, `Aplicando ${filtersToApply.length} filtro(s)...`);
+            await this.raceAbort(this.applySelectedFilters(page, filtersToApply), request.signal);
+            await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+            filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
+            this.logFiltersSummary(filters);
+          }
+
+          return { availableTabs, availableTables, filters };
+        }, request);
 
         const exportedFiles: string[] = [];
         const pendingDownloads: Array<{
@@ -193,22 +201,26 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
             this.emitProgress(request, `Navegando para aba "${tableConfig.tab}"...`);
             
-            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-            this.log(`navigating to tab: ${tableConfig.tab}`);
-            await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
-            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-            this.emitProgress(request, `Maximizando tabela "${tableConfig.tableTitle}"...`);
-            this.log(`maximizing table: ${tableConfig.tableTitle}`);
-            await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
-            
-            this.emitProgress(request, `Exportando tabela "${tableConfig.tableTitle}"...`);
-            
-            const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
-            const { existingFiles } = await this.raceAbort(
-              this.triggerExport(page, outputDirectory, tableRequest),
-              request.signal,
-            );
+            const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
+              await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+              this.log(`navigating to tab: ${tableConfig.tab}`);
+              await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
+              await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+              this.emitProgress(request, `Maximizando tabela "${tableConfig.tableTitle}"...`);
+              this.log(`maximizing table: ${tableConfig.tableTitle}`);
+              await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
+              
+              this.emitProgress(request, `Exportando tabela "${tableConfig.tableTitle}"...`);
+              
+              const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
+              const { existingFiles } = await this.raceAbort(
+                this.triggerExport(page, outputDirectory, tableRequest),
+                request.signal,
+              );
+              return { existingFiles };
+            }, request);
 
+            const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
             pendingDownloads.push({ tableTitle: tableConfig.tableTitle, existingFiles, request: tableRequest, outputDirectory });
             this.logStep('export', 'OK', `[${i + 1}/${request.tablesToExport.length}] export triggered for "${tableConfig.tableTitle}"`);
             
@@ -252,13 +264,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           // Legacy single table export — trigger then wait
           this.logStep('export', 'START', `single table export: "${request.tableTitle}"`);
           this.emitProgress(request, `Exportando tabela "${request.tableTitle}"...`);
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-          await this.raceAbort(this.maximizeTable(page, request.tableTitle), request.signal);
 
-          const { existingFiles } = await this.raceAbort(
-            this.triggerExport(page, outputDirectory, request),
-            request.signal,
-          );
+          const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+            await this.raceAbort(this.maximizeTable(page, request.tableTitle!), request.signal);
+
+            const { existingFiles } = await this.raceAbort(
+              this.triggerExport(page, outputDirectory, request),
+              request.signal,
+            );
+            return { existingFiles };
+          }, request);
 
           this.emitProgress(request, `Aguardando download de "${request.tableTitle}"...`);
           const exportedFile = await this.raceAbort(
@@ -5332,5 +5348,69 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       },
       { timeout: timeoutMs },
     ).catch(() => undefined);
+  }
+
+  private isSpotfireReloadError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('execution context was destroyed') ||
+      lower.includes('navigating') ||
+      lower.includes('detached') ||
+      lower.includes('session closed') ||
+      lower.includes('target closed') ||
+      lower.includes('frame was detached') ||
+      lower.includes('cannot find context') ||
+      lower.includes('protocol error')
+    );
+  }
+
+  private async waitForSpotfireReload(page: Page, request?: ScannerRunRequest): Promise<void> {
+    this.logStep('recovery', 'START', 'Spotfire reloaded — waiting for page to stabilize');
+    if (request) {
+      this.emitProgress(request, 'Spotfire recarregou, aguardando estabilização...');
+    }
+
+    // Wait for navigation to finish (if one is in progress)
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(() => undefined);
+
+    // Wait for Spotfire UI to be idle
+    await this.waitForSpotfireIdle(page, 120000);
+
+    // Ensure the analysis is still loaded
+    if (!await this.isAnalysisReady(page)) {
+      this.log('analysis not ready after reload, re-opening...');
+      await this.openAnalysis(page, this.environment.spotfire.defaultReportTitle);
+    }
+
+    this.logStep('recovery', 'OK', 'Spotfire stabilized after reload');
+    if (request) {
+      this.emitProgress(request, 'Spotfire estabilizou, retomando automação...');
+    }
+  }
+
+  private async withSpotfireRecovery<T>(
+    page: Page,
+    operation: () => Promise<T>,
+    request?: ScannerRunRequest,
+    maxRetries: number = 2,
+  ): Promise<T> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (this.isSpotfireReloadError(error) && attempt < maxRetries && !page.isClosed()) {
+          this.logStep('recovery', 'WARN', `Spotfire reload detected (attempt ${attempt + 1}/${maxRetries}), recovering...`, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await this.waitForSpotfireReload(page, request);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // Should never reach here, but TypeScript needs it
+    throw new Error('withSpotfireRecovery exhausted retries');
   }
 }
