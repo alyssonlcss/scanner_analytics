@@ -395,6 +395,25 @@ type SavedFilterState = {
         display: grid;
         gap: 6px;
         margin-top: 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .drawer-body,
+      .drawer-body * {
+        cursor: default;
+        caret-color: transparent;
+      }
+
+      .drawer-body .option-item {
+        cursor: pointer;
+      }
+
+      .drawer-body .day-input {
+        cursor: text;
+        user-select: text;
+        -webkit-user-select: text;
+        caret-color: auto;
       }
 
       .drawer-card {
@@ -566,6 +585,7 @@ type SavedFilterState = {
         text-align: center;
         color: inherit;
         outline: none;
+        cursor: text;
         -moz-appearance: textfield;
       }
 
