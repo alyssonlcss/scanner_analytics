@@ -757,10 +757,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.reportType.set(saved.reportType);
       this.dayRange.set(saved.dayRange);
     } else {
-      const d2 = Math.max(new Date().getDate() - 2, 1);
-      this.dayRange.set({ min: d2, max: d2 });
+      this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     }
-    this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     window.addEventListener('mouseup', this.boundEndFilterDrag);
     this.loadCatalog();
   }
@@ -1147,6 +1145,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);
     const minDay = days[0] ?? 1;
     const maxDay = days[days.length - 1] ?? 31;
+
+    // If the current month+year is in the selection, default to D-2
+    const currentDate = new Date();
+    const selectedYears = (values.get('ano') ?? []).filter((v) => v !== ALL_OPTION);
+    const selectedMonths = (values.get('mes') ?? []).filter((v) => v !== ALL_OPTION);
+    const currentYearStr = String(currentDate.getFullYear());
+    const currentMonthStr = MONTH_OPTIONS[currentDate.getMonth()];
+
+    const includesCurrentYear = selectedYears.length === 0 || selectedYears.includes(currentYearStr);
+    const includesCurrentMonth = selectedMonths.length === 0 || selectedMonths.includes(currentMonthStr);
+
+    if (includesCurrentYear && includesCurrentMonth) {
+      const d2 = Math.max(currentDate.getDate() - 2, minDay);
+      return { min: d2, max: d2 };
+    }
 
     return { min: minDay, max: maxDay };
   }
