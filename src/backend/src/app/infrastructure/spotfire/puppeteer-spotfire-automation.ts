@@ -170,6 +170,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         const exportedFiles: string[] = [];
+        const pendingDownloads: Array<{
+          tableTitle: string;
+          existingFiles: Set<string>;
+          request: ScannerRunRequest;
+          outputDirectory: string;
+        }> = [];
 
         // New multi-table export logic
         if (request.tablesToExport && request.tablesToExport.length > 0) {
@@ -178,7 +184,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           for (let i = 0; i < request.tablesToExport.length; i++) {
             const tableConfig = request.tablesToExport[i];
             this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
-            this.emitProgress(request, `Baixando tabela ${i + 1}/${request.tablesToExport.length}: "${tableConfig.tableTitle}"...`);
+            this.emitProgress(request, `Exportando tabela ${i + 1}/${request.tablesToExport.length}: "${tableConfig.tableTitle}"...`);
             
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
             this.log(`navigating to tab: ${tableConfig.tab}`);
@@ -187,35 +193,61 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             this.log(`maximizing table: ${tableConfig.tableTitle}`);
             await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
             
-            const exportedFile = await this.raceAbort(
-              this.exportTable(page, outputDirectory, {
-                ...request,
-                analysisTab: tableConfig.tab,
-                tableTitle: tableConfig.tableTitle,
-              }),
+            const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
+            const { existingFiles } = await this.raceAbort(
+              this.triggerExport(page, outputDirectory, tableRequest),
               request.signal,
             );
+
+            pendingDownloads.push({ tableTitle: tableConfig.tableTitle, existingFiles, request: tableRequest, outputDirectory });
+            this.logStep('export', 'OK', `[${i + 1}/${request.tablesToExport.length}] export triggered for "${tableConfig.tableTitle}"`);
             
-            if (exportedFile) {
-              exportedFiles.push(exportedFile);
-              this.logStep('export', 'OK', `[${i + 1}/${request.tablesToExport.length}] downloaded "${tableConfig.tableTitle}" -> ${exportedFile}`);
-            } else {
-              this.logStep('export', 'FAIL', `[${i + 1}/${request.tablesToExport.length}] failed to download "${tableConfig.tableTitle}"`);
-            }
-            
-            // Minimize the table after export before going to next tab
-            this.log(`minimizing table "${tableConfig.tableTitle}" after export`);
+            // Minimize the table after triggering export before going to next tab
+            this.log(`minimizing table "${tableConfig.tableTitle}" after export trigger`);
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+          }
+
+          // Now wait for all downloads in parallel
+          this.emitProgress(request, 'Aguardando downloads...');
+          const downloadResults = await Promise.all(
+            pendingDownloads.map(async (pending) => {
+              const file = await this.raceAbort(
+                this.awaitExportDownload(pending.outputDirectory, pending.existingFiles, pending.request),
+                request.signal,
+              );
+              if (file) {
+                this.logStep('export', 'OK', `downloaded "${pending.tableTitle}" -> ${file}`);
+                this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada`);
+              } else {
+                this.logStep('export', 'FAIL', `failed to download "${pending.tableTitle}"`);
+              }
+              return file;
+            }),
+          );
+
+          for (const file of downloadResults) {
+            if (file) exportedFiles.push(file);
           }
           
           this.logStep('export', 'OK', `multi-table export completed: ${exportedFiles.length}/${request.tablesToExport.length} files downloaded`);
         } else if (request.tableTitle?.trim()) {
-          // Legacy single table export
+          // Legacy single table export — trigger then wait
           this.logStep('export', 'START', `single table export: "${request.tableTitle}"`);
-          this.emitProgress(request, `Baixando tabela "${request.tableTitle}"...`);
+          this.emitProgress(request, `Exportando tabela "${request.tableTitle}"...`);
           await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
           await this.raceAbort(this.maximizeTable(page, request.tableTitle), request.signal);
-          const exportedFile = await this.raceAbort(this.exportTable(page, outputDirectory, request), request.signal);
+
+          const { existingFiles } = await this.raceAbort(
+            this.triggerExport(page, outputDirectory, request),
+            request.signal,
+          );
+
+          this.emitProgress(request, `Aguardando download de "${request.tableTitle}"...`);
+          const exportedFile = await this.raceAbort(
+            this.awaitExportDownload(outputDirectory, existingFiles, request),
+            request.signal,
+          );
+
           if (exportedFile) {
             exportedFiles.push(exportedFile);
             this.logStep('export', 'OK', `downloaded "${request.tableTitle}" -> ${exportedFile}`);
@@ -4450,6 +4482,35 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
     this.log(`download result: ${downloadedFile ?? '(no file downloaded)'}`);
     
+    return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
+  }
+
+  private async triggerExport(page: Page, outputDirectory: string, request: ScannerRunRequest): Promise<{ existingFiles: Set<string> }> {
+    this.log(`triggering export for table: "${request.tableTitle}" to directory: ${outputDirectory}`);
+
+    const cdpSession = await page.createCDPSession();
+    await cdpSession.send('Page.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: outputDirectory,
+    });
+
+    const existingFiles = new Set(await readdir(outputDirectory));
+    this.log(`existing files in output directory before export: ${Array.from(existingFiles).join(', ') || '(none)'}`);
+
+    this.log(`opening export menu for table: "${request.tableTitle}"`);
+    await this.openExportMenu(page, request.tableTitle);
+
+    this.log('clicking export menu action...');
+    await this.clickExportMenuAction(page);
+
+    this.log(`export triggered for "${request.tableTitle}", not waiting for download`);
+    return { existingFiles };
+  }
+
+  private async awaitExportDownload(outputDirectory: string, existingFiles: Set<string>, request: ScannerRunRequest): Promise<string | undefined> {
+    this.log(`waiting for download of "${request.tableTitle}"...`);
+    const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
+    this.log(`download result for "${request.tableTitle}": ${downloadedFile ?? '(no file downloaded)'}`);
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
   }
 

@@ -184,6 +184,26 @@ export async function createServer() {
       onProgress('Preparando diretório de dados...');
       await resetDataDirectory(dataDirectory);
 
+      const tableNames = DATA_DOWNLOAD_TARGETS.map(t => t.tableTitle).join(' e ');
+      onProgress(`Baixando tabelas: ${tableNames}...`);
+
+      server.log.info({ targetCount: DATA_DOWNLOAD_TARGETS.length, targets: DATA_DOWNLOAD_TARGETS }, 'starting data download for configured tables');
+
+      const result = await automation.runExtraction({
+        reportTitle,
+        analysisTab: DATA_DOWNLOAD_TARGETS[0].analysisTab,
+        tableTitle: DATA_DOWNLOAD_TARGETS[0].tableTitle,
+        tablesToExport: DATA_DOWNLOAD_TARGETS.map(t => ({ tab: t.analysisTab, tableTitle: t.tableTitle })),
+        selectedFilters: payload.selectedFilters,
+        periodSelection: payload.periodSelection,
+        signal: controller.signal,
+        onProgress,
+      });
+
+      throwIfAborted(controller.signal);
+
+      const allExportedFiles = result.exportedFiles ?? (result.exportFilePath ? [result.exportFilePath] : []);
+
       const downloadedFiles: Array<{
         analysisTab: string;
         tableTitle: string;
@@ -191,43 +211,19 @@ export async function createServer() {
         filePath: string;
       }> = [];
 
-      let latestCatalog: SpotfireCatalog | null = null;
-
-      server.log.info({ targetCount: DATA_DOWNLOAD_TARGETS.length, targets: DATA_DOWNLOAD_TARGETS }, 'starting data download for configured tables');
-      onProgress('Iniciando download das tabelas...');
-
       for (let i = 0; i < DATA_DOWNLOAD_TARGETS.length; i++) {
         const target = DATA_DOWNLOAD_TARGETS[i];
-        throwIfAborted(controller.signal);
+        const exportedFile = allExportedFiles[i];
 
-        server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle }, `downloading table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length}`);
-
-        // Apply filters only on the first table extraction
-        const isFirstExtraction = i === 0;
-
-        const result = await automation.runExtraction({
-          reportTitle,
-          analysisTab: target.analysisTab,
-          tableTitle: target.tableTitle,
-          selectedFilters: isFirstExtraction ? payload.selectedFilters : undefined,
-          periodSelection: isFirstExtraction ? payload.periodSelection : undefined,
-          skipFilterReset: !isFirstExtraction,
-          signal: controller.signal,
-          onProgress,
-        });
-
-        throwIfAborted(controller.signal);
-
-        if (!result.exportFilePath) {
+        if (!exportedFile) {
           server.log.error({ tab: target.analysisTab, table: target.tableTitle }, 'export file was not generated');
           throw new Error(`export file was not generated for table: ${target.tableTitle}`);
         }
 
         const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
-        const filePath = await moveDownloadedFile(result.exportFilePath, dataDirectory, fileName);
+        const filePath = await moveDownloadedFile(exportedFile, dataDirectory, fileName);
 
-        server.log.info({ index: i + 1, total: DATA_DOWNLOAD_TARGETS.length, tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table ${i + 1}/${DATA_DOWNLOAD_TARGETS.length} downloaded successfully`);
-        onProgress(`Tabela "${target.tableTitle}" baixada com sucesso (${i + 1}/${DATA_DOWNLOAD_TARGETS.length})`);
+        server.log.info({ tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table "${target.tableTitle}" moved successfully`);
 
         downloadedFiles.push({
           analysisTab: target.analysisTab,
@@ -235,21 +231,12 @@ export async function createServer() {
           fileName,
           filePath,
         });
-
-        latestCatalog = {
-          status: 'ready',
-          reportTitle,
-          filters: result.filters,
-          availableTabs: result.availableTabs,
-          availableTables: result.availableTables,
-          updatedAt: new Date().toISOString(),
-        } satisfies SpotfireCatalog;
       }
 
       server.log.info({ downloadedCount: downloadedFiles.length, files: downloadedFiles.map(f => f.fileName) }, 'all tables downloaded successfully');
+      onProgress('Todas as tabelas baixadas! Finalizando...');
 
       throwIfAborted(controller.signal);
-      onProgress('Finalizando...');
       await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));
 
       sendEvent('result', {
@@ -257,9 +244,9 @@ export async function createServer() {
         reportTitle,
         updatedAt: new Date().toISOString(),
         files: downloadedFiles,
-        filters: latestCatalog?.filters ?? [],
-        availableTabs: latestCatalog?.availableTabs ?? [],
-        availableTables: latestCatalog?.availableTables ?? [],
+        filters: result.filters ?? [],
+        availableTabs: result.availableTabs ?? [],
+        availableTables: result.availableTables ?? [],
       });
 
       reply.raw.end();
