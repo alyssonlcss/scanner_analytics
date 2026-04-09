@@ -1354,10 +1354,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.filters && parsed.dayRange) {
+      if (parsed && typeof parsed === 'object' && parsed.filters) {
         const today = new Date().toISOString().slice(0, 10);
         if (parsed.savedAt !== today) {
           delete parsed.dayRange;
+          delete parsed.filters.ano;
+          delete parsed.filters.mes;
         }
         return parsed as SavedFilterState;
       }
