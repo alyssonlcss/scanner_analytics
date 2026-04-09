@@ -8,10 +8,8 @@ import { z } from 'zod';
 
 import { StartScannerJobUseCase } from '../../application/use-cases/start-scanner-job.use-case.js';
 import { GetScannerJobUseCase } from '../../application/use-cases/get-scanner-job.use-case.js';
-import type { SpotfireCatalog } from '../../domain/entities/spotfire-catalog.js';
 import { environment } from '../../infrastructure/config/env.js';
 import { InMemoryJobStore } from '../../infrastructure/runtime/in-memory-job-store.js';
-import { InMemorySpotfireCatalogStore } from '../../infrastructure/runtime/in-memory-spotfire-catalog-store.js';
 import { PuppeteerSpotfireAutomation } from '../../infrastructure/spotfire/puppeteer-spotfire-automation.js';
 
 const filterSchema = z.object({
@@ -65,7 +63,6 @@ const DATA_DOWNLOAD_TARGETS = [
 export async function createServer() {
   const server = Fastify({ logger: true });
   const jobStore = new InMemoryJobStore();
-  const catalogStore = new InMemorySpotfireCatalogStore(environment.spotfire.defaultReportTitle);
   const automation = new PuppeteerSpotfireAutomation(environment);
   const startScannerJob = new StartScannerJobUseCase(automation, jobStore);
   const getScannerJob = new GetScannerJobUseCase(jobStore);
@@ -79,66 +76,10 @@ export async function createServer() {
     port: environment.port,
   });
 
-  server.decorate('getSpotfireCatalog', () => catalogStore.get());
-  server.decorate('warmupSpotfireCatalog', async () => {
-    server.log.info({
-      reportTitle: environment.spotfire.defaultReportTitle,
-    }, 'starting Spotfire catalog warmup');
-
-    catalogStore.set({
-      status: 'loading',
-      reportTitle: environment.spotfire.defaultReportTitle,
-      filters: [],
-      availableTabs: [],
-      availableTables: [],
-    });
-
-    try {
-      await automation.prepareSession(environment.spotfire.defaultReportTitle);
-
-      catalogStore.set({
-        status: 'ready',
-        reportTitle: environment.spotfire.defaultReportTitle,
-        filters: [],
-        availableTabs: [],
-        availableTables: [],
-        updatedAt: new Date().toISOString(),
-      });
-
-      server.log.info({
-        reportTitle: environment.spotfire.defaultReportTitle,
-      }, 'Spotfire session warmup completed without metadata collection');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown catalog warmup error';
-
-      catalogStore.set({
-        status: 'failed',
-        reportTitle: environment.spotfire.defaultReportTitle,
-        filters: [],
-        availableTabs: [],
-        availableTables: [],
-        updatedAt: new Date().toISOString(),
-        errorMessage: message,
-      });
-
-      server.log.error({
-        reportTitle: environment.spotfire.defaultReportTitle,
-        errorMessage: message,
-      }, 'Spotfire catalog warmup failed');
-
-      throw error;
-    }
-  });
-
   server.get('/api/health', async () => ({
     status: 'ok',
     reportTitle: environment.spotfire.defaultReportTitle,
-    catalogStatus: server.getSpotfireCatalog().status,
   }));
-
-  server.get('/api/scanner/catalog', async () => {
-    return server.getSpotfireCatalog();
-  });
 
   server.post('/api/scanner/executions', async (request, reply) => {
     const payload = createExecutionSchema.parse(request.body);
@@ -330,8 +271,6 @@ declare module 'fastify' {
     config: {
       port: number;
     };
-    getSpotfireCatalog: () => SpotfireCatalog;
-    warmupSpotfireCatalog: () => Promise<void>;
   }
 }
 

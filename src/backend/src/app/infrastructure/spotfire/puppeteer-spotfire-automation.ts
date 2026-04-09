@@ -53,42 +53,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.log(`[${status}] ${step} :: ${message}${suffix}`, details);
   }
 
-  public async prepareSession(reportTitle: string): Promise<void> {
-    await this.runSerialized(async () => {
-      const { page, createdNewPage } = await this.getAutomationSession();
-
-      this.logStep('warmup', 'START', 'preparing authenticated Spotfire session', {
-        reportTitle,
-        keepOpen: this.environment.spotfire.keepOpen,
-        createdNewPage,
-      });
-
-      try {
-        if (createdNewPage) {
-          await page.setViewport({ width: 1600, height: 1000 });
-          this.logStep('warmup', 'OK', 'created new browser page and applied viewport', {
-            width: 1600,
-            height: 1000,
-          });
-        }
-
-        await this.openAnalysis(page, reportTitle);
-        await this.ensureNoMaximizedVisualization(page);
-        this.logStep('warmup', 'OK', 'spotfire session is ready and waiting for data-download', {
-          reportTitle,
-          currentUrl: page.url(),
-        });
-      } finally {
-        if (!this.environment.spotfire.keepOpen) {
-          this.logStep('warmup', 'WARN', 'closing browser because keepOpen=false');
-          await this.disposeAutomationSession();
-        } else {
-          this.logStep('warmup', 'OK', 'keeping browser and page open because keepOpen=true');
-        }
-      }
-    });
-  }
-
   private emitProgress(request: ScannerRunRequest, message: string): void {
     request.onProgress?.(message);
   }

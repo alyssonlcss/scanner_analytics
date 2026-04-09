@@ -3,7 +3,7 @@ import { Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '
 import type { Subscription } from 'rxjs';
 
 import { ScannerApiService } from '../../core/api/scanner-api.service';
-import { SpotfireCatalog, SpotfireFilter } from '../../models/spotfire-catalog.model';
+import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
 type ReportTypeValue = 'completo';
@@ -63,13 +63,6 @@ type SavedFilterState = {
   imports: [CommonModule],
   template: `
     <main class="shell">
-      <div class="loading-popup-backdrop" *ngIf="catalogLoading() && !filtersVisible()">
-        <section class="loading-popup" aria-live="polite" aria-busy="true">
-          <div class="loading-spinner"></div>
-          <h2>Abrindo Scanner M300</h2>
-        </section>
-      </div>
-
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
         <div class="loading-spinner"></div>
         <p>{{ progressMessage() || 'Aplicando filtros e baixando tabelas' }}</p>
@@ -707,10 +700,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   protected readonly loading = signal(false);
   protected readonly progressMessage = signal('');
-  protected readonly catalogLoading = signal(true);
-  protected readonly catalog = signal<SpotfireCatalog | null>(null);
-  protected readonly catalogRequestError = signal<string | null>(null);
-  protected readonly rawCatalogFilters = signal<SpotfireFilter[]>([]);
   protected readonly filterDrawerOpen = signal(false);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('completo');
@@ -739,7 +728,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return limit > 1 ? ((this.resolvedDayRange().max - 1) / (limit - 1)) * 100 : 100;
   });
 
-  private catalogPollTimer?: ReturnType<typeof setTimeout>;
   private activeDownloadRequest?: Subscription;
   private activeDownloadAbort?: AbortController;
   private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove'; anchorIndex: number; baseline: Set<string> } | null = null;
@@ -765,12 +753,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     }
     window.addEventListener('mouseup', this.boundEndFilterDrag);
-    this.loadCatalog();
   }
 
   public ngOnDestroy(): void {
     window.removeEventListener('mouseup', this.boundEndFilterDrag);
-    this.clearCatalogPoll();
     this.cancelActiveDownloadRequest();
   }
 
@@ -990,10 +976,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.saveToStorage();
   }
 
-  protected catalogReady(): boolean {
-    return this.catalog()?.status === 'ready';
-  }
-
   protected submit(): void {
     if (!this.filtersVisible()) {
       return;
@@ -1048,54 +1030,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.activeDownloadAbort = undefined;
     this.activeDownloadRequest?.unsubscribe();
     this.activeDownloadRequest = undefined;
-  }
-
-  private loadCatalog(): void {
-    this.clearCatalogPoll();
-    this.catalogLoading.set(true);
-    this.catalogRequestError.set(null);
-
-    this.api.getCatalog()
-      .subscribe({
-        next: (catalog) => {
-          this.catalog.set(catalog);
-          this.rawCatalogFilters.set([]);
-
-          const builtFilters = this.buildSelectFilters();
-          this.selectFilters.set(builtFilters);
-          this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
-          this.reportTitle.set(catalog.reportTitle || DEFAULT_REPORT_TITLE);
-          this.catalogLoading.set(catalog.status === 'loading');
-
-          if (catalog.status === 'loading') {
-            this.scheduleCatalogPoll();
-          }
-        },
-        error: (error) => {
-          this.catalogLoading.set(false);
-          this.catalogRequestError.set(this.describeHttpError(error));
-          this.rawCatalogFilters.set([]);
-          const builtFilters = this.buildSelectFilters();
-          this.selectFilters.set(builtFilters);
-          this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
-        },
-      });
-  }
-
-  private scheduleCatalogPoll(): void {
-    this.clearCatalogPoll();
-    this.catalogPollTimer = setTimeout(() => {
-      this.loadCatalog();
-    }, 2000);
-  }
-
-  private clearCatalogPoll(): void {
-    if (!this.catalogPollTimer) {
-      return;
-    }
-
-    clearTimeout(this.catalogPollTimer);
-    this.catalogPollTimer = undefined;
   }
 
   private buildSelectFilters(overrideValues?: Map<FilterKey, string[]>): SelectFilterState[] {
@@ -1310,27 +1244,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private orderSelection(options: string[], selection: string[]): string[] {
     const selected = new Set(selection.filter((entry) => entry !== ALL_OPTION));
     return options.filter((option) => option !== ALL_OPTION && selected.has(option));
-  }
-
-  private describeHttpError(error: unknown): string {
-    if (typeof error === 'object' && error !== null) {
-      const candidate = error as { message?: unknown; status?: unknown; statusText?: unknown; error?: unknown };
-
-      if (typeof candidate.error === 'string' && candidate.error.trim().length > 0) {
-        return candidate.error;
-      }
-
-      if (typeof candidate.message === 'string' && candidate.message.trim().length > 0) {
-        return candidate.message;
-      }
-
-      if (typeof candidate.status === 'number') {
-        const suffix = typeof candidate.statusText === 'string' && candidate.statusText.trim().length > 0 ? ` ${candidate.statusText}` : '';
-        return `HTTP ${candidate.status}${suffix}`;
-      }
-    }
-
-    return 'falha ao carregar o catálogo do backend';
   }
 
   private saveToStorage(): void {
