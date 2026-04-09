@@ -3397,12 +3397,51 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     let createdNewPage = false;
 
     if (!page || page.isClosed()) {
-      page = await browser.newPage();
-      this.persistentPage = page;
-      createdNewPage = true;
+      // Try to find an existing tab with the Scanner analysis already open
+      const existingPage = await this.findExistingAnalysisPage(browser);
+
+      if (existingPage) {
+        this.log('reusing existing browser tab with Scanner analysis', {
+          url: existingPage.url(),
+        });
+        page = existingPage;
+        this.persistentPage = page;
+        createdNewPage = false;
+      } else {
+        page = await browser.newPage();
+        this.persistentPage = page;
+        createdNewPage = true;
+      }
     }
 
     return { browser, page, createdNewPage };
+  }
+
+  private async findExistingAnalysisPage(browser: Browser): Promise<Page | undefined> {
+    const expectedFileMatch = this.environment.spotfire.analysisUrl.match(/[?&]file=([^&]+)/);
+    const expectedFile = expectedFileMatch ? decodeURIComponent(expectedFileMatch[1]) : '';
+
+    if (!expectedFile) {
+      return undefined;
+    }
+
+    const pages = await browser.pages();
+
+    for (const candidate of pages) {
+      try {
+        const url = candidate.url();
+        const fileMatch = url.match(/[?&]file=([^&]+)/);
+        const file = fileMatch ? decodeURIComponent(fileMatch[1]) : '';
+
+        if (url.includes('/analysis') && file === expectedFile) {
+          return candidate;
+        }
+      } catch {
+        // page may have been closed between listing and checking
+      }
+    }
+
+    return undefined;
   }
 
   private usesExternalBrowserConnection(): boolean {
