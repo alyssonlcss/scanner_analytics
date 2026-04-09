@@ -128,7 +128,8 @@ type SavedFilterState = {
                 <div class="period-selects">
                   <label class="select-shell" *ngFor="let filter of periodFilters(); trackBy: trackByFilterKey">
                     <span class="select-caption">{{ filter.title }}</span>
-                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true">
+                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
+                      (mousemove)="dragScrollList(filter.key, $event)">
                       <button
                         type="button"
                         class="option-item"
@@ -177,7 +178,8 @@ type SavedFilterState = {
 
               <label class="select-shell">
                 <span class="select-caption">Valor ativo</span>
-                <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true">
+                <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
+                  (mousemove)="dragScrollList(filter.key, $event)">
                   <button
                     type="button"
                     class="option-item"
@@ -719,9 +721,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private catalogPollTimer?: ReturnType<typeof setTimeout>;
   private activeDownloadRequest?: Subscription;
   private activeDownloadAbort?: AbortController;
-  private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove' } | null = null;
+  private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove'; anchorIndex: number; baseline: Set<string> } | null = null;
+  private dragScrollTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly boundEndFilterDrag = () => {
     this.dragSelectionState = null;
+    this.dragScrollTimer = null;
   };
 
   public ngOnInit(): void {
@@ -819,7 +823,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     this.applyFilterSelection(key, this.orderSelection(filter.options, Array.from(nextSelected)));
-    this.dragSelectionState = { key, mode: shouldSelect ? 'add' : 'remove' };
+
+    const anchorIndex = filter.options.indexOf(value);
+    const baseline = new Set(ctrlLike ? filter.value.filter((entry) => entry !== ALL_OPTION) : []);
+    if (shouldSelect) {
+      baseline.delete(value);
+    }
+    this.dragSelectionState = { key, mode: shouldSelect ? 'add' : 'remove', anchorIndex, baseline };
   }
 
   protected continueOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
@@ -832,18 +842,82 @@ export class DashboardComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const selected = new Set(filter.value.filter((entry) => entry !== ALL_OPTION));
-    if (this.dragSelectionState.mode === 'add') {
-      selected.add(value);
-    } else {
-      selected.delete(value);
-    }
-
-    this.applyFilterSelection(key, this.orderSelection(filter.options, Array.from(selected)));
+    this.applyDragRange(filter, value);
   }
 
   protected endFilterDrag(): void {
     this.dragSelectionState = null;
+    this.dragScrollTimer = null;
+  }
+
+  protected dragScrollList(key: FilterKey, event: MouseEvent): void {
+    if (!this.dragSelectionState || this.dragSelectionState.key !== key || (event.buttons & 1) !== 1) {
+      return;
+    }
+
+    const list = (event.currentTarget as HTMLElement);
+    const rect = list.getBoundingClientRect();
+    const edgeZone = 40;
+    const mouseY = event.clientY;
+
+    let scrollDelta = 0;
+    if (mouseY < rect.top + edgeZone) {
+      const distance = rect.top + edgeZone - mouseY;
+      const ratio = Math.min(distance / edgeZone, 1);
+      scrollDelta = -Math.round(1 + ratio * ratio * 10);
+    } else if (mouseY > rect.bottom - edgeZone) {
+      const distance = mouseY - (rect.bottom - edgeZone);
+      const ratio = Math.min(distance / edgeZone, 1);
+      scrollDelta = Math.round(1 + ratio * ratio * 10);
+    }
+
+    if (scrollDelta === 0) {
+      return;
+    }
+
+    list.scrollTop += scrollDelta;
+
+    // Select the item now under the cursor after scrolling
+    const itemUnderCursor = document.elementFromPoint(event.clientX, mouseY) as HTMLElement | null;
+    const button = itemUnderCursor?.closest('.option-item') as HTMLElement | null;
+    const value = button?.textContent?.trim();
+    if (!value || value === ALL_OPTION) {
+      return;
+    }
+
+    const filter = this.selectFilters().find((candidate) => candidate.key === key);
+    if (!filter || !filter.options.includes(value)) {
+      return;
+    }
+
+    this.applyDragRange(filter, value);
+  }
+
+  private applyDragRange(filter: SelectFilterState, currentValue: string): void {
+    if (!this.dragSelectionState) return;
+
+    const options = filter.options.filter((o) => o !== ALL_OPTION);
+    const currentIndex = options.indexOf(currentValue);
+    if (currentIndex === -1) return;
+
+    const { anchorIndex: rawAnchor, mode, baseline } = this.dragSelectionState;
+    const anchorIndex = Math.max(0, Math.min(rawAnchor - (filter.options[0] === ALL_OPTION ? 1 : 0), options.length - 1));
+
+    const rangeStart = Math.min(anchorIndex, currentIndex);
+    const rangeEnd = Math.max(anchorIndex, currentIndex);
+
+    const result = new Set(baseline);
+    for (let i = 0; i < options.length; i++) {
+      if (i >= rangeStart && i <= rangeEnd) {
+        if (mode === 'add') {
+          result.add(options[i]);
+        } else {
+          result.delete(options[i]);
+        }
+      }
+    }
+
+    this.applyFilterSelection(this.dragSelectionState.key, this.orderSelection(filter.options, Array.from(result)));
   }
 
   private applyFilterSelection(key: FilterKey, value: string[]): void {
