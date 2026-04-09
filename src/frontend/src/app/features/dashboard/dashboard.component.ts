@@ -54,6 +54,7 @@ type SavedFilterState = {
   filters: Record<FilterKey, string[]>;
   dayRange: { min: number; max: number };
   reportType: ReportTypeValue;
+  savedAt?: string;
 };
 
 @Component({
@@ -755,7 +756,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.selectFilters.set(builtFilters);
     if (saved) {
       this.reportType.set(saved.reportType);
-      this.dayRange.set(saved.dayRange);
+      if (saved.dayRange) {
+        this.dayRange.set(saved.dayRange);
+      } else {
+        this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
+      }
     } else {
       this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     }
@@ -1337,6 +1342,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       filters,
       dayRange: this.resolvedDayRange(),
       reportType: this.reportType(),
+      savedAt: new Date().toISOString().slice(0, 10),
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1349,6 +1355,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && parsed.filters && parsed.dayRange) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (parsed.savedAt !== today) {
+          delete parsed.dayRange;
+        }
         return parsed as SavedFilterState;
       }
     } catch { /* corrupt data – ignore */ }
