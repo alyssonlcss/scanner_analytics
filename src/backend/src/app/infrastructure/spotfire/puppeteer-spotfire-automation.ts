@@ -3406,7 +3406,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   private usesExternalBrowserConnection(): boolean {
-    return Boolean(this.environment.spotfire.browserUrl || this.environment.spotfire.browserWSEndpoint);
+    return !this.environment.spotfire.headless
+      && Boolean(this.environment.spotfire.browserUrl || this.environment.spotfire.browserWSEndpoint);
   }
 
   private async disposeAutomationSession(): Promise<void> {
@@ -3502,7 +3503,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       profileDirectory: this.environment.spotfire.profileDirectory || null,
     });
 
-    if (this.environment.spotfire.browserWSEndpoint) {
+    if (!this.environment.spotfire.headless && this.environment.spotfire.browserWSEndpoint) {
       this.log('connecting to existing browser by websocket endpoint', {
         browserWSEndpoint: this.environment.spotfire.browserWSEndpoint,
       });
@@ -3521,7 +3522,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
     }
 
-    if (this.environment.spotfire.browserUrl) {
+    if (!this.environment.spotfire.headless && this.environment.spotfire.browserUrl) {
       this.log('connecting to existing browser by remote debugging URL', {
         browserUrl: this.environment.spotfire.browserUrl,
       });
