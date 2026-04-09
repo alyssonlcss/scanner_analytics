@@ -5661,6 +5661,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     this.emitProgress(request, `Aplicando filtro Data Referência (${dates.length} dia(s))...`);
 
+    // Same approach as applyScrollableListFilterPhysical:
+    // scroll via buttons, click via page.mouse.click, hold Ctrl via keyboard.down
     const maxRetries = 3;
     let ctrlHeld = false;
 
@@ -5668,37 +5670,37 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       for (let index = 0; index < dates.length; index += 1) {
         const dateValue = dates[index];
         const useCtrl = index > 0;
-        let selected = false;
+        let itemSelected = false;
 
-        // Hold Ctrl from the second item onwards
+        // Hold Ctrl from the second item onwards and KEEP IT HELD
         if (useCtrl && !ctrlHeld) {
           await page.keyboard.down('Control');
           ctrlHeld = true;
+          this.logStep('data-referencia', 'OK', 'holding Ctrl for multi-select', { index });
         }
 
-        for (let attempt = 0; attempt < maxRetries && !selected; attempt++) {
-          // Scroll item into view
+        for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
+          // Step 1: Scroll the item into view using scroll buttons
           const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
           if (!scrolled) {
             this.logStep('data-referencia', 'WARN', 'could not scroll date into view', { dateValue, attempt });
             continue;
           }
 
-          await new Promise((r) => setTimeout(r, 120));
+          await new Promise((r) => setTimeout(r, 150));
 
-          // Try DOM click
-          const clicked = await this.clickRightPanelDateItem(page, filterTitle, dateValue, useCtrl && !ctrlHeld);
-          if (!clicked) {
-            // Fallback: mouse click via coordinates
-            const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
-            if (coords) {
-              await page.mouse.click(coords.x, coords.y);
-            }
+          // Step 2: Get coordinates and click via page.mouse.click
+          // (page.mouse.click respects keyboard.down('Control') state)
+          const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
+          if (!coords) {
+            this.logStep('data-referencia', 'WARN', 'could not get item coords', { dateValue, attempt });
+            continue;
           }
 
+          await page.mouse.click(coords.x, coords.y);
           await new Promise((r) => setTimeout(r, 300));
 
-          // Verify the click registered by checking if item is selected
+          // Step 3: Verify this item is now selected
           const isSelected = await page.evaluate((args: { title: string; label: string }) => {
             function nc(v: string | null | undefined): string {
               return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -5721,12 +5723,15 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           }, { title: filterTitle, label: dateValue });
 
           if (isSelected) {
-            selected = true;
+            itemSelected = true;
             this.logStep('data-referencia', 'OK', `selected date ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
+          } else {
+            this.logStep('data-referencia', 'WARN', `click did not select date`, { dateValue, attempt });
+            await new Promise((r) => setTimeout(r, 200));
           }
         }
 
-        if (!selected) {
+        if (!itemSelected) {
           this.logStep('data-referencia', 'WARN', `could not select date "${dateValue}" after ${maxRetries} attempts`);
         }
 
@@ -5735,6 +5740,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     } finally {
       if (ctrlHeld) {
         await page.keyboard.up('Control');
+        this.logStep('data-referencia', 'OK', 'released Ctrl after multi-select');
       }
     }
 
