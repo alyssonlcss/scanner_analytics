@@ -58,6 +58,11 @@ const DATA_DOWNLOAD_TARGETS = [
     analysisTab: 'Ranking',
     tableTitle: 'Detalhamento Diário',
   },
+  {
+    analysisTab: 'Desvios',
+    tableTitle: 'Relatório Geral',
+    fileAlias: 'Desvios',
+  },
 ] as const;
 
 export async function createServer() {
@@ -161,7 +166,8 @@ export async function createServer() {
           throw new Error(`export file was not generated for table: ${target.tableTitle}`);
         }
 
-        const fileName = `${reportTitle} - ${target.tableTitle}.csv`;
+        const fileLabel = ('fileAlias' in target && target.fileAlias) ? target.fileAlias : target.tableTitle;
+        const fileName = `${reportTitle} - ${fileLabel}.csv`;
         const filePath = await moveDownloadedFile(exportedFile, dataDirectory, fileName);
 
         server.log.info({ tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table "${target.tableTitle}" moved successfully`);

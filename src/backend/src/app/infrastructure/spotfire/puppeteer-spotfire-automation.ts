@@ -169,22 +169,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (request.tablesToExport && request.tablesToExport.length > 0) {
           this.logStep('export', 'START', `starting multi-table export for ${request.tablesToExport.length} tables`);
           this.emitProgress(request, 'Preparando exportação das tabelas...');
+          const totalTables = request.tablesToExport.length;
           
           for (let i = 0; i < request.tablesToExport.length; i++) {
             const tableConfig = request.tablesToExport[i];
             this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
-            this.emitProgress(request, `Navegando para aba "${tableConfig.tab}"...`);
+            this.emitProgress(request, `[${i + 1}/${request.tablesToExport.length}] Navegando para aba "${tableConfig.tab}"...`);
             
             const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
               await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
               this.log(`navigating to tab: ${tableConfig.tab}`);
               await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
               await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-              this.emitProgress(request, `Maximizando tabela "${tableConfig.tableTitle}"...`);
+              this.emitProgress(request, `[${i + 1}/${totalTables}] Maximizando tabela "${tableConfig.tableTitle}"...`);
               this.log(`maximizing table: ${tableConfig.tableTitle}`);
               await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
               
-              this.emitProgress(request, `Exportando tabela "${tableConfig.tableTitle}"...`);
+              this.emitProgress(request, `[${i + 1}/${totalTables}] Exportando tabela "${tableConfig.tableTitle}"...`);
               
               const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
               const { existingFiles } = await this.raceAbort(
@@ -4479,42 +4480,103 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   private async maximizeTable(page: Page, tableTitle: string): Promise<void> {
     this.log(`attempting to maximize table: "${tableTitle}"`);
     
-    const result = await page.evaluate(function (requestedTableTitle) {
+    // First, find the matching title element and hover over it to reveal the maximize button
+    const findResult = await page.evaluate(function (requestedTableTitle) {
       function normalize(value: string | null | undefined): string {
         return (value ?? '').replace(/\s+/g, ' ').trim();
       }
 
       const requested = normalize(requestedTableTitle);
+      const requestedLower = requested.toLowerCase();
       
       const titles = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual-title'));
       const allTitles = titles.map(function (titleElement) {
         const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
         return normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
       });
-      
+
+      // Try exact match first, then includes, then case-insensitive includes
+      const matchIndex = titles.findIndex(function (titleElement) {
+        const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
+        const title = normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
+        return title === requested;
+      });
+
+      const includesIndex = matchIndex >= 0 ? matchIndex : titles.findIndex(function (titleElement) {
+        const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
+        const title = normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
+        return title.includes(requested) || title.toLowerCase().includes(requestedLower);
+      });
+
+      const finalIndex = includesIndex >= 0 ? includesIndex : -1;
+
+      if (finalIndex < 0) {
+        return { found: false, allTitles, requested };
+      }
+
+      // Get bounding rect for hover
+      const titleElement = titles[finalIndex];
+      const rect = titleElement.getBoundingClientRect();
+      return {
+        found: true,
+        allTitles,
+        requested,
+        matchedTitle: allTitles[finalIndex],
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }, tableTitle);
+
+    this.log(`find result for "${tableTitle}":`, findResult);
+
+    if (!findResult.found) {
+      throw new Error(`could not maximize table: ${tableTitle} - no matching title found. Available titles: ${findResult.allTitles?.join(', ')}`);
+    }
+
+    // Hover over the title element to reveal the maximize button
+    await page.mouse.move(findResult.x!, findResult.y!);
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Now try to click the maximize button
+    const clickResult = await page.evaluate(function (requestedTableTitle) {
+      function normalize(value: string | null | undefined): string {
+        return (value ?? '').replace(/\s+/g, ' ').trim();
+      }
+
+      const requested = normalize(requestedTableTitle);
+      const requestedLower = requested.toLowerCase();
+
+      const titles = Array.from(document.querySelectorAll<HTMLElement>('.sf-element-visual-title'));
+
       const matchingTitle = titles.find(function (titleElement) {
         const textElement = titleElement.querySelector<HTMLElement>('.sf-element-text-box[title], .sf-single-line-text[title]');
         const title = normalize(textElement?.getAttribute('title') ?? textElement?.textContent);
-        return title === requested || title.includes(requested);
+        return title === requested || title.includes(requested) || title.toLowerCase().includes(requestedLower);
       });
 
       if (!matchingTitle) {
-        return { success: false, reason: 'no matching title found', allTitles, requested };
+        return { success: false, reason: 'title not found after hover' };
       }
 
-      const maximizeButton = matchingTitle.querySelector<HTMLElement>('[title="Maximize visualization"], .sfc-maximize-visual-button');
+      // Look for maximize button in the title bar or its parent visual container
+      const visual = matchingTitle.closest<HTMLElement>('.sfpc-visual, .sf-element-visual, [class*="visual-content"]') ?? matchingTitle.parentElement;
+      const searchRoot = visual ?? matchingTitle;
+
+      const maximizeButton = searchRoot.querySelector<HTMLElement>('[title="Maximize visualization"], .sfc-maximize-visual-button')
+        ?? matchingTitle.querySelector<HTMLElement>('[title="Maximize visualization"], .sfc-maximize-visual-button');
+
       if (!maximizeButton) {
-        return { success: false, reason: 'no maximize button found', allTitles, requested };
+        return { success: false, reason: 'no maximize button found after hover' };
       }
 
       maximizeButton.click();
-      return { success: true, allTitles, requested };
+      return { success: true };
     }, tableTitle);
 
-    this.log(`maximize result for "${tableTitle}":`, result);
+    this.log(`maximize click result for "${tableTitle}":`, clickResult);
 
-    if (!result.success) {
-      throw new Error(`could not maximize table: ${tableTitle} - ${result.reason}. Available titles: ${result.allTitles?.join(', ')}`);
+    if (!clickResult.success) {
+      throw new Error(`could not maximize table: ${tableTitle} - ${clickResult.reason}`);
     }
 
     await this.waitForSpotfireIdle(page);
