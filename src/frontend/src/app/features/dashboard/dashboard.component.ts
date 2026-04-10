@@ -6,7 +6,7 @@ import { ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
-type ReportTypeValue = 'completo';
+type ReportTypeValue = 'operacional';
 
 type SelectFilterState = {
   key: FilterKey;
@@ -43,8 +43,8 @@ const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'base', { sourceTitle: string; sou
 };
 const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   {
-    value: 'completo',
-    label: 'Completo',
+    value: 'operacional',
+    label: 'Operacional',
   },
 ];
 
@@ -702,7 +702,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly progressMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
-  protected readonly reportType = signal<ReportTypeValue>('completo');
+  protected readonly reportType = signal<ReportTypeValue>('operacional');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
   protected readonly dayRange = signal({ min: 1, max: 31 });
   protected readonly resolvedDayRange = computed(() => {

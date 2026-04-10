@@ -49,26 +49,23 @@ const dataDownloadSchema = z.object({
   }).optional(),
 });
 
-const DATA_DOWNLOAD_TARGETS = [
-  {
-    analysisTab: 'Tab Completa',
-    tableTitle: 'Deslocamentos',
-  },
-  {
-    analysisTab: 'Ranking',
-    tableTitle: 'Detalhamento Diário',
-  },
-  {
-    analysisTab: 'Desvios',
-    tableTitle: 'Relatório Geral',
-    fileAlias: 'Desvios',
-  },
-] as const;
-
 export async function createServer() {
   const server = Fastify({ logger: true });
   const jobStore = new InMemoryJobStore();
   const automation = new PuppeteerSpotfireAutomation(environment);
+  const downloadTargets = environment.spotfire.downloadTargets;
+
+  server.log.info(
+    {
+      SPOTFIRE_DOWNLOAD_TABLES: process.env.SPOTFIRE_DOWNLOAD_TABLES,
+      parsedTargets: downloadTargets.map(t =>
+        `${t.analysisTab} → ${t.tableTitle}${t.fileAlias ? ` (alias: ${t.fileAlias})` : ''}`,
+      ),
+      totalTables: downloadTargets.length,
+    },
+    `SPOTFIRE_DOWNLOAD_TABLES parsed: ${downloadTargets.length} table(s) configured`,
+  );
+
   const startScannerJob = new StartScannerJobUseCase(automation, jobStore);
   const getScannerJob = new GetScannerJobUseCase(jobStore);
   let activeDataDownloadController: AbortController | null = null;
@@ -130,16 +127,16 @@ export async function createServer() {
       onProgress('Preparando diretório de dados...');
       await resetDataDirectory(dataDirectory);
 
-      const tableNames = DATA_DOWNLOAD_TARGETS.map(t => t.tableTitle).join(' e ');
+      const tableNames = downloadTargets.map(t => t.tableTitle).join(' e ');
       onProgress(`Baixando tabelas: ${tableNames}...`);
 
-      server.log.info({ targetCount: DATA_DOWNLOAD_TARGETS.length, targets: DATA_DOWNLOAD_TARGETS }, 'starting data download for configured tables');
+      server.log.info({ targetCount: downloadTargets.length, targets: downloadTargets }, 'starting data download for configured tables');
 
       const result = await automation.runExtraction({
         reportTitle,
-        analysisTab: DATA_DOWNLOAD_TARGETS[0].analysisTab,
-        tableTitle: DATA_DOWNLOAD_TARGETS[0].tableTitle,
-        tablesToExport: DATA_DOWNLOAD_TARGETS.map(t => ({ tab: t.analysisTab, tableTitle: t.tableTitle })),
+        analysisTab: downloadTargets[0].analysisTab,
+        tableTitle: downloadTargets[0].tableTitle,
+        tablesToExport: downloadTargets.map(t => ({ tab: t.analysisTab, tableTitle: t.tableTitle })),
         selectedFilters: payload.selectedFilters,
         periodSelection: payload.periodSelection,
         signal: controller.signal,
@@ -148,7 +145,13 @@ export async function createServer() {
 
       throwIfAborted(controller.signal);
 
-      const allExportedFiles = result.exportedFiles ?? (result.exportFilePath ? [result.exportFilePath] : []);
+      const allExportedFiles = result.exportedFiles;
+
+      // --- Validation: log each table from env var and whether it was downloaded ---
+      server.log.info(
+        { configured: downloadTargets.length, exported: allExportedFiles.length },
+        'validating downloads against SPOTFIRE_DOWNLOAD_TABLES',
+      );
 
       const downloadedFiles: Array<{
         analysisTab: string;
@@ -157,20 +160,30 @@ export async function createServer() {
         filePath: string;
       }> = [];
 
-      for (let i = 0; i < DATA_DOWNLOAD_TARGETS.length; i++) {
-        const target = DATA_DOWNLOAD_TARGETS[i];
+      const skippedTables: Array<{ analysisTab: string; tableTitle: string; reason: string }> = [];
+
+      for (let i = 0; i < downloadTargets.length; i++) {
+        const target = downloadTargets[i];
         const exportedFile = allExportedFiles[i];
 
         if (!exportedFile) {
-          server.log.error({ tab: target.analysisTab, table: target.tableTitle }, 'export file was not generated');
-          throw new Error(`export file was not generated for table: ${target.tableTitle}`);
+          const reason = `no file generated (index ${i})`;
+          server.log.warn(
+            { index: i, tab: target.analysisTab, table: target.tableTitle },
+            `[${i + 1}/${downloadTargets.length}] SKIPPED — ${reason}`,
+          );
+          skippedTables.push({ analysisTab: target.analysisTab, tableTitle: target.tableTitle, reason });
+          continue;
         }
 
-        const fileLabel = ('fileAlias' in target && target.fileAlias) ? target.fileAlias : target.tableTitle;
+        const fileLabel = target.fileAlias ?? target.tableTitle;
         const fileName = `${reportTitle} - ${fileLabel}.csv`;
         const filePath = await moveDownloadedFile(exportedFile, dataDirectory, fileName);
 
-        server.log.info({ tab: target.analysisTab, table: target.tableTitle, fileName, filePath }, `table "${target.tableTitle}" moved successfully`);
+        server.log.info(
+          { index: i, tab: target.analysisTab, table: target.tableTitle, fileName, filePath },
+          `[${i + 1}/${downloadTargets.length}] OK — "${target.tableTitle}" -> ${fileName}`,
+        );
 
         downloadedFiles.push({
           analysisTab: target.analysisTab,
@@ -180,8 +193,28 @@ export async function createServer() {
         });
       }
 
-      server.log.info({ downloadedCount: downloadedFiles.length, files: downloadedFiles.map(f => f.fileName) }, 'all tables downloaded successfully');
-      onProgress('Todas as tabelas baixadas! Finalizando...');
+      // --- Summary log ---
+      server.log.info(
+        {
+          total: downloadTargets.length,
+          downloaded: downloadedFiles.length,
+          skipped: skippedTables.length,
+          downloadedTables: downloadedFiles.map(f => f.tableTitle),
+          skippedTables: skippedTables.map(s => `${s.analysisTab}/${s.tableTitle} (${s.reason})`),
+        },
+        `download summary: ${downloadedFiles.length}/${downloadTargets.length} tables downloaded` +
+          (skippedTables.length > 0 ? `, ${skippedTables.length} skipped` : ''),
+      );
+
+      if (downloadedFiles.length === 0) {
+        throw new Error('none of the configured tables were downloaded — check SPOTFIRE_DOWNLOAD_TABLES and Spotfire tab/table names');
+      }
+
+      onProgress(
+        skippedTables.length > 0
+          ? `${downloadedFiles.length}/${downloadTargets.length} tabelas baixadas (${skippedTables.length} falharam). Finalizando...`
+          : 'Todas as tabelas baixadas! Finalizando...',
+      );
 
       throwIfAborted(controller.signal);
       await cleanupDataDirectory(dataDirectory, downloadedFiles.map((file) => file.fileName));

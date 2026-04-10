@@ -157,13 +157,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           }, request);
         }
 
-        const exportedFiles: string[] = [];
-        const pendingDownloads: Array<{
-          tableTitle: string;
-          existingFiles: Set<string>;
-          request: ScannerRunRequest;
-          outputDirectory: string;
-        }> = [];
+        const exportedFiles: Array<string | undefined> = [];
 
         // New multi-table export logic
         if (request.tablesToExport && request.tablesToExport.length > 0) {
@@ -171,110 +165,45 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           this.emitProgress(request, 'Preparando exportação das tabelas...');
           const totalTables = request.tablesToExport.length;
           
-          for (let i = 0; i < request.tablesToExport.length; i++) {
+          for (let i = 0; i < totalTables; i++) {
             const tableConfig = request.tablesToExport[i];
-            this.logStep('export', 'START', `[${i + 1}/${request.tablesToExport.length}] exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
-            this.emitProgress(request, `[${i + 1}/${request.tablesToExport.length}] Navegando para aba "${tableConfig.tab}"...`);
-            
-            const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
-              await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-              this.log(`navigating to tab: ${tableConfig.tab}`);
-              await this.raceAbort(this.openAnalysisTab(page, tableConfig.tab), request.signal);
-              await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-              this.emitProgress(request, `[${i + 1}/${totalTables}] Maximizando tabela "${tableConfig.tableTitle}"...`);
-              this.log(`maximizing table: ${tableConfig.tableTitle}`);
-              await this.raceAbort(this.maximizeTable(page, tableConfig.tableTitle), request.signal);
-              
-              this.emitProgress(request, `[${i + 1}/${totalTables}] Exportando tabela "${tableConfig.tableTitle}"...`);
-              
-              const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
-              const { existingFiles } = await this.raceAbort(
-                this.triggerExport(page, outputDirectory, tableRequest),
-                request.signal,
-              );
-              return { existingFiles };
-            }, request);
+            const label = `[${i + 1}/${totalTables}]`;
+            this.logStep('export', 'START', `${label} exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
 
-            const tableRequest = { ...request, analysisTab: tableConfig.tab, tableTitle: tableConfig.tableTitle };
-            pendingDownloads.push({ tableTitle: tableConfig.tableTitle, existingFiles, request: tableRequest, outputDirectory });
-            this.logStep('export', 'OK', `[${i + 1}/${request.tablesToExport.length}] export triggered for "${tableConfig.tableTitle}"`);
-            
-            // Minimize the table after triggering export before going to next tab
-            this.log(`minimizing table "${tableConfig.tableTitle}" after export trigger`);
-            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-          }
-
-          // Now wait for all downloads in parallel
-          this.emitProgress(request, 'Aguardando downloads...');
-          const remaining = new Set(pendingDownloads.map(p => p.tableTitle));
-          const downloadResults = await Promise.all(
-            pendingDownloads.map(async (pending) => {
-              const file = await this.raceAbort(
-                this.awaitExportDownload(pending.outputDirectory, pending.existingFiles, pending.request),
-                request.signal,
+            try {
+              const exportedFile = await this.exportSingleTableFromTab(
+                page, outputDirectory, request, tableConfig.tab, tableConfig.tableTitle, label,
               );
-              if (file) {
-                remaining.delete(pending.tableTitle);
-                this.logStep('export', 'OK', `downloaded "${pending.tableTitle}" -> ${file}`);
-                const stillPending = Array.from(remaining);
-                if (stillPending.length > 0) {
-                  this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada. Aguardando: ${stillPending.join(', ')}...`);
-                } else {
-                  this.emitProgress(request, `Tabela "${pending.tableTitle}" baixada`);
-                }
+
+              exportedFiles.push(exportedFile);
+              if (exportedFile) {
+                this.logStep('export', 'OK', `${label} downloaded "${tableConfig.tableTitle}" -> ${exportedFile}`);
               } else {
-                remaining.delete(pending.tableTitle);
-                this.logStep('export', 'FAIL', `failed to download "${pending.tableTitle}"`);
+                this.logStep('export', 'WARN', `${label} no file returned for "${tableConfig.tableTitle}" — skipping`);
+                this.emitProgress(request, `${label} Tabela "${tableConfig.tableTitle}" não encontrada — pulando`);
               }
-              return file;
-            }),
-          );
-
-          for (const file of downloadResults) {
-            if (file) exportedFiles.push(file);
+            } catch (err) {
+              exportedFiles.push(undefined);
+              const msg = err instanceof Error ? err.message : String(err);
+              this.logStep('export', 'WARN', `${label} skipping "${tableConfig.tableTitle}" from tab "${tableConfig.tab}" — ${msg}`);
+              this.emitProgress(request, `${label} Erro ao exportar "${tableConfig.tableTitle}" — pulando`);
+            }
           }
           
-          this.logStep('export', 'OK', `multi-table export completed: ${exportedFiles.length}/${request.tablesToExport.length} files downloaded`);
-        } else if (request.tableTitle?.trim()) {
-          // Legacy single table export — trigger then wait
-          this.logStep('export', 'START', `single table export: "${request.tableTitle}"`);
-          this.emitProgress(request, `Exportando tabela "${request.tableTitle}"...`);
-
-          const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
-            await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-            await this.raceAbort(this.maximizeTable(page, request.tableTitle!), request.signal);
-
-            const { existingFiles } = await this.raceAbort(
-              this.triggerExport(page, outputDirectory, request),
-              request.signal,
-            );
-            return { existingFiles };
-          }, request);
-
-          this.emitProgress(request, `Aguardando download de "${request.tableTitle}"...`);
-          const exportedFile = await this.raceAbort(
-            this.awaitExportDownload(outputDirectory, existingFiles, request),
-            request.signal,
-          );
-
-          if (exportedFile) {
-            exportedFiles.push(exportedFile);
-            this.logStep('export', 'OK', `downloaded "${request.tableTitle}" -> ${exportedFile}`);
-          } else {
-            this.logStep('export', 'FAIL', `failed to download "${request.tableTitle}"`);
-          }
-          // Minimize after single table export
-          this.log(`minimizing table "${request.tableTitle}" after export`);
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+          const successCount = exportedFiles.filter(Boolean).length;
+          this.logStep('export', 'OK', `multi-table export completed: ${successCount}/${totalTables} files downloaded`);
+        } else {
+          this.logStep('export', 'WARN', 'no tables configured for export (check SPOTFIRE_DOWNLOAD_TABLES env var)');
         }
 
-        this.log(`export summary: ${exportedFiles.length} files downloaded`, { exportedFiles });
+        const successFiles = exportedFiles.filter((f): f is string => Boolean(f));
+        this.log(`export summary: ${successFiles.length} files downloaded`, { exportedFiles });
 
         return {
           filters,
           availableTabs,
           availableTables,
-          exportFilePath: exportedFiles[0],
+          exportFilePath: exportedFiles.find(Boolean),
           exportedFiles,
         };
       } finally {
@@ -3803,16 +3732,118 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
-  private async openAnalysisTab(page: Page, tabLabel: string): Promise<void> {
-    this.log('opening analysis tab by text', {
-      tabLabel,
-    });
+  private async openAnalysisTab(page: Page, tabLabel: string, maxRetries = 3): Promise<void> {
+    this.log('opening analysis tab by text', { tabLabel });
 
-    await this.clickByText(page, tabLabel, true);
-    this.log('analysis tab clicked, waiting for Spotfire to refresh dependent tables', {
-      tabLabel,
-    });
-    await this.waitForSpotfireIdle(page);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const clickResult = await page.evaluate(
+        function ({ requestedTab }) {
+          function normalize(value: string | null | undefined): string {
+            return (value ?? '').replace(/\s+/g, ' ').trim();
+          }
+
+          const requested = normalize(requestedTab);
+          const tabElements = Array.from(
+            document.querySelectorAll<HTMLElement>('.sf-element-page-tab, .sfx_page-tab_204'),
+          );
+
+          const allTabLabels = tabElements.map(function (tab) {
+            return normalize(tab.getAttribute('title') ?? tab.textContent);
+          });
+
+          const matchingTab = tabElements.find(function (tab) {
+            const title = normalize(tab.getAttribute('title') ?? tab.textContent);
+            return title === requested;
+          });
+
+          if (!matchingTab) {
+            return { clicked: false, allTabLabels, requested };
+          }
+
+          matchingTab.scrollIntoView({ block: 'center', inline: 'center' });
+          matchingTab.click();
+          return { clicked: true, allTabLabels, requested };
+        },
+        { requestedTab: tabLabel },
+      );
+
+      this.log('analysis tab click result', { attempt, ...clickResult });
+
+      if (!clickResult.clicked) {
+        throw new Error(`tab "${tabLabel}" not found in tab bar. Available tabs: ${clickResult.allTabLabels?.join(', ')}`);
+      }
+
+      // Wait for Spotfire to start processing and become idle
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await this.waitForSpotfireIdle(page);
+
+      // Verify the tab actually switched by checking visible visualization titles changed
+      const verifyResult = await page.evaluate(
+        function ({ expectedTab }) {
+          function normalize(value: string | null | undefined): string {
+            return (value ?? '').replace(/\s+/g, ' ').trim();
+          }
+
+          // Check which tab is currently active
+          const activeTabs = Array.from(
+            document.querySelectorAll<HTMLElement>('.sf-element-page-tab.sfpc-selected, .sf-element-page-tab[class*="selected"], .sfx_page-tab_204[class*="selected"]'),
+          );
+          const activeTabLabel = activeTabs.map(function (tab) {
+            return normalize(tab.getAttribute('title') ?? tab.textContent);
+          });
+
+          return { activeTabLabel, expectedTab: normalize(expectedTab) };
+        },
+        { expectedTab: tabLabel },
+      );
+
+      this.log('analysis tab verification', { attempt, ...verifyResult });
+
+      const isActive = verifyResult.activeTabLabel.some(function (label) {
+        return label === verifyResult.expectedTab;
+      });
+
+      if (isActive) {
+        this.log('analysis tab switched successfully', { tabLabel, attempt });
+        return;
+      }
+
+      this.log(`tab switch not confirmed, retrying (${attempt}/${maxRetries})`, { tabLabel, verifyResult });
+
+      // On retry, try a mouse click at the tab element's position for more reliable click
+      if (attempt < maxRetries) {
+        const tabRect = await page.evaluate(
+          function ({ requestedTab }) {
+            function normalize(value: string | null | undefined): string {
+              return (value ?? '').replace(/\s+/g, ' ').trim();
+            }
+
+            const requested = normalize(requestedTab);
+            const tabs = Array.from(
+              document.querySelectorAll<HTMLElement>('.sf-element-page-tab, .sfx_page-tab_204'),
+            );
+
+            const tab = tabs.find(function (t) {
+              return normalize(t.getAttribute('title') ?? t.textContent) === requested;
+            });
+
+            if (!tab) return null;
+            const rect = tab.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          },
+          { requestedTab: tabLabel },
+        );
+
+        if (tabRect) {
+          this.log('retrying tab click via mouse at coordinates', { tabLabel, ...tabRect });
+          await page.mouse.click(tabRect.x, tabRect.y);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await this.waitForSpotfireIdle(page);
+        }
+      }
+    }
+
+    this.log(`tab switch could not be verified after ${maxRetries} attempts, proceeding anyway`, { tabLabel });
   }
 
   private async ensureNoMaximizedVisualization(page: Page): Promise<void> {
@@ -4475,6 +4506,58 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
 
       return tables;
+  }
+
+  /**
+   * Self-contained export of a single table: navigate to tab, maximize, trigger export, wait for download, minimize.
+   * Works independently of what tab/table is currently active.
+   */
+  private async exportSingleTableFromTab(
+    page: Page,
+    outputDirectory: string,
+    request: ScannerRunRequest,
+    tab: string,
+    tableTitle: string,
+    label: string,
+  ): Promise<string | undefined> {
+    this.emitProgress(request, `${label} Navegando para aba "${tab}"...`);
+
+    const { existingFiles } = await this.withSpotfireRecovery(page, async () => {
+      await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+
+      this.log(`navigating to tab: ${tab}`);
+      await this.raceAbort(this.openAnalysisTab(page, tab), request.signal);
+      await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+
+      this.emitProgress(request, `${label} Maximizando tabela "${tableTitle}"...`);
+      this.log(`maximizing table: ${tableTitle}`);
+      await this.raceAbort(this.maximizeTable(page, tableTitle), request.signal);
+
+      this.emitProgress(request, `${label} Exportando tabela "${tableTitle}"...`);
+
+      const tableRequest = { ...request, analysisTab: tab, tableTitle };
+      const { existingFiles } = await this.raceAbort(
+        this.triggerExport(page, outputDirectory, tableRequest),
+        request.signal,
+      );
+      return { existingFiles };
+    }, request);
+
+    this.emitProgress(request, `${label} Aguardando download de "${tableTitle}"...`);
+    const tableRequest = { ...request, analysisTab: tab, tableTitle };
+    const exportedFile = await this.raceAbort(
+      this.awaitExportDownload(outputDirectory, existingFiles, tableRequest),
+      request.signal,
+    );
+
+    this.log(`minimizing table "${tableTitle}" after download`);
+    await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+
+    if (exportedFile) {
+      this.emitProgress(request, `${label} Tabela "${tableTitle}" baixada ✓`);
+    }
+
+    return exportedFile;
   }
 
   private async maximizeTable(page: Page, tableTitle: string): Promise<void> {

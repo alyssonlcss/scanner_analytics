@@ -44,7 +44,32 @@ const environmentSchema = z.object({
   SPOTFIRE_EXPORT_MENU_LABEL: z.string().default('Export table'),
   SPOTFIRE_EXPORT_PARENT_MENU_LABEL: z.string().default('Export'),
   SPOTFIRE_OUTPUT_DIR: z.string().default('../../data'),
+  SPOTFIRE_DOWNLOAD_TABLES: z.string().default('Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios'),
 });
+
+function parseDownloadTargets(raw: string): Array<{ analysisTab: string; tableTitle: string; fileAlias?: string }> {
+  const results: Array<{ analysisTab: string; tableTitle: string; fileAlias?: string }> = [];
+
+  const entries = raw.split(',').map(e => e.trim()).filter(e => e.length > 0);
+
+  for (const entry of entries) {
+    const segments = entry.split('-');
+    if (segments.length < 2) {
+      throw new Error(`Invalid SPOTFIRE_DOWNLOAD_TABLES entry "${entry}": expected "Aba-Tabela" format (use - to separate tab from tables)`);
+    }
+
+    const analysisTab = segments[0].replace(/_/g, ' ');
+
+    for (let i = 1; i < segments.length; i++) {
+      const [tableRaw, aliasRaw] = segments[i].split(':');
+      const tableTitle = tableRaw.replace(/_/g, ' ');
+      const fileAlias = aliasRaw?.trim().replace(/_/g, ' ') || undefined;
+      results.push({ analysisTab, tableTitle, ...(fileAlias ? { fileAlias } : {}) });
+    }
+  }
+
+  return results;
+}
 
 const parsedEnvironment = environmentSchema.parse(process.env);
 const resolvedAnalysisUrl = parsedEnvironment.SPOTFIRE_ANALYSIS_URL ?? parsedEnvironment.SPOTFIRE_REPORT_URL;
@@ -72,6 +97,7 @@ export const environment = {
     exportMenuLabel: parsedEnvironment.SPOTFIRE_EXPORT_MENU_LABEL,
     exportParentMenuLabel: parsedEnvironment.SPOTFIRE_EXPORT_PARENT_MENU_LABEL,
     outputDirectory: parsedEnvironment.SPOTFIRE_OUTPUT_DIR,
+    downloadTargets: parseDownloadTargets(parsedEnvironment.SPOTFIRE_DOWNLOAD_TABLES),
   },
 } as const;
 
