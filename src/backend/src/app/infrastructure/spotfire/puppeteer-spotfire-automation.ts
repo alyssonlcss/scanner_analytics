@@ -3732,118 +3732,48 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
-  private async openAnalysisTab(page: Page, tabLabel: string, maxRetries = 3): Promise<void> {
+  private async openAnalysisTab(page: Page, tabLabel: string): Promise<void> {
     this.log('opening analysis tab by text', { tabLabel });
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const clickResult = await page.evaluate(
-        function ({ requestedTab }) {
-          function normalize(value: string | null | undefined): string {
-            return (value ?? '').replace(/\s+/g, ' ').trim();
-          }
+    const clickResult = await page.evaluate(
+      function ({ requestedTab }) {
+        function normalize(value: string | null | undefined): string {
+          return (value ?? '').replace(/\s+/g, ' ').trim();
+        }
 
-          const requested = normalize(requestedTab);
-          const tabElements = Array.from(
-            document.querySelectorAll<HTMLElement>('.sf-element-page-tab, .sfx_page-tab_204'),
-          );
-
-          const allTabLabels = tabElements.map(function (tab) {
-            return normalize(tab.getAttribute('title') ?? tab.textContent);
-          });
-
-          const matchingTab = tabElements.find(function (tab) {
-            const title = normalize(tab.getAttribute('title') ?? tab.textContent);
-            return title === requested;
-          });
-
-          if (!matchingTab) {
-            return { clicked: false, allTabLabels, requested };
-          }
-
-          matchingTab.scrollIntoView({ block: 'center', inline: 'center' });
-          matchingTab.click();
-          return { clicked: true, allTabLabels, requested };
-        },
-        { requestedTab: tabLabel },
-      );
-
-      this.log('analysis tab click result', { attempt, ...clickResult });
-
-      if (!clickResult.clicked) {
-        throw new Error(`tab "${tabLabel}" not found in tab bar. Available tabs: ${clickResult.allTabLabels?.join(', ')}`);
-      }
-
-      // Wait for Spotfire to start processing and become idle
-      await new Promise(resolve => setTimeout(resolve, 300));
-      await this.waitForSpotfireIdle(page);
-
-      // Verify the tab actually switched by checking visible visualization titles changed
-      const verifyResult = await page.evaluate(
-        function ({ expectedTab }) {
-          function normalize(value: string | null | undefined): string {
-            return (value ?? '').replace(/\s+/g, ' ').trim();
-          }
-
-          // Check which tab is currently active
-          const activeTabs = Array.from(
-            document.querySelectorAll<HTMLElement>('.sf-element-page-tab.sfpc-selected, .sf-element-page-tab[class*="selected"], .sfx_page-tab_204[class*="selected"]'),
-          );
-          const activeTabLabel = activeTabs.map(function (tab) {
-            return normalize(tab.getAttribute('title') ?? tab.textContent);
-          });
-
-          return { activeTabLabel, expectedTab: normalize(expectedTab) };
-        },
-        { expectedTab: tabLabel },
-      );
-
-      this.log('analysis tab verification', { attempt, ...verifyResult });
-
-      const isActive = verifyResult.activeTabLabel.some(function (label) {
-        return label === verifyResult.expectedTab;
-      });
-
-      if (isActive) {
-        this.log('analysis tab switched successfully', { tabLabel, attempt });
-        return;
-      }
-
-      this.log(`tab switch not confirmed, retrying (${attempt}/${maxRetries})`, { tabLabel, verifyResult });
-
-      // On retry, try a mouse click at the tab element's position for more reliable click
-      if (attempt < maxRetries) {
-        const tabRect = await page.evaluate(
-          function ({ requestedTab }) {
-            function normalize(value: string | null | undefined): string {
-              return (value ?? '').replace(/\s+/g, ' ').trim();
-            }
-
-            const requested = normalize(requestedTab);
-            const tabs = Array.from(
-              document.querySelectorAll<HTMLElement>('.sf-element-page-tab, .sfx_page-tab_204'),
-            );
-
-            const tab = tabs.find(function (t) {
-              return normalize(t.getAttribute('title') ?? t.textContent) === requested;
-            });
-
-            if (!tab) return null;
-            const rect = tab.getBoundingClientRect();
-            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-          },
-          { requestedTab: tabLabel },
+        const requested = normalize(requestedTab);
+        const tabElements = Array.from(
+          document.querySelectorAll<HTMLElement>('.sf-element-page-tab, .sfx_page-tab_204'),
         );
 
-        if (tabRect) {
-          this.log('retrying tab click via mouse at coordinates', { tabLabel, ...tabRect });
-          await page.mouse.click(tabRect.x, tabRect.y);
-          await new Promise(resolve => setTimeout(resolve, 500));
-          await this.waitForSpotfireIdle(page);
+        const allTabLabels = tabElements.map(function (tab) {
+          return normalize(tab.getAttribute('title') ?? tab.textContent);
+        });
+
+        const matchingTab = tabElements.find(function (tab) {
+          const title = normalize(tab.getAttribute('title') ?? tab.textContent);
+          return title === requested;
+        });
+
+        if (!matchingTab) {
+          return { clicked: false, allTabLabels, requested };
         }
-      }
+
+        matchingTab.scrollIntoView({ block: 'center', inline: 'center' });
+        matchingTab.click();
+        return { clicked: true, allTabLabels, requested };
+      },
+      { requestedTab: tabLabel },
+    );
+
+    this.log('analysis tab click result', clickResult);
+
+    if (!clickResult.clicked) {
+      throw new Error(`tab "${tabLabel}" not found in tab bar. Available tabs: ${clickResult.allTabLabels?.join(', ')}`);
     }
 
-    this.log(`tab switch could not be verified after ${maxRetries} attempts, proceeding anyway`, { tabLabel });
+    this.log('analysis tab clicked, waiting for Spotfire to refresh dependent tables', { tabLabel });
+    await this.waitForSpotfireIdle(page);
   }
 
   private async ensureNoMaximizedVisualization(page: Page): Promise<void> {
@@ -5809,6 +5739,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     // scroll via buttons, click via page.mouse.click, hold Ctrl via keyboard.down
     const maxRetries = 3;
     let ctrlHeld = false;
+    const failedDates: string[] = [];
 
     try {
       for (let index = 0; index < dates.length; index += 1) {
@@ -5876,6 +5807,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         if (!itemSelected) {
+          failedDates.push(dateValue);
           this.logStep('data-referencia', 'WARN', `could not select date "${dateValue}" after ${maxRetries} attempts`);
         }
 
@@ -5889,7 +5821,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
 
     await this.waitForSpotfireIdle(page);
-    this.logStep('data-referencia', 'OK', `Data Referência filter applied with ${dates.length} date(s)`);
+
+    const selectedCount = dates.length - failedDates.length;
+    if (selectedCount === 0) {
+      this.logStep('data-referencia', 'FAIL', `none of the ${dates.length} date(s) could be selected — aborting`, { failedDates });
+      throw new Error(`Data Referência: nenhuma das ${dates.length} data(s) pôde ser selecionada. Verifique se o filtro está visível no painel direito.`);
+    }
+
+    if (failedDates.length > 0) {
+      this.logStep('data-referencia', 'WARN', `${selectedCount}/${dates.length} date(s) selected, ${failedDates.length} failed`, { failedDates });
+    }
+
+    this.logStep('data-referencia', 'OK', `Data Referência filter applied: ${selectedCount}/${dates.length} date(s) selected`);
     this.emitProgress(request, 'Filtro Data Referência aplicado');
   }
 
