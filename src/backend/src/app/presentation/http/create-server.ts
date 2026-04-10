@@ -176,8 +176,10 @@ export async function createServer() {
           continue;
         }
 
-        const fileLabel = target.fileAlias ?? target.tableTitle;
-        const fileName = `${reportTitle} - ${fileLabel}.csv`;
+        const tabSlug = target.analysisTab.replace(/\s+/g, '_');
+        const tableSlug = target.tableTitle.replace(/\s+/g, '_');
+        const fileLabel = target.fileAlias ?? `${tabSlug}-${tableSlug}`;
+        const fileName = `${fileLabel}.csv`;
         const filePath = await moveDownloadedFile(exportedFile, dataDirectory, fileName);
 
         server.log.info(
