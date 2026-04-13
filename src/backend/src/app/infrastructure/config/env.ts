@@ -45,6 +45,7 @@ const environmentSchema = z.object({
   SPOTFIRE_EXPORT_PARENT_MENU_LABEL: z.string().default('Export'),
   SPOTFIRE_OUTPUT_DIR: z.string().default('../../data'),
   SPOTFIRE_DOWNLOAD_TABLES: z.string().default('Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios'),
+  SPOTFIRE_DEBUG: booleanFromEnvironment.default(false),
 });
 
 function parseDownloadTargets(raw: string): Array<{ analysisTab: string; tableTitle: string; fileAlias?: string }> {
@@ -98,6 +99,7 @@ export const environment = {
     exportParentMenuLabel: parsedEnvironment.SPOTFIRE_EXPORT_PARENT_MENU_LABEL,
     outputDirectory: parsedEnvironment.SPOTFIRE_OUTPUT_DIR,
     downloadTargets: parseDownloadTargets(parsedEnvironment.SPOTFIRE_DOWNLOAD_TABLES),
+    debug: parsedEnvironment.SPOTFIRE_DEBUG,
   },
 } as const;
 

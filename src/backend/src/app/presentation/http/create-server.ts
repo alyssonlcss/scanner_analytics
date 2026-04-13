@@ -50,20 +50,13 @@ const dataDownloadSchema = z.object({
 });
 
 export async function createServer() {
-  const server = Fastify({ logger: true });
+  const server = Fastify({ logger: true, disableRequestLogging: true });
   const jobStore = new InMemoryJobStore();
   const automation = new PuppeteerSpotfireAutomation(environment);
   const downloadTargets = environment.spotfire.downloadTargets;
 
   server.log.info(
-    {
-      SPOTFIRE_DOWNLOAD_TABLES: process.env.SPOTFIRE_DOWNLOAD_TABLES,
-      parsedTargets: downloadTargets.map(t =>
-        `${t.analysisTab} → ${t.tableTitle}${t.fileAlias ? ` (alias: ${t.fileAlias})` : ''}`,
-      ),
-      totalTables: downloadTargets.length,
-    },
-    `SPOTFIRE_DOWNLOAD_TABLES parsed: ${downloadTargets.length} table(s) configured`,
+    `SPOTFIRE_DOWNLOAD_TABLES: ${downloadTargets.length} table(s) → ${downloadTargets.map(t => `${t.analysisTab}/${t.tableTitle}`).join(', ')}`,
   );
 
   const startScannerJob = new StartScannerJobUseCase(automation, jobStore);
@@ -130,7 +123,7 @@ export async function createServer() {
       const tableNames = downloadTargets.map(t => t.tableTitle).join(' e ');
       onProgress(`Baixando tabelas: ${tableNames}...`);
 
-      server.log.info({ targetCount: downloadTargets.length, targets: downloadTargets }, 'starting data download for configured tables');
+      server.log.info('starting data download for %d table(s)', downloadTargets.length);
 
       const result = await automation.runExtraction({
         reportTitle,
@@ -147,12 +140,6 @@ export async function createServer() {
 
       const allExportedFiles = result.exportedFiles;
 
-      // --- Validation: log each table from env var and whether it was downloaded ---
-      server.log.info(
-        { configured: downloadTargets.length, exported: allExportedFiles.length },
-        'validating downloads against SPOTFIRE_DOWNLOAD_TABLES',
-      );
-
       const downloadedFiles: Array<{
         analysisTab: string;
         tableTitle: string;
@@ -168,10 +155,7 @@ export async function createServer() {
 
         if (!exportedFile) {
           const reason = `no file generated (index ${i})`;
-          server.log.warn(
-            { index: i, tab: target.analysisTab, table: target.tableTitle },
-            `[${i + 1}/${downloadTargets.length}] SKIPPED — ${reason}`,
-          );
+          server.log.warn(`[${i + 1}/${downloadTargets.length}] SKIPPED — ${target.tableTitle}: ${reason}`);
           skippedTables.push({ analysisTab: target.analysisTab, tableTitle: target.tableTitle, reason });
           continue;
         }
@@ -182,10 +166,7 @@ export async function createServer() {
         const fileName = `${fileLabel}.csv`;
         const filePath = await moveDownloadedFile(exportedFile, dataDirectory, fileName);
 
-        server.log.info(
-          { index: i, tab: target.analysisTab, table: target.tableTitle, fileName, filePath },
-          `[${i + 1}/${downloadTargets.length}] OK — "${target.tableTitle}" -> ${fileName}`,
-        );
+        server.log.info(`[${i + 1}/${downloadTargets.length}] OK — "${target.tableTitle}" -> ${fileName}`);
 
         downloadedFiles.push({
           analysisTab: target.analysisTab,
@@ -195,15 +176,8 @@ export async function createServer() {
         });
       }
 
-      // --- Summary log ---
+      // --- Summary ---
       server.log.info(
-        {
-          total: downloadTargets.length,
-          downloaded: downloadedFiles.length,
-          skipped: skippedTables.length,
-          downloadedTables: downloadedFiles.map(f => f.tableTitle),
-          skippedTables: skippedTables.map(s => `${s.analysisTab}/${s.tableTitle} (${s.reason})`),
-        },
         `download summary: ${downloadedFiles.length}/${downloadTargets.length} tables downloaded` +
           (skippedTables.length > 0 ? `, ${skippedTables.length} skipped` : ''),
       );

@@ -64,8 +64,11 @@ type SavedFilterState = {
   template: `
     <main class="shell">
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
-        <div class="loading-spinner"></div>
-        <p>{{ progressMessage() || 'Aplicando filtros e baixando tabelas' }}</p>
+        <div class="loading-spinner" *ngIf="!errorMessage()"></div>
+        <div class="loading-error-icon" *ngIf="errorMessage()">⚠</div>
+        <p *ngIf="!errorMessage()">{{ progressMessage() || 'Aplicando filtros e baixando tabelas' }}</p>
+        <p *ngIf="errorMessage()" class="loading-error-text">{{ errorMessage() }}</p>
+        <button *ngIf="errorMessage()" type="button" class="loading-retry-btn" (click)="dismissError()">Fechar</button>
       </div>
 
       <ng-container *ngIf="filtersVisible()">
@@ -260,6 +263,38 @@ type SavedFilterState = {
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+      }
+
+      .loading-error-icon {
+        font-size: 2.5rem;
+        color: #e53935;
+      }
+
+      .loading-error-text {
+        color: #e53935 !important;
+        text-transform: none !important;
+        font-size: 0.88rem !important;
+        max-width: 420px;
+        text-align: center;
+        line-height: 1.4;
+      }
+
+      .loading-retry-btn {
+        margin-top: 8px;
+        padding: 8px 24px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent-strong, #1976d2);
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        pointer-events: auto;
+        transition: background 0.15s;
+      }
+
+      .loading-retry-btn:hover {
+        background: var(--accent-hover, #1565c0);
       }
 
       .loading-popup-backdrop,
@@ -700,6 +735,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   protected readonly loading = signal(false);
   protected readonly progressMessage = signal('');
+  protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('operacional');
@@ -985,6 +1021,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.cancelActiveDownloadRequest();
     this.loading.set(true);
     this.progressMessage.set('');
+    this.errorMessage.set('');
 
     const selectedFilters = this.buildSelectedFilters();
     const abortController = new AbortController();
@@ -1007,22 +1044,29 @@ export class DashboardComponent implements OnInit, OnDestroy {
             this.activeDownloadAbort = undefined;
           });
         },
-        onError: () => {
+        onError: (message) => {
           this.zone.run(() => {
-            this.loading.set(false);
             this.progressMessage.set('');
+            this.errorMessage.set(message ?? 'Erro desconhecido ao processar filtros');
             this.activeDownloadAbort = undefined;
           });
         },
       },
       abortController.signal,
-    ).catch(() => {
+    ).catch((err) => {
+      if (err?.name === 'AbortError') return;
       this.zone.run(() => {
-        this.loading.set(false);
         this.progressMessage.set('');
+        this.errorMessage.set('Erro de conexão com o servidor');
         this.activeDownloadAbort = undefined;
       });
     });
+  }
+
+  protected dismissError(): void {
+    this.loading.set(false);
+    this.errorMessage.set('');
+    this.progressMessage.set('');
   }
 
   private cancelActiveDownloadRequest(): void {
