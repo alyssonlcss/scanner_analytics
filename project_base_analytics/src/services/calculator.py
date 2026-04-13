@@ -130,21 +130,46 @@ class CalculatorService:
 
                 desconta_intervalo = False
                 if pd.notna(despachada) and pd.notna(liberada) and despachada > liberada:
-                    temp_prep = (a_caminho - despachada).total_seconds() / 60.0 if pd.notna(a_caminho) and pd.notna(despachada) else float('nan')
+                    # Cenário: despacho durante o intervalo (Liberada < InicioIntervalo < Despachada < FimIntervalo <= A_Caminho)
                     if (
-                        pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
-                        and inicio_intervalo >= despachada - pd.Timedelta(minutes=10) and fim_intervalo <= a_caminho + pd.Timedelta(minutes=10) and not is_inter_a_caminho
+                        pd.notna(inicio_intervalo) and pd.notna(fim_intervalo) and pd.notna(a_caminho)
+                        and liberada < inicio_intervalo and inicio_intervalo < despachada
+                        and despachada < fim_intervalo and fim_intervalo <= a_caminho
+                        and not is_inter_a_caminho
                     ):
+                        temp_prep = (a_caminho - fim_intervalo).total_seconds() / 60.0
+                        duracao_intervalo = (fim_intervalo - inicio_intervalo).total_seconds() / 60.0
+                        if duracao_intervalo > 60:
+                            temp_prep += duracao_intervalo - 60.0
                         is_inter_a_caminho = True
-                        desconta_intervalo = True
+                    else:
+                        temp_prep = (a_caminho - despachada).total_seconds() / 60.0 if pd.notna(a_caminho) and pd.notna(despachada) else float('nan')
+                        if (
+                            pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
+                            and inicio_intervalo >= despachada - pd.Timedelta(minutes=10) and fim_intervalo <= a_caminho + pd.Timedelta(minutes=10) and not is_inter_a_caminho
+                        ):
+                            is_inter_a_caminho = True
+                            desconta_intervalo = True
                 else:
-                    temp_prep = (a_caminho - liberada).total_seconds() / 60.0 if pd.notna(a_caminho) and pd.notna(liberada) else float('nan')
+                    # Cenário: Despachada <= Liberada e intervalo entre Liberada e A_Caminho
                     if (
-                        pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
-                        and inicio_intervalo >= liberada - pd.Timedelta(minutes=10) and fim_intervalo <= a_caminho + pd.Timedelta(minutes=10) and not is_inter_a_caminho
+                        pd.notna(inicio_intervalo) and pd.notna(fim_intervalo) and pd.notna(a_caminho) and pd.notna(liberada)
+                        and liberada < inicio_intervalo and fim_intervalo < a_caminho
+                        and not is_inter_a_caminho
                     ):
+                        temp_prep = (a_caminho - fim_intervalo).total_seconds() / 60.0
+                        duracao_intervalo = (fim_intervalo - inicio_intervalo).total_seconds() / 60.0
+                        if duracao_intervalo > 60:
+                            temp_prep += duracao_intervalo - 60.0
                         is_inter_a_caminho = True
-                        desconta_intervalo = True
+                    else:
+                        temp_prep = (a_caminho - liberada).total_seconds() / 60.0 if pd.notna(a_caminho) and pd.notna(liberada) else float('nan')
+                        if (
+                            pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
+                            and inicio_intervalo >= liberada - pd.Timedelta(minutes=10) and fim_intervalo <= a_caminho + pd.Timedelta(minutes=10) and not is_inter_a_caminho
+                        ):
+                            is_inter_a_caminho = True
+                            desconta_intervalo = True
 
                 if desconta_intervalo and intervalo_float is not None and intervalo_float >= 0:
                     # desconta até 60 minutos e add o excedente acima de 60 minutos
@@ -305,14 +330,24 @@ class CalculatorService:
                 entreos = float('nan')
                 desconta_intervalo = False
                 if pd.notna(despachada) and pd.notna(liberada) and despachada > liberada:
-                    entreos = (despachada - liberada).total_seconds() / 60.0
-                    # Verifica se o intervalo está totalmente entre liberada e despachada
+                    # Cenário: despacho durante o intervalo (Liberada < InicioIntervalo < Despachada < FimIntervalo)
                     if (
                         pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
-                        and inicio_intervalo >= liberada - pd.Timedelta(minutes=10) and fim_intervalo <= despachada + pd.Timedelta(minutes=10) and not is_inter_ordem
+                        and liberada < inicio_intervalo and inicio_intervalo < despachada
+                        and despachada < fim_intervalo
+                        and not is_inter_ordem
                     ):
+                        entreos = (inicio_intervalo - liberada).total_seconds() / 60.0
                         is_inter_ordem = True
-                        desconta_intervalo = True
+                    else:
+                        entreos = (despachada - liberada).total_seconds() / 60.0
+                        # Verifica se o intervalo está totalmente entre liberada e despachada
+                        if (
+                            pd.notna(inicio_intervalo) and pd.notna(fim_intervalo)
+                            and inicio_intervalo >= liberada - pd.Timedelta(minutes=10) and fim_intervalo <= despachada + pd.Timedelta(minutes=10) and not is_inter_ordem
+                        ):
+                            is_inter_ordem = True
+                            desconta_intervalo = True
 
                 # Ajusta o entreos para descontar o intervalo na célula específica (mesma regra de TempPrep)
                 if desconta_intervalo and intervalo_float is not None and intervalo_float >= 0 and pd.notna(entreos):
