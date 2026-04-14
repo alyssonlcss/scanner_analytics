@@ -27,15 +27,74 @@ export interface ScannerDataDownloadResult {
   };
 }
 
+export interface ReportKpiTeamScore {
+  team: string;
+  rawValue: number;
+  score: number;
+}
+
+export interface ReportKpiInsight {
+  kpi: string;
+  direction: 'higher-is-better' | 'lower-is-better';
+  topTeams: Array<{ team: string; value: number }>;
+  opportunityTeams: Array<{ team: string; value: number }>;
+  scores: ReportKpiTeamScore[];
+  average: number;
+  metaTarget: number;
+}
+
+export interface ReportTeamMetric {
+  team: string;
+  records: number;
+  tempPrepJornada: number;
+  semOrdemJornada: number;
+}
+
+export interface ReportCrossedInsight {
+  title: string;
+  description: string;
+  evidence: Array<Record<string, string | number>>;
+}
+
+export interface ReportActionPlan {
+  team: string;
+  issues: string[];
+  recommendations: string[];
+}
+
+export interface GeneratedReport {
+  generatedAt: string;
+  filtersApplied: {
+    bases: string[];
+    teamTypes: string[];
+    includeExtraTags: boolean;
+    extraTags: string[];
+  };
+  totals: {
+    teams: number;
+    deslocamentos: number;
+    rankingRows: number;
+    desviosRows: number;
+  };
+  kpis: ReportKpiInsight[];
+  deviations: {
+    mostRecurring: Array<{ category: string; occurrences: number }>;
+    teamBreakdown: Array<{ team: string; deviations: string[] }>;
+  };
+  specialAnalysis: {
+    tempPrepAndSemOs: ReportTeamMetric[];
+    crossedInsights: ReportCrossedInsight[];
+    actionPlan: ReportActionPlan[];
+  };
+  outputFiles: {
+    jsonPath: string;
+    markdownPath: string;
+  };
+}
+
 export interface ScannerReportGenerateResult {
   status: 'completed';
-  generatedReport: {
-    generatedAt: string;
-    outputFiles: {
-      jsonPath: string;
-      markdownPath: string;
-    };
-  };
+  generatedReport: GeneratedReport;
 }
 
 export interface ScannerJob {

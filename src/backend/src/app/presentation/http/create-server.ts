@@ -260,6 +260,20 @@ export async function createServer() {
     }
 
     if (downloadedFiles.length === 0) {
+      const entries = await readdir(dataDirectory).catch(() => [] as string[]);
+      const csvEntries = entries.filter((entry) => entry.toLowerCase().endsWith('.csv'));
+
+      for (const entry of csvEntries) {
+        downloadedFiles.push({
+          analysisTab: 'unknown',
+          tableTitle: entry.replace(/\.csv$/i, ''),
+          fileName: entry,
+          filePath: join(dataDirectory, entry),
+        });
+      }
+    }
+
+    if (downloadedFiles.length === 0) {
       return reply.code(404).send({
         message: 'no downloaded files found to generate report',
       });

@@ -1,12 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
-import { ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
 type ReportTypeValue = 'operacional';
+type ReportFilterKey = 'reportBase' | 'reportTipoEquipe';
 
 type SelectFilterState = {
   key: FilterKey;
@@ -15,6 +16,14 @@ type SelectFilterState = {
   options: string[];
   sourceTitle?: string;
   sourceKind?: SpotfireFilter['kind'];
+  enabled: boolean;
+};
+
+type ReportSelectFilterState = {
+  key: ReportFilterKey;
+  title: string;
+  value: string[];
+  options: string[];
   enabled: boolean;
 };
 
@@ -37,6 +46,8 @@ const DEFAULT_REPORT_TITLE = 'Scanner 4.0 - CE';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ATUACAO_HD_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
+const REPORT_BASE_OPTIONS = ['Itapajé', 'Itapipoca', 'Trairi', 'Acaraú'];
+const REPORT_TEAM_TYPE_OPTIONS = ['Própria', 'Parceira'];
 const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
   atuacaoHd: { sourceTitle: 'Atuação', sourceKind: 'list' },
   base: { sourceTitle: 'Base', sourceKind: 'list' },
@@ -72,6 +83,22 @@ type SavedFilterState = {
       </div>
 
       <ng-container *ngIf="filtersVisible()">
+        <header class="report-filter-bar" [class.report-filter-bar-hidden]="reportBarHidden()">
+          <div class="report-filter-groups">
+            <section class="report-filter-group" *ngFor="let filter of reportFilterStates(); trackBy: trackByReportFilterKey">
+              <span class="report-filter-label">{{ filter.title }}</span>
+              <label class="report-filter-select-shell">
+                <select
+                  class="report-filter-select"
+                  [value]="filter.value[0]"
+                  (change)="onReportSelectChange(filter.key, $event)">
+                  <option *ngFor="let option of filter.options; trackBy: trackByOption" [value]="option">{{ option }}</option>
+                </select>
+              </label>
+            </section>
+          </div>
+        </header>
+
         <button
           *ngIf="!filterDrawerOpen()"
           type="button"
@@ -195,53 +222,289 @@ type SavedFilterState = {
           </div>
         </aside>
 
-        <section class="workspace-stage" aria-hidden="true"></section>
+        <section class="workspace-stage">
+          <ng-container *ngIf="reportData() as report">
+
+            <!-- Hero header -->
+            <div class="rpt-hero anim-el">
+              <div class="rpt-hero-left">
+                <h1 class="rpt-hero-title">Relatório Analítico</h1>
+                <span class="rpt-hero-meta">Gerado em {{ report.generatedAt | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+              <div class="rpt-hero-totals">
+                <div class="rpt-total-item">
+                  <span class="rpt-total-v">{{ report.totals.teams }}</span>
+                  <span class="rpt-total-l">Equipes</span>
+                </div>
+                <div class="rpt-total-item">
+                  <span class="rpt-total-v">{{ report.totals.deslocamentos }}</span>
+                  <span class="rpt-total-l">Deslocamentos</span>
+                </div>
+                <div class="rpt-total-item">
+                  <span class="rpt-total-v">{{ report.totals.rankingRows }}</span>
+                  <span class="rpt-total-l">Linhas Ranking</span>
+                </div>
+              </div>
+              <button class="rpt-export-btn" (click)="exportPdf()">Exportar PDF</button>
+            </div>
+
+            <!-- KPI sections with bar charts -->
+            <ng-container *ngIf="report.kpis.length > 0">
+              <section class="kpi-section anim-el" *ngFor="let kpi of report.kpis">
+                <div class="kpi-section-header">
+                  <div class="kpi-title-row">
+                    <h2 class="kpi-name">{{ kpi.kpi }}</h2>
+                    <span class="kpi-dir-badge"
+                          [class.kpi-dir-badge--up]="kpi.direction === 'higher-is-better'"
+                          [class.kpi-dir-badge--down]="kpi.direction !== 'higher-is-better'">
+                      {{ kpi.direction === 'higher-is-better' ? '↑ Maior é melhor' : '↓ Menor é melhor' }}
+                    </span>
+                  </div>
+                  <div class="kpi-chips">
+                    <span class="kpi-chip">Meta <strong>{{ kpi.metaTarget }}</strong></span>
+                    <span class="kpi-chip">Média <strong>{{ kpi.average }}</strong></span>
+                  </div>
+                </div>
+                <div class="kpi-chart-block">
+                  <div class="kpi-chart-group-label kpi-group-good" *ngIf="kpi.topTeams.length > 0">🏆 Top Performers</div>
+                  <div class="kpi-cr kpi-cr--good" *ngFor="let t of kpi.topTeams; let i = index">
+                    <span class="kpi-cr-pos">{{ i + 1 }}</span>
+                    <span class="kpi-cr-team">{{ t.team }}</span>
+                    <div class="kpi-cr-track">
+                      <div class="kpi-cr-fill kpi-cr-fill--good" [style.width.%]="barWidthPct(t.value, kpi.kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                    </div>
+                    <span class="kpi-cr-val">{{ t.value }}</span>
+                  </div>
+                  <div class="kpi-cr kpi-cr--avg">
+                    <span class="kpi-cr-pos">—</span>
+                    <span class="kpi-cr-team kpi-cr-team--avg">Média geral</span>
+                    <div class="kpi-cr-track">
+                      <div class="kpi-cr-fill kpi-cr-fill--avg" [style.width.%]="barWidthPct(kpi.average, kpi.kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                    </div>
+                    <span class="kpi-cr-val kpi-cr-val--avg">{{ kpi.average }}</span>
+                  </div>
+                  <div class="kpi-chart-group-label kpi-group-opp" *ngIf="kpi.opportunityTeams.length > 0">⚠ Oportunidade</div>
+                  <div class="kpi-cr kpi-cr--opp" *ngFor="let t of kpi.opportunityTeams; let i = index">
+                    <span class="kpi-cr-pos">{{ i + 1 }}</span>
+                    <span class="kpi-cr-team">{{ t.team }}</span>
+                    <div class="kpi-cr-track">
+                      <div class="kpi-cr-fill kpi-cr-fill--bad" [style.width.%]="barWidthPct(t.value, kpi.kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                    </div>
+                    <span class="kpi-cr-val kpi-cr-val--opp">{{ t.value }}</span>
+                  </div>
+                </div>
+              </section>
+            </ng-container>
+
+            <!-- Desvios -->
+            <section class="rpt-section anim-el" *ngIf="report.deviations.mostRecurring.length > 0">
+              <h2 class="rpt-section-title">⚠️ Desvios de Padrão Operacional</h2>
+              <div class="rpt-devs-layout">
+                <div class="rpt-glass-card">
+                  <h3 class="rpt-card-sub">Mais Recorrentes na Base</h3>
+                  <div class="rpt-dev-list">
+                    <div class="rpt-dev-row" *ngFor="let d of report.deviations.mostRecurring">
+                      <span class="rpt-dev-name">{{ d.category }}</span>
+                      <span class="rpt-dev-count">{{ d.occurrences }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="rpt-glass-card" *ngIf="report.deviations.teamBreakdown.length > 0">
+                  <h3 class="rpt-card-sub">Por Equipe</h3>
+                  <div class="rpt-dev-team-list">
+                    <div class="rpt-dev-team-row" *ngFor="let td of report.deviations.teamBreakdown">
+                      <span class="rpt-dev-team-name">{{ td.team }}</span>
+                      <span class="rpt-dev-team-devs">{{ td.deviations.join(' · ') }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- TempPrep / SemOs -->
+            <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.tempPrepAndSemOs.length > 0">
+              <h2 class="rpt-section-title">⏱ TempPrep e SemOSentreOS <span class="rpt-section-note">(média diária em minutos)</span></h2>
+              <div class="rpt-table-wrap">
+                <table class="rpt-table">
+                  <thead>
+                    <tr>
+                      <th>Equipe</th>
+                      <th class="rpt-td-num">Dias</th>
+                      <th class="rpt-td-num">TempPrep (min/dia)</th>
+                      <th class="rpt-td-num">SemOSentreOS (min/dia)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let tm of report.specialAnalysis.tempPrepAndSemOs">
+                      <td>{{ tm.team }}</td>
+                      <td class="rpt-td-num">{{ tm.records }}</td>
+                      <td class="rpt-td-num">{{ tm.tempPrepJornada }}</td>
+                      <td class="rpt-td-num" [class.rpt-td-high]="tm.semOrdemJornada > 30">{{ tm.semOrdemJornada }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- Análise Cruzada -->
+            <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.crossedInsights.length > 0">
+              <h2 class="rpt-section-title">🔀 Análise Cruzada</h2>
+              <div class="rpt-cross-grid">
+                <div class="rpt-glass-card" *ngFor="let insight of report.specialAnalysis.crossedInsights">
+                  <h3 class="rpt-card-sub">{{ insight.title }}</h3>
+                  <p class="rpt-cross-desc">{{ insight.description }}</p>
+                  <ng-container *ngIf="insight.evidence.length > 0; else noEvidence">
+                    <div class="rpt-cross-rows">
+                      <div class="rpt-cross-row" *ngFor="let row of insight.evidence">
+                        <span *ngFor="let key of objectKeys(row)" class="rpt-cross-cell">
+                          <span class="rpt-cross-key">{{ key }}</span>
+                          <span class="rpt-cross-val">{{ row[key] }}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </ng-container>
+                  <ng-template #noEvidence>
+                    <p class="rpt-no-data">Sem evidências para os filtros selecionados.</p>
+                  </ng-template>
+                </div>
+              </div>
+            </section>
+
+            <!-- Plano de Ação -->
+            <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.actionPlan.length > 0">
+              <h2 class="rpt-section-title">📋 Plano de Ação por Equipe</h2>
+              <div class="rpt-action-grid">
+                <div class="rpt-action-card" *ngFor="let plan of report.specialAnalysis.actionPlan">
+                  <h3 class="rpt-action-team">{{ plan.team }}</h3>
+                  <div class="rpt-action-issues">
+                    <div class="rpt-action-issue" *ngFor="let issue of plan.issues">⚠ {{ issue }}</div>
+                  </div>
+                  <div class="rpt-action-recs" *ngIf="plan.recommendations.length > 0">
+                    <div class="rpt-action-rec" *ngFor="let rec of plan.recommendations">→ {{ rec }}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </ng-container>
+
+          <div class="rpt-empty" *ngIf="!reportData() && !loading()">
+            <p>Aplique os filtros e clique em <strong>Filtrar</strong> para gerar o relatório analítico.</p>
+          </div>
+        </section>
       </ng-container>
     </main>
   `,
   styles: [
     `
       .shell {
-        --accent: #c1121f;
-        --accent-strong: #7a0912;
-        --surface: rgba(255, 255, 255, 0.98);
-        --surface-strong: rgba(245, 245, 245, 0.96);
-        --text: #101010;
-        --line: rgba(16, 16, 16, 0.12);
-        --muted-strong: rgba(16, 16, 16, 0.58);
+        --accent: #c0122d;
+        --accent-glow: rgba(192, 18, 45, 0.18);
+        --accent-2: #2563eb;
+        --bg: #f5f4f0;
+        --bg-2: #eeede8;
+        --glass: rgba(255, 255, 255, 0.72);
+        --glass-hover: rgba(255, 255, 255, 0.88);
+        --border: rgba(60, 40, 30, 0.1);
+        --text: #1e1a17;
+        --muted: rgba(40, 30, 20, 0.45);
+        --green: #16a34a;
+        --green-bg: rgba(22, 163, 74, 0.08);
+        --red-bg: rgba(192, 18, 45, 0.07);
+        --surface: rgba(255, 255, 255, 0.72);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --line: rgba(60, 40, 30, 0.1);
+        --muted-strong: rgba(40, 30, 20, 0.55);
         min-height: 100vh;
         position: relative;
-        overflow: hidden;
-        background: linear-gradient(180deg, #ffffff 0%, #f3f3f3 100%);
-      }
-
-      .shell::before,
-      .shell::after {
-        content: '';
-        position: absolute;
-        border-radius: 999px;
-        pointer-events: none;
-        filter: blur(24px);
+        overflow-x: hidden;
+        background: radial-gradient(ellipse 80% 50% at 50% -8%, rgba(192,18,45,0.07) 0%, transparent 55%),
+                    linear-gradient(180deg, #f5f4f0 0%, #efede8 100%);
+        color: var(--text);
       }
 
       .shell::before {
-        width: 360px;
-        height: 360px;
-        top: -80px;
-        right: -140px;
-        background: radial-gradient(circle, rgba(193, 18, 31, 0.18), transparent 70%);
+        content: '';
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(circle 500px at 85% 5%, rgba(37,99,235,0.04), transparent),
+          radial-gradient(circle 400px at 5% 85%, rgba(192,18,45,0.04), transparent);
+        pointer-events: none;
+        z-index: 0;
       }
 
-      .shell::after {
-        width: 320px;
-        height: 320px;
-        left: -120px;
-        bottom: -60px;
-        background: radial-gradient(circle, rgba(16, 16, 16, 0.12), transparent 72%);
+      .report-filter-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1105;
+        display: flex;
+        justify-content: center;
+        padding: 12px 18px 0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        transition: transform 0.22s ease;
+        pointer-events: none;
       }
 
-      .workspace-stage {
-        min-height: 100vh;
+      .report-filter-bar-hidden {
+        transform: translateY(-105%);
+      }
+
+      .report-filter-groups {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        width: min(760px, 100%);
+        pointer-events: auto;
+      }
+
+      .report-filter-group {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .report-filter-label {
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: var(--muted-strong);
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+      }
+
+      .report-filter-select-shell {
+        display: block;
+      }
+
+      .report-filter-select {
+        width: 100%;
+        border: none;
+        border-bottom: 2px solid rgba(60, 40, 30, 0.18);
+        border-radius: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 5px 2px;
+        cursor: pointer;
+        outline: none;
+      }
+
+      .report-filter-select option {
+        background: #f5f4f0;
+        color: var(--text);
+      }
+
+      .report-filter-select:focus {
+        border-bottom-color: var(--accent);
       }
 
       .report-loading {
@@ -258,43 +521,19 @@ type SavedFilterState = {
 
       .report-loading p {
         margin: 0;
-        color: var(--accent-strong);
+        color: var(--accent);
         font-size: 0.92rem;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
 
-      .loading-error-icon {
-        font-size: 2.5rem;
-        color: #e53935;
-      }
-
-      .loading-error-text {
-        color: #e53935 !important;
-        text-transform: none !important;
-        font-size: 0.88rem !important;
-        max-width: 420px;
-        text-align: center;
-        line-height: 1.4;
-      }
-
       .loading-retry-btn {
-        margin-top: 8px;
-        padding: 8px 24px;
-        border: none;
-        border-radius: 6px;
-        background: var(--accent-strong, #1976d2);
-        color: #fff;
-        font-size: 0.85rem;
-        font-weight: 600;
-        cursor: pointer;
-        pointer-events: auto;
-        transition: background 0.15s;
+        background: var(--accent);
       }
 
       .loading-retry-btn:hover {
-        background: var(--accent-hover, #1565c0);
+        background: #c0122e;
       }
 
       .loading-popup-backdrop,
@@ -302,8 +541,8 @@ type SavedFilterState = {
         position: fixed;
         inset: 0;
         z-index: 1000;
-        background: rgba(0, 0, 0, 0.34);
-        backdrop-filter: blur(8px);
+        background: rgba(200, 190, 180, 0.35);
+        backdrop-filter: blur(6px);
       }
 
       .loading-popup-backdrop {
@@ -316,11 +555,11 @@ type SavedFilterState = {
       .loading-popup {
         width: min(420px, 100%);
         text-align: center;
-        border: 1px solid var(--line);
-        background: var(--surface);
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.96);
         border-radius: 24px;
         padding: 28px 24px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
+        box-shadow: 0 24px 60px rgba(60, 40, 30, 0.12);
       }
 
       .loading-spinner {
@@ -339,7 +578,7 @@ type SavedFilterState = {
 
       .filter-fab {
         position: fixed;
-        top: 24px;
+        top: 72px;
         right: 24px;
         z-index: 1102;
         width: 42px;
@@ -349,12 +588,13 @@ type SavedFilterState = {
         padding: 0;
         display: grid;
         place-items: center;
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(237, 237, 237, 0.94));
-        border: 1px solid rgba(23, 26, 31, 0.08);
-        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
-        color: var(--accent-strong);
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid var(--border);
+        box-shadow: 0 4px 18px rgba(60, 40, 30, 0.12), 0 0 0 1px rgba(192,18,45,0.12);
+        color: var(--accent);
         cursor: pointer;
-        transition: transform 0.18s ease, width 0.2s ease, padding 0.2s ease, border-radius 0.2s ease, opacity 0.18s ease;
+        transition: transform 0.18s ease, opacity 0.18s ease;
+        backdrop-filter: blur(12px);
       }
 
       .filter-fab:hover {
@@ -381,15 +621,17 @@ type SavedFilterState = {
         width: min(380px, calc(100vw - 20px));
         height: 100vh;
         padding: 40px 18px 18px;
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 240, 240, 0.96)),
-          radial-gradient(circle at top right, rgba(193, 18, 31, 0.12), transparent 38%);
-        border-left: 1px solid rgba(23, 26, 31, 0.08);
-        box-shadow: -24px 0 60px rgba(0, 0, 0, 0.18);
+        background: rgba(245, 244, 240, 0.97);
+        backdrop-filter: blur(24px);
+        border-left: 1px solid var(--border);
+        box-shadow: -12px 0 40px rgba(60, 40, 30, 0.12);
         transform: translateX(100%);
         transition: transform 0.24s ease;
         overflow: auto;
       }
+
+      h2 { color: var(--text); }
+      h3 { color: var(--text); }
 
       .filter-drawer-open {
         transform: translateX(0);
@@ -448,8 +690,8 @@ type SavedFilterState = {
       .drawer-card {
         padding: 9px 10px;
         border-radius: 16px;
-        border: 1px solid rgba(23, 26, 31, 0.08);
-        background: rgba(255, 255, 255, 0.84);
+        border: 1px solid var(--border);
+        background: var(--glass);
         display: grid;
         gap: 3px;
       }
@@ -508,11 +750,10 @@ type SavedFilterState = {
       input {
         width: 100%;
         border-radius: 12px;
-        border: 1px solid rgba(23, 26, 31, 0.12);
+        border: 1px solid var(--border);
         padding: 10px 12px;
-        background: var(--surface-strong);
+        background: var(--glass);
         color: var(--text);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
         font-size: 0.92rem;
       }
 
@@ -528,9 +769,8 @@ type SavedFilterState = {
         overflow-y: auto;
         padding: 3px;
         border-radius: 10px;
-        border: 1px solid rgba(23, 26, 31, 0.12);
-        background: var(--surface-strong);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.6);
       }
 
       .period-selects .option-list {
@@ -548,9 +788,9 @@ type SavedFilterState = {
 
       .option-item {
         width: 100%;
-        border: 1px solid rgba(23, 26, 31, 0.08);
+        border: 1px solid var(--border);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.92);
+        background: var(--glass);
         color: var(--text);
         padding: 5px 7px;
         font: inherit;
@@ -558,17 +798,17 @@ type SavedFilterState = {
         line-height: 1.05;
         text-align: left;
         cursor: pointer;
-        transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+        transition: border-color 140ms ease, background-color 140ms ease;
       }
 
       .option-item:hover {
-        border-color: rgba(193, 18, 31, 0.34);
-        background: rgba(255, 238, 239, 0.96);
+        border-color: rgba(230, 57, 80, 0.4);
+        background: rgba(230, 57, 80, 0.08);
       }
 
       .option-item-active {
-        border-color: rgba(193, 18, 31, 0.44);
-        background: rgba(255, 226, 229, 0.98);
+        border-color: rgba(230, 57, 80, 0.5);
+        background: rgba(230, 57, 80, 0.14);
         color: var(--accent);
         font-weight: 600;
       }
@@ -576,33 +816,17 @@ type SavedFilterState = {
       .day-range-shell {
         padding: 6px;
         border-radius: 12px;
-        background: var(--surface-strong);
-        border: 1px solid rgba(23, 26, 31, 0.08);
+        background: var(--glass);
+        border: 1px solid var(--border);
         display: grid;
-        gap: 4px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
-      }
-
-      .range-summary-shell {
-        display: grid;
-        gap: 3px;
-      }
-
-      .day-range-display {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 4px;
       }
 
       .day-range-display > div {
         padding: 2px 4px;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.66);
-        border: 1px solid rgba(23, 26, 31, 0.08);
-      }
-
-      .day-range-display strong {
-        font-size: 0.88rem;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid var(--border);
       }
 
       .day-input {
@@ -647,12 +871,12 @@ type SavedFilterState = {
         border-radius: 999px;
         background: linear-gradient(
           90deg,
-          rgba(23, 26, 31, 0.12) 0%,
-          rgba(23, 26, 31, 0.12) var(--range-start),
-          rgba(193, 18, 31, 0.82) var(--range-start),
-          rgba(193, 18, 31, 0.82) var(--range-end),
-          rgba(23, 26, 31, 0.12) var(--range-end),
-          rgba(23, 26, 31, 0.12) 100%
+          rgba(60, 40, 30, 0.12) 0%,
+          rgba(60, 40, 30, 0.12) var(--range-start),
+          rgba(192, 18, 45, 0.75) var(--range-start),
+          rgba(192, 18, 45, 0.75) var(--range-end),
+          rgba(60, 40, 30, 0.12) var(--range-end),
+          rgba(60, 40, 30, 0.12) 100%
         );
       }
 
@@ -703,8 +927,16 @@ type SavedFilterState = {
       }
 
       @media (max-width: 720px) {
+        .report-filter-groups {
+          grid-template-columns: 1fr;
+        }
+
+        .workspace-stage {
+          padding-top: 116px;
+        }
+
         .filter-fab {
-          top: 16px;
+          top: 122px;
           right: 16px;
           width: 40px;
           height: 40px;
@@ -718,6 +950,10 @@ type SavedFilterState = {
       }
 
       @media (max-width: 560px) {
+        .report-filter-bar {
+          padding: 9px 12px;
+        }
+
         .filter-drawer {
           width: calc(100vw - 8px);
           padding-top: 36px;
@@ -725,10 +961,513 @@ type SavedFilterState = {
           padding-right: 14px;
         }
       }
+
+      /* ─── Report Display ─── */
+
+      .workspace-stage {
+        min-height: 100vh;
+        padding: 72px 20px 80px;
+        display: grid;
+        gap: 28px;
+        align-content: start;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      /* ── Scroll animations ── */
+      .anim-el {
+        opacity: 0;
+        transform: translateY(22px);
+        transition: opacity 0.55s ease, transform 0.55s ease;
+      }
+
+      .anim-in {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* ── Hero header ── */
+      .rpt-hero {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        flex-wrap: wrap;
+        padding: 20px 24px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 12px rgba(60, 40, 30, 0.07);
+      }
+
+      .rpt-hero-left {
+        flex: 1;
+        min-width: 180px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .rpt-hero-title {
+        margin: 0;
+        font-size: 1.55rem;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        color: var(--text);
+      }
+
+      .rpt-hero-meta {
+        font-size: 0.74rem;
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .rpt-hero-totals {
+        display: flex;
+        gap: 28px;
+        flex-wrap: wrap;
+      }
+
+      .rpt-total-item {
+        display: grid;
+        gap: 2px;
+      }
+
+      .rpt-total-v {
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: var(--accent);
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .rpt-total-l {
+        font-size: 0.6rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+      }
+
+      .rpt-export-btn {
+        padding: 9px 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(230, 57, 80, 0.35);
+        background: rgba(230, 57, 80, 0.1);
+        color: var(--accent);
+        font-weight: 700;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease;
+        white-space: nowrap;
+      }
+
+      .rpt-export-btn:hover {
+        background: rgba(230, 57, 80, 0.18);
+        border-color: rgba(230, 57, 80, 0.6);
+      }
+
+      /* ── Shared glass card ── */
+      .rpt-glass-card {
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 10px rgba(60, 40, 30, 0.06);
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      /* ── KPI sections ── */
+      .kpi-section {
+        padding: 20px 24px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 12px rgba(60, 40, 30, 0.07);
+        display: grid;
+        gap: 14px;
+      }
+
+      .kpi-section-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .kpi-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .kpi-name {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      .kpi-dir-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      .kpi-dir-badge--up {
+        background: rgba(22, 163, 74, 0.1);
+        color: #16a34a;
+        border: 1px solid rgba(22, 163, 74, 0.22);
+      }
+
+      .kpi-dir-badge--down {
+        background: var(--red-bg);
+        color: var(--accent);
+        border: 1px solid rgba(192, 18, 45, 0.2);
+      }
+
+      .kpi-chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .kpi-chip {
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .kpi-chip strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      /* ── KPI chart rows ── */
+      .kpi-chart-block {
+        display: grid;
+        gap: 6px;
+      }
+
+      .kpi-chart-group-label {
+        font-size: 0.62rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        margin-top: 6px;
+      }
+
+      .kpi-group-good { color: #4ade80; }
+      .kpi-group-opp  { color: var(--accent); }
+
+      .kpi-cr {
+        display: grid;
+        grid-template-columns: 22px 180px 1fr 60px;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 8px;
+        border-radius: 8px;
+        transition: background 140ms ease;
+      }
+
+      .kpi-cr:hover { background: rgba(255, 255, 255, 0.04); }
+
+      .kpi-cr--avg {
+        background: rgba(60, 40, 30, 0.04);
+        border: 1px solid rgba(60, 40, 30, 0.07);
+      }
+
+      .kpi-cr-pos {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .kpi-cr-team {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .kpi-cr-team--avg {
+        color: var(--muted);
+        font-style: italic;
+        font-weight: 500;
+      }
+
+      .kpi-cr-track {
+        position: relative;
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(60, 40, 30, 0.09);
+        overflow: visible;
+      }
+
+      .kpi-cr-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.85s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      .kpi-cr-fill--good { background: linear-gradient(90deg, #16a34a, #22c55e); }
+      .kpi-cr-fill--bad  { background: linear-gradient(90deg, #c0122d, #e63950); }
+      .kpi-cr-fill--avg  { background: var(--accent-2); opacity: 0.55; }
+
+      .kpi-cr-meta-line {
+        position: absolute;
+        top: -4px;
+        bottom: -4px;
+        width: 2px;
+        border-radius: 1px;
+        background: rgba(60, 40, 30, 0.3);
+        pointer-events: none;
+      }
+
+      .kpi-cr-val {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: var(--text);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .kpi-cr-val--avg { color: var(--accent-2); }
+      .kpi-cr-val--opp { color: var(--accent); }
+
+      /* ── Generic section ── */
+      .rpt-section {
+        display: grid;
+        gap: 14px;
+      }
+
+      .rpt-section-title {
+        margin: 0;
+        font-size: 1.0rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        color: var(--text);
+      }
+
+      .rpt-section-note {
+        font-size: 0.7rem;
+        font-weight: 500;
+        color: var(--muted);
+        margin-left: 6px;
+      }
+
+      .rpt-card-sub {
+        margin: 0;
+        font-size: 0.64rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+      }
+
+      /* ── Desvios ── */
+      .rpt-devs-layout {
+        display: grid;
+        grid-template-columns: minmax(240px, 340px) 1fr;
+        gap: 12px;
+      }
+
+      .rpt-dev-list { display: grid; gap: 4px; }
+
+      .rpt-dev-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        padding: 5px 7px;
+        border-radius: 7px;
+        border: 1px solid transparent;
+        color: var(--text);
+      }
+
+      .rpt-dev-row:nth-child(1) { background: var(--red-bg); border-color: rgba(230, 57, 80, 0.22); }
+      .rpt-dev-row:nth-child(2) { background: rgba(230, 57, 80, 0.06); }
+
+      .rpt-dev-name { flex: 1; font-weight: 500; }
+      .rpt-dev-count { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--accent); }
+
+      .rpt-dev-team-list { display: grid; gap: 4px; max-height: 280px; overflow-y: auto; }
+
+      .rpt-dev-team-row {
+        display: grid; gap: 2px; padding: 5px 7px;
+        border-radius: 8px; border: 1px solid var(--border); font-size: 0.74rem;
+      }
+
+      .rpt-dev-team-name { font-weight: 700; color: var(--text); }
+      .rpt-dev-team-devs { color: var(--muted); font-size: 0.7rem; }
+
+      /* ── Table ── */
+      .rpt-table-wrap {
+        overflow-x: auto;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 2px 10px rgba(60, 40, 30, 0.06);
+      }
+
+      .rpt-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+
+      .rpt-table th {
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 0.62rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .rpt-table td {
+        padding: 8px 14px;
+        border-bottom: 1px solid rgba(60, 40, 30, 0.06);
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .rpt-table tr:last-child td { border-bottom: none; }
+      .rpt-table tbody tr:hover td { background: rgba(60, 40, 30, 0.03); }
+
+      .rpt-td-num { text-align: right; font-variant-numeric: tabular-nums; }
+      .rpt-td-high { color: var(--accent); font-weight: 800; }
+
+      /* ── Cruzamentos ── */
+      .rpt-cross-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+      }
+
+      .rpt-cross-desc {
+        margin: 0;
+        font-size: 0.76rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .rpt-cross-rows { display: grid; gap: 5px; }
+
+      .rpt-cross-row {
+        display: flex; flex-wrap: wrap; gap: 8px;
+        padding: 5px 7px; border-radius: 8px;
+        background: rgba(60, 40, 30, 0.04);
+        border: 1px solid var(--border); font-size: 0.74rem;
+      }
+
+      .rpt-cross-cell { display: grid; gap: 1px; }
+
+      .rpt-cross-key {
+        font-size: 0.58rem; text-transform: uppercase;
+        letter-spacing: 0.12em; color: var(--muted); font-weight: 700;
+      }
+
+      .rpt-cross-val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+
+      .rpt-no-data { margin: 0; font-size: 0.76rem; color: var(--muted); font-style: italic; }
+
+      /* ── Plano de Ação ── */
+      .rpt-action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 12px;
+      }
+
+      .rpt-action-card {
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1px solid rgba(192, 18, 45, 0.18);
+        background: rgba(255, 245, 246, 0.9);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        display: grid;
+        gap: 8px;
+        align-content: start;
+      }
+
+      .rpt-action-team {
+        margin: 0; font-size: 0.88rem; font-weight: 800; color: var(--accent);
+      }
+
+      .rpt-action-issues { display: grid; gap: 3px; }
+
+      .rpt-action-issue {
+        font-size: 0.76rem; font-weight: 600; color: #b91c3a; padding: 2px 0;
+      }
+
+      .rpt-action-recs {
+        display: grid; gap: 4px; padding-top: 6px;
+        border-top: 1px solid rgba(192, 18, 45, 0.14);
+      }
+
+      .rpt-action-rec { font-size: 0.74rem; color: var(--text); line-height: 1.45; }
+
+      /* ── Empty state ── */
+      .rpt-empty {
+        display: grid;
+        place-items: center;
+        min-height: 40vh;
+        color: var(--muted);
+        font-size: 0.92rem;
+        text-align: center;
+        padding: 40px;
+      }
+
+      @media (max-width: 720px) {
+        .rpt-devs-layout { grid-template-columns: 1fr; }
+        .rpt-cross-grid { grid-template-columns: 1fr; }
+        .rpt-action-grid { grid-template-columns: 1fr; }
+        .kpi-cr { grid-template-columns: 18px 1fr 60px; }
+        .kpi-cr-team { display: none; }
+      }
+
+      @media print {
+        .filter-drawer, .filter-fab, .report-filter-bar,
+        .rpt-export-btn, .drawer-backdrop { display: none !important; }
+        .shell {
+          background: #f5f4f0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .anim-el { opacity: 1 !important; transform: none !important; }
+        .kpi-cr-fill { transition: none !important; }
+      }
     `,
   ],
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly api = inject(ScannerApiService);
   private readonly zone = inject(NgZone);
   protected readonly allOption = ALL_OPTION;
@@ -737,9 +1476,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly progressMessage = signal('');
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
+  protected readonly reportBarHidden = signal(true);
+  protected readonly reportData = signal<GeneratedReport | null>(null);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('operacional');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
+  protected readonly reportFilterStates = signal<ReportSelectFilterState[]>([]);
   protected readonly dayRange = signal({ min: 1, max: 31 });
   protected readonly resolvedDayRange = computed(() => {
     const r = this.dayRange();
@@ -764,13 +1506,59 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return limit > 1 ? ((this.resolvedDayRange().max - 1) / (limit - 1)) * 100 : 100;
   });
 
+  private readonly KPI_CHART_CONFIG: Record<string, { worst: number; best: number; direction: 'h' | 'l' }> = {
+    'OS Dia':        { worst: 1.0,  best: 5.5,  direction: 'h' },
+    'Eficiência':    { worst: 80,   best: 125,  direction: 'h' },
+    'Utilização':    { worst: 60,   best: 88,   direction: 'h' },
+    'Reparo Por OS': { worst: 1.32, best: 1.18, direction: 'l' },
+    'TME':           { worst: 72,   best: 45,   direction: 'l' },
+    'TME IMP':       { worst: 28,   best: 17,   direction: 'l' },
+    '1º Login':      { worst: 12,   best: 7,    direction: 'l' },
+    '1º Desloc.':    { worst: 30,   best: 20,   direction: 'l' },
+    'Retorno Base':  { worst: 50,   best: 35,   direction: 'l' },
+  };
+
+  private scrollObserver?: IntersectionObserver;
+
   private activeDownloadRequest?: Subscription;
   private activeDownloadAbort?: AbortController;
+  private reportRefreshSubscription?: Subscription;
+  private reportApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  private reportBarHideTimer: ReturnType<typeof setTimeout> | null = null;
+  private isPointerInTopRevealZone = false;
+  private hasLoadedDownloadData = false;
   private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove'; anchorIndex: number; baseline: Set<string> } | null = null;
   private dragScrollTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly boundEndFilterDrag = () => {
     this.dragSelectionState = null;
     this.dragScrollTimer = null;
+  };
+  private readonly boundWindowMouseMove = (event: MouseEvent) => {
+    const topRevealZonePx = 42;
+    const isInTopZone = event.clientY <= topRevealZonePx;
+
+    if (isInTopZone) {
+      this.isPointerInTopRevealZone = true;
+      if (this.reportBarHideTimer) {
+        clearTimeout(this.reportBarHideTimer);
+        this.reportBarHideTimer = null;
+      }
+      this.reportBarHidden.set(false);
+      return;
+    }
+
+    if (this.isPointerInTopRevealZone) {
+      this.isPointerInTopRevealZone = false;
+
+      if (this.reportBarHideTimer) {
+        clearTimeout(this.reportBarHideTimer);
+      }
+
+      this.reportBarHideTimer = setTimeout(() => {
+        this.reportBarHidden.set(true);
+        this.reportBarHideTimer = null;
+      }, 7000);
+    }
   };
 
   public ngOnInit(): void {
@@ -778,6 +1566,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const overrides = saved ? new Map(Object.entries(saved.filters) as [FilterKey, string[]][]) : undefined;
     const builtFilters = this.buildSelectFilters(overrides);
     this.selectFilters.set(builtFilters);
+    this.reportFilterStates.set(this.buildReportFilterStates());
     if (saved) {
       this.reportType.set(saved.reportType);
       if (saved.dayRange) {
@@ -789,12 +1578,63 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     }
     window.addEventListener('mouseup', this.boundEndFilterDrag);
+    window.addEventListener('mousemove', this.boundWindowMouseMove, { passive: true });
   }
 
   public ngOnDestroy(): void {
     window.removeEventListener('mouseup', this.boundEndFilterDrag);
+    window.removeEventListener('mousemove', this.boundWindowMouseMove);
+    if (this.reportApplyTimer) {
+      clearTimeout(this.reportApplyTimer);
+      this.reportApplyTimer = null;
+    }
+    if (this.reportBarHideTimer) {
+      clearTimeout(this.reportBarHideTimer);
+      this.reportBarHideTimer = null;
+    }
+    this.reportRefreshSubscription?.unsubscribe();
     this.cancelActiveDownloadRequest();
+    this.scrollObserver?.disconnect();
   }
+
+  public ngAfterViewInit(): void {
+    if (!('IntersectionObserver' in window)) return;
+    this.scrollObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('anim-in');
+            this.scrollObserver?.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.06 },
+    );
+  }
+
+  private setupAnimations(): void {
+    setTimeout(() => {
+      document.querySelectorAll('.anim-el').forEach((el) => this.scrollObserver?.observe(el));
+    }, 60);
+  }
+
+  protected barWidthPct(value: number, kpiName: string): number {
+    const cfg = this.KPI_CHART_CONFIG[kpiName];
+    if (!cfg || !Number.isFinite(value)) return 0;
+    const pct = cfg.direction === 'h'
+      ? (value - cfg.worst) / (cfg.best - cfg.worst) * 100
+      : (cfg.worst - value) / (cfg.worst - cfg.best) * 100;
+    return Math.max(2, Math.min(100, pct));
+  }
+
+  protected kpiMetaPct(kpiName: string, metaTarget: number): number {
+    return this.barWidthPct(metaTarget, kpiName);
+  }
+
+  protected exportPdf(): void {
+    window.print();
+  }
+
 
   protected openFilterDrawer(): void {
     this.filterDrawerOpen.set(true);
@@ -817,8 +1657,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return filter.key;
   }
 
+  protected trackByReportFilterKey(_index: number, filter: ReportSelectFilterState): string {
+    return filter.key;
+  }
+
   protected trackByOption(_index: number, option: string): string {
     return option;
+  }
+
+  protected objectKeys(obj: Record<string, unknown>): string[] {
+    return Object.keys(obj);
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {
@@ -835,6 +1683,33 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     return filter.value.join(', ');
+  }
+
+  protected isReportOptionSelected(filter: ReportSelectFilterState, option: string): boolean {
+    return filter.value.includes(option);
+  }
+
+  protected describeReportSelection(filter: ReportSelectFilterState): string {
+    if (filter.value.includes(ALL_OPTION)) {
+      return 'Todos';
+    }
+
+    if (filter.value.length === 0) {
+      return 'Nenhum valor selecionado';
+    }
+
+    return filter.value.join(', ');
+  }
+
+  protected toggleReportFilterOption(key: ReportFilterKey, option: string): void {
+    const filters = this.reportFilterStates();
+    this.reportFilterStates.set(filters.map((filter) => filter.key === key ? { ...filter, value: [option] } : filter));
+    this.scheduleInstantReportRefresh();
+  }
+
+  protected onReportSelectChange(key: ReportFilterKey, event: Event): void {
+    const value = String((event.target as HTMLSelectElement | null)?.value ?? ALL_OPTION);
+    this.toggleReportFilterOption(key, value);
   }
 
   protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
@@ -1044,11 +1919,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
           });
 
           this.api.generateReport({
-            reportFilters: undefined,
+            reportFilters: this.buildReportFiltersPayload(),
           }).subscribe({
-            next: () => {
+            next: (result) => {
+              this.hasLoadedDownloadData = true;
+              this.reportData.set(result.generatedReport);
               this.loading.set(false);
               this.progressMessage.set('');
+              this.setupAnimations();
             },
             error: () => {
               this.loading.set(false);
@@ -1134,6 +2012,80 @@ export class DashboardComponent implements OnInit, OnDestroy {
         enabled: true,
       },
     ];
+  }
+
+  private buildReportFilterStates(): ReportSelectFilterState[] {
+    return [
+      {
+        key: 'reportBase',
+        title: 'Base (Relatório)',
+        value: [ALL_OPTION],
+        options: this.withAllOption(REPORT_BASE_OPTIONS),
+        enabled: true,
+      },
+      {
+        key: 'reportTipoEquipe',
+        title: 'Tipo de Equipe (Relatório)',
+        value: [ALL_OPTION],
+        options: this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
+        enabled: true,
+      },
+    ];
+  }
+
+  private buildReportFiltersPayload(): {
+    bases?: string[];
+    teamTypes?: Array<'propria' | 'parceira'>;
+    includeExtraTags: boolean;
+  } {
+    const baseFilter = this.reportFilterStates().find((filter) => filter.key === 'reportBase');
+    const teamTypeFilter = this.reportFilterStates().find((filter) => filter.key === 'reportTipoEquipe');
+
+    const normalize = (filter: ReportSelectFilterState | undefined): string[] => {
+      if (!filter || filter.value.includes(ALL_OPTION)) {
+        return [];
+      }
+      return filter.value;
+    };
+
+    const selectedTypes = normalize(teamTypeFilter)
+      .map((value) => value === 'Própria' ? 'propria' : value === 'Parceira' ? 'parceira' : null)
+      .filter((value): value is 'propria' | 'parceira' => value !== null);
+
+    const selectedBases = normalize(baseFilter);
+
+    return {
+      bases: selectedBases.length > 0 ? selectedBases : undefined,
+      teamTypes: selectedTypes.length > 0 ? selectedTypes : undefined,
+      includeExtraTags: true,
+    };
+  }
+
+  private scheduleInstantReportRefresh(): void {
+    if (!this.hasLoadedDownloadData) {
+      return;
+    }
+
+    if (this.reportApplyTimer) {
+      clearTimeout(this.reportApplyTimer);
+    }
+
+    this.reportApplyTimer = setTimeout(() => {
+      this.reportRefreshSubscription?.unsubscribe();
+      this.reportRefreshSubscription = this.api.generateReport({
+        reportFilters: this.buildReportFiltersPayload(),
+      }).subscribe({
+        next: (result) => {
+          this.reportData.set(result.generatedReport);
+          this.errorMessage.set('');
+          this.setupAnimations();
+        },
+        error: (error) => {
+          const message = error?.error?.message ?? 'Falha ao atualizar relatório';
+          this.errorMessage.set(message);
+        },
+      });
+    }, 300);
   }
 
   private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
