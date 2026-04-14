@@ -1039,9 +1039,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
         },
         onResult: () => {
           this.zone.run(() => {
-            this.loading.set(false);
-            this.progressMessage.set('');
             this.activeDownloadAbort = undefined;
+            this.progressMessage.set('Gerando relatório analítico...');
+          });
+
+          this.api.generateReport({
+            reportFilters: undefined,
+          }).subscribe({
+            next: () => {
+              this.loading.set(false);
+              this.progressMessage.set('');
+            },
+            error: () => {
+              this.loading.set(false);
+              this.progressMessage.set('');
+              this.errorMessage.set('Falha ao gerar relatório após o download');
+            },
           });
         },
         onError: (message) => {

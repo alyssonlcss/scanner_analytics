@@ -18,6 +18,24 @@ export interface ScannerDataDownloadResult {
   filters: SpotfireFilter[];
   availableTabs: string[];
   availableTables: string[];
+  generatedReport?: {
+    generatedAt: string;
+    outputFiles: {
+      jsonPath: string;
+      markdownPath: string;
+    };
+  };
+}
+
+export interface ScannerReportGenerateResult {
+  status: 'completed';
+  generatedReport: {
+    generatedAt: string;
+    outputFiles: {
+      jsonPath: string;
+      markdownPath: string;
+    };
+  };
 }
 
 export interface ScannerJob {
@@ -140,6 +158,16 @@ export class ScannerApiService {
         }
       }
     }
+  }
+
+  public generateReport(payload: {
+    reportFilters?: {
+      bases?: string[];
+      teamTypes?: Array<'propria' | 'parceira'>;
+      includeExtraTags?: boolean;
+    };
+  }): Observable<ScannerReportGenerateResult> {
+    return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/generate`, payload);
   }
 
   public getExportDownloadUrl(jobId: string): string {

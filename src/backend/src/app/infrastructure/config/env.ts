@@ -46,7 +46,25 @@ const environmentSchema = z.object({
   SPOTFIRE_OUTPUT_DIR: z.string().default('../../data'),
   SPOTFIRE_DOWNLOAD_TABLES: z.string().default('Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios'),
   SPOTFIRE_DEBUG: booleanFromEnvironment.default(false),
+  FILTER_BASE_ITAPAJE_OWN_PREFIX: z.string().default('ITJ-'),
+  FILTER_BASE_ITAPAJE_PARTNER_PREFIX: z.string().default('ITE-'),
+  FILTER_BASE_ITAPIPOCA_OWN_PREFIX: z.string().default('ITK-'),
+  FILTER_BASE_ITAPIPOCA_PARTNER_PREFIX: z.string().default('IPK-'),
+  FILTER_BASE_TRAIRI_OWN_PREFIX: z.string().default('TRR-'),
+  FILTER_BASE_TRAIRI_PARTNER_PREFIX: z.string().default('IPT-'),
+  FILTER_BASE_ACARAU_OWN_PREFIX: z.string().default('ACU-'),
+  FILTER_BASE_ACARAU_PARTNER_PREFIX: z.string().default('ACA-'),
+  TAGS_EQUIPES_EXTRAS: z.string().default('-PD-,-ML-,-EP-,-LC-,-LL-,-CO-,-MP-,-IN-,-EN-,-MO-,-LV-'),
+  REPORT_AUTO_GENERATE: booleanFromEnvironment.default(true),
+  REPORT_OUTPUT_FILE_NAME: z.string().default('scanner-analytics-report.json'),
 });
+
+function parseCsvList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
 
 function parseDownloadTargets(raw: string): Array<{ analysisTab: string; tableTitle: string; fileAlias?: string }> {
   const results: Array<{ analysisTab: string; tableTitle: string; fileAlias?: string }> = [];
@@ -100,6 +118,29 @@ export const environment = {
     outputDirectory: parsedEnvironment.SPOTFIRE_OUTPUT_DIR,
     downloadTargets: parseDownloadTargets(parsedEnvironment.SPOTFIRE_DOWNLOAD_TABLES),
     debug: parsedEnvironment.SPOTFIRE_DEBUG,
+  },
+  report: {
+    autoGenerate: parsedEnvironment.REPORT_AUTO_GENERATE,
+    outputFileName: parsedEnvironment.REPORT_OUTPUT_FILE_NAME,
+    basePrefixMap: {
+      Itapaje: {
+        ownPrefix: parsedEnvironment.FILTER_BASE_ITAPAJE_OWN_PREFIX,
+        partnerPrefix: parsedEnvironment.FILTER_BASE_ITAPAJE_PARTNER_PREFIX,
+      },
+      Itapipoca: {
+        ownPrefix: parsedEnvironment.FILTER_BASE_ITAPIPOCA_OWN_PREFIX,
+        partnerPrefix: parsedEnvironment.FILTER_BASE_ITAPIPOCA_PARTNER_PREFIX,
+      },
+      Trairi: {
+        ownPrefix: parsedEnvironment.FILTER_BASE_TRAIRI_OWN_PREFIX,
+        partnerPrefix: parsedEnvironment.FILTER_BASE_TRAIRI_PARTNER_PREFIX,
+      },
+      Acarau: {
+        ownPrefix: parsedEnvironment.FILTER_BASE_ACARAU_OWN_PREFIX,
+        partnerPrefix: parsedEnvironment.FILTER_BASE_ACARAU_PARTNER_PREFIX,
+      },
+    },
+    extraTeamTags: parseCsvList(parsedEnvironment.TAGS_EQUIPES_EXTRAS),
   },
 } as const;
 

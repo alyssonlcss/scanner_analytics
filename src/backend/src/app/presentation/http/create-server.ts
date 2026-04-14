@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { StartScannerJobUseCase } from '../../application/use-cases/start-scanner-job.use-case.js';
 import { GetScannerJobUseCase } from '../../application/use-cases/get-scanner-job.use-case.js';
+import { PostDownloadReportService } from '../../application/services/post-download-report.service.js';
 import { environment } from '../../infrastructure/config/env.js';
 import { InMemoryJobStore } from '../../infrastructure/runtime/in-memory-job-store.js';
 import { PuppeteerSpotfireAutomation } from '../../infrastructure/spotfire/puppeteer-spotfire-automation.js';
@@ -49,6 +50,14 @@ const dataDownloadSchema = z.object({
   }).optional(),
 });
 
+const reportGenerationSchema = z.object({
+  reportFilters: z.object({
+    bases: z.array(z.string().trim().min(1)).optional(),
+    teamTypes: z.array(z.enum(['propria', 'parceira'])).optional(),
+    includeExtraTags: z.boolean().optional(),
+  }).optional(),
+});
+
 export async function createServer() {
   const server = Fastify({ logger: true, disableRequestLogging: true });
   const jobStore = new InMemoryJobStore();
@@ -61,6 +70,7 @@ export async function createServer() {
 
   const startScannerJob = new StartScannerJobUseCase(automation, jobStore);
   const getScannerJob = new GetScannerJobUseCase(jobStore);
+  const postDownloadReport = new PostDownloadReportService(environment);
   let activeDataDownloadController: AbortController | null = null;
 
   await server.register(cors, {
@@ -234,6 +244,39 @@ export async function createServer() {
     return reply.send(job);
   });
 
+  server.post('/api/scanner/reports/generate', async (request, reply) => {
+    const payload = reportGenerationSchema.parse(request.body);
+    const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
+    const potentialFiles = resolveDownloadedFiles(dataDirectory, downloadTargets);
+    const downloadedFiles: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
+
+    for (const file of potentialFiles) {
+      try {
+        await access(file.filePath);
+        downloadedFiles.push(file);
+      } catch {
+        // ignore missing files and keep only existing downloaded tables
+      }
+    }
+
+    if (downloadedFiles.length === 0) {
+      return reply.code(404).send({
+        message: 'no downloaded files found to generate report',
+      });
+    }
+
+    const generatedReport = await postDownloadReport.generate({
+      dataDirectory,
+      downloadedFiles,
+      reportFilters: payload.reportFilters,
+    });
+
+    return reply.send({
+      status: 'completed',
+      generatedReport,
+    });
+  });
+
   server.get('/api/scanner/executions/:jobId/export', async (request, reply) => {
     const params = z.object({ jobId: z.string().uuid() }).parse(request.params);
     const job = await getScannerJob.execute(params.jobId);
@@ -354,4 +397,28 @@ function normalizeAbortError(reason: unknown): Error {
 
 function normalizeAbortMessage(error: Error): string {
   return error.message.trim().length > 0 ? error.message : 'data download aborted';
+}
+
+function resolveDownloadedFiles(
+  dataDirectory: string,
+  targets: ReadonlyArray<{ analysisTab: string; tableTitle: string; fileAlias?: string }>,
+): Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> {
+  const resolved: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
+
+  for (const target of targets) {
+    const tabSlug = target.analysisTab.replace(/\s+/g, '_');
+    const tableSlug = target.tableTitle.replace(/\s+/g, '_');
+    const fileLabel = target.fileAlias ?? `${tabSlug}-${tableSlug}`;
+    const fileName = `${fileLabel}.csv`;
+    const filePath = join(dataDirectory, fileName);
+
+    resolved.push({
+      analysisTab: target.analysisTab,
+      tableTitle: target.tableTitle,
+      fileName,
+      filePath,
+    });
+  }
+
+  return resolved;
 }
