@@ -321,7 +321,7 @@ type SavedFilterState = {
                           TempPrep≥20min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
-                          SemOS≥20min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
+                          SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
                         </span>
                       </div>
                       <ng-container *ngIf="analysis.flaggedOrders.length > 0; else noOsDiaEvidence">
@@ -401,10 +401,10 @@ type SavedFilterState = {
                                 <strong>Tempo de Deslocamento alto:</strong> {{ ev.tl_ordem_min }} min ({{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min) — limite sugerido: 20% da HD.
                               </li>
                               <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após despacho — limite: 20 min.
+                                <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 15 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 25 min</ng-container>.
                               </li>
                               <li *ngIf="ev.flags.includes('sem_os_alto')" class="osdia-ev-alert">
-                                <strong>SemOrdem/OS:</strong> {{ ev.sem_os_min }} min<ng-container *ngIf="ev.prev_liberada"> sem nova OS após liberação da ordem anterior</ng-container><ng-container *ngIf="!ev.prev_liberada"> do Início Calendário até Despachada (1ª OS da jornada)</ng-container> — limite: 20 min.
+                                <strong>SemOrdem/OS:</strong> {{ ev.sem_os_min }} min<ng-container *ngIf="ev.prev_liberada"> sem nova OS após liberação da ordem anterior</ng-container><ng-container *ngIf="!ev.prev_liberada"> do Início Calendário até Despachada (1ª OS da jornada)</ng-container> — limite: 10 min.
                               </li>
                             </ul>
                           </div>
@@ -2029,7 +2029,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       tr_excede_hd:   'TR>20%HD',
       tl_excede_hd:   'TL>20%HD',
       temp_prep_alto: 'TempPrep≥20min',
-      sem_os_alto:    'SemOS≥20min',
+      sem_os_alto:    'SemOS≥10min',
     };
     return labels[flag] ?? flag;
   }

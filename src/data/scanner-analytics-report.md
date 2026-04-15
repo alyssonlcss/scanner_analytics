@@ -1,6 +1,6 @@
 # Relatório Analítico Scanner
 
-**Gerado em:** 15/04/2026, 18:04:37
+**Gerado em:** 15/04/2026, 18:29:01
 
 ---
 

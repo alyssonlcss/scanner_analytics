@@ -1029,8 +1029,9 @@ export class PostDownloadReportService {
 
     const OS_DIA_META = 4.4;
     const OS_DIA_PCT_THRESHOLD = 0.20;
-    const TEMP_PREP_THRESHOLD_MIN = 20;
-    const SEM_OS_THRESHOLD_MIN = 20;
+    const TEMP_PREP_THRESHOLD_MIN      = 15; // demais OS: Lib.Anterior → A Caminho
+    const TEMP_PREP_THRESHOLD_FIRST_MIN = 25; // 1ª OS da jornada: Início Calendário → A Caminho
+    const SEM_OS_THRESHOLD_MIN = 10;
 
     // 1. Determine under-performing teams from ranking (average OS/Dia < meta)
     const rankAcc = createAccessor(rankingRows[0]);
@@ -1202,7 +1203,8 @@ export class PostDownloadReportService {
         if (hdTotalMin > 0 && tlOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD) {
           flags.push('tl_excede_hd');
         }
-        if (Number.isFinite(tempPrepOs) && tempPrepOs >= TEMP_PREP_THRESHOLD_MIN) {
+        const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;
+        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold) {
           flags.push('temp_prep_alto');
         }
         if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
