@@ -17,7 +17,10 @@ const ALL_OPTION = 'All';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
+  /** Resolves when the current serialized task finishes (or was aborted). */
   private activeQueue: Promise<void> = Promise.resolve();
+  /** AbortController for the currently-running serialized task. Aborted when a newer request arrives. */
+  private activeTaskAbort?: AbortController;
   private persistentBrowser?: Browser;
   private persistentPage?: Page;
 
@@ -74,9 +77,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
   }
 
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
-    return this.runSerialized(async () => {
-      const outputDirectory = await this.raceAbort(this.prepareOutputDirectory(), request.signal);
-      this.emitProgress(request, 'Iniciando extração de dados...');
+    return this.runSerialized(async (combinedSignal) => {
+      // Overlay the combined (external + supersede) signal so all inner raceAbort calls react.
+      const req: ScannerRunRequest = { ...request, signal: combinedSignal };
+      const outputDirectory = await this.raceAbort(this.prepareOutputDirectory(), req.signal);
+      this.emitProgress(req, 'Iniciando extração de dados...');
       this.logStep('data-download', 'START', 'starting extraction run', {
         reportTitle: request.reportTitle ?? this.environment.spotfire.defaultReportTitle,
         analysisTab: request.analysisTab ?? null,
@@ -91,101 +96,101 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         void this.disposeAutomationSession().catch(() => undefined);
       };
 
-      request.signal?.addEventListener('abort', abortHandler, { once: true });
+      req.signal?.addEventListener('abort', abortHandler, { once: true });
 
-      const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), request.signal);
-      const errorMonitor = this.startErrorPopupMonitor(page, request);
+      const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), req.signal);
+      const errorMonitor = this.startErrorPopupMonitor(page, req);
 
       try {
-        this.throwIfAborted(request.signal);
+        this.throwIfAborted(req.signal);
 
         if (createdNewPage && !this.usesExternalBrowserConnection()) {
-          this.emitProgress(request, 'Preparando navegador...');
-          await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), request.signal);
+          this.emitProgress(req, 'Preparando navegador...');
+          await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), req.signal);
           this.logStep('browser', 'OK', 'created new browser page for extraction run', {
             width: 1600,
             height: 1000,
           });
         }
 
-        this.emitProgress(request, 'Abrindo análise no Spotfire...');
+        this.emitProgress(req, 'Abrindo análise no Spotfire...');
         await this.withSpotfireRecovery(page, async () => {
           await this.raceAbort(
-            this.openAnalysis(page, request.reportTitle ?? this.environment.spotfire.defaultReportTitle),
-            request.signal,
+            this.openAnalysis(page, req.reportTitle ?? this.environment.spotfire.defaultReportTitle),
+            req.signal,
           );
-        }, request);
+        }, req);
         this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
           currentUrl: page.url(),
         });
 
-        this.emitProgress(request, 'Preparando visualização...');
+        this.emitProgress(req, 'Preparando visualização...');
         await this.withSpotfireRecovery(page, async () => {
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
 
-          if (request.analysisTab?.trim()) {
-            this.emitProgress(request, `Abrindo aba "${request.analysisTab}"...`);
-            await this.raceAbort(this.openAnalysisTab(page, request.analysisTab), request.signal);
+          if (req.analysisTab?.trim()) {
+            this.emitProgress(req, `Abrindo aba "${req.analysisTab}"...`);
+            await this.raceAbort(this.openAnalysisTab(page, req.analysisTab), req.signal);
           }
 
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
-        }, request);
+          await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
+        }, req);
         const { availableTabs, availableTables, filters } = await this.withSpotfireRecovery(page, async () => {
-          this.emitProgress(request, 'Carregando filtros...');
-          await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+          this.emitProgress(req, 'Carregando filtros...');
+          await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
           
-          if (!request.skipFilterReset) {
+          if (!req.skipFilterReset) {
             this.info('Resetando filtros...');
-            this.emitProgress(request, 'Resetando filtros...');
-            await this.raceAbort(this.resetVisibleFilters(page), request.signal);
-            await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
+            this.emitProgress(req, 'Resetando filtros...');
+            await this.raceAbort(this.resetVisibleFilters(page), req.signal);
+            await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
           } else {
             this.log('skipping filter reset because skipFilterReset=true');
           }
 
-          const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), request.signal);
-          this.emitProgress(request, 'Lendo tabelas disponíveis...');
-          const availableTables = await this.raceAbort(this.loadAvailableTables(page), request.signal);
-          this.emitProgress(request, 'Lendo estado dos filtros...');
-          let filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
+          const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), req.signal);
+          this.emitProgress(req, 'Lendo tabelas disponíveis...');
+          const availableTables = await this.raceAbort(this.loadAvailableTables(page), req.signal);
+          this.emitProgress(req, 'Lendo estado dos filtros...');
+          let filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
 
           this.logFiltersSummary(filters);
 
-          const filtersToApply = this.buildFiltersToApply(filters, request);
+          const filtersToApply = this.buildFiltersToApply(filters, req);
 
           if (filtersToApply.length > 0) {
             this.info(`Aplicando ${filtersToApply.length} filtro(s): ${filtersToApply.map(f => f.title).join(', ')}`);
-            this.emitProgress(request, `Aplicando ${filtersToApply.length} filtro(s)...`);
-            await this.raceAbort(this.applySelectedFilters(page, filtersToApply), request.signal);
-            await this.raceAbort(this.ensureAllFiltersVisible(page), request.signal);
-            filters = await this.raceAbort(this.readVisibleFilters(page), request.signal);
+            this.emitProgress(req, `Aplicando ${filtersToApply.length} filtro(s)...`);
+            await this.raceAbort(this.applySelectedFilters(page, filtersToApply), req.signal);
+            await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+            filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
             this.logFiltersSummary(filters);
           }
 
           return { availableTabs, availableTables, filters };
-        }, request);
+        }, req);
 
         // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
-        if (request.periodSelection?.dayRange) {
+        if (req.periodSelection?.dayRange) {
           await this.withSpotfireRecovery(page, async () => {
             await this.raceAbort(
-              this.applyDataReferenciaFilter(page, request.periodSelection!, request),
-              request.signal,
+              this.applyDataReferenciaFilter(page, req.periodSelection!, req),
+              req.signal,
             );
-          }, request);
+          }, req);
         }
 
         const exportedFiles: Array<string | undefined> = [];
         const MAX_TABLE_RETRIES = 2;
 
         // New multi-table export logic
-        if (request.tablesToExport && request.tablesToExport.length > 0) {
-          this.logStep('export', 'START', `starting multi-table export for ${request.tablesToExport.length} tables`);
-          this.emitProgress(request, 'Preparando exportação das tabelas...');
-          const totalTables = request.tablesToExport.length;
+        if (req.tablesToExport && req.tablesToExport.length > 0) {
+          this.logStep('export', 'START', `starting multi-table export for ${req.tablesToExport.length} tables`);
+          this.emitProgress(req, 'Preparando exportação das tabelas...');
+          const totalTables = req.tablesToExport.length;
           
           for (let i = 0; i < totalTables; i++) {
-            const tableConfig = request.tablesToExport[i];
+            const tableConfig = req.tablesToExport[i];
             const label = `[${i + 1}/${totalTables}]`;
             this.logStep('export', 'START', `${label} exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
 
@@ -195,7 +200,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             for (let attempt = 1; attempt <= 1 + MAX_TABLE_RETRIES; attempt++) {
               try {
                 exportedFile = await this.exportSingleTableFromTab(
-                  page, outputDirectory, request, tableConfig.tab, tableConfig.tableTitle, label,
+                  page, outputDirectory, req, tableConfig.tab, tableConfig.tableTitle, label,
                 );
 
                 if (exportedFile) {
@@ -213,7 +218,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
               if (attempt <= MAX_TABLE_RETRIES) {
                 this.info(`${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
-                this.emitProgress(request, `${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
+                this.emitProgress(req, `${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
                 await this.waitForSpotfireIdle(page);
               }
             }
@@ -221,7 +226,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             exportedFiles.push(exportedFile);
             if (!exportedFile) {
               this.info(`${label} Tabela "${tableConfig.tableTitle}" FALHOU após ${1 + MAX_TABLE_RETRIES} tentativas ✗`);
-              this.emitProgress(request, `${label} Tabela "${tableConfig.tableTitle}" não pôde ser baixada — pulando`);
+              this.emitProgress(req, `${label} Tabela "${tableConfig.tableTitle}" não pôde ser baixada — pulando`);
             }
           }
           
@@ -244,7 +249,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         };
       } finally {
         errorMonitor.stop();
-        request.signal?.removeEventListener('abort', abortHandler);
+        req.signal?.removeEventListener('abort', abortHandler);
 
         if (!this.environment.spotfire.keepOpen) {
           this.logStep('browser', 'WARN', 'closing browser because keepOpen=false');
@@ -3457,7 +3462,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
-  private async runSerialized<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  private async runSerialized<T>(task: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    // Abort whatever is currently running — latest request wins.
+    this.activeTaskAbort?.abort(new DOMException('data download superseded by a newer request', 'AbortError'));
+
+    const ownAbort = new AbortController();
+    this.activeTaskAbort = ownAbort;
+
+    // Combine the caller's external signal with the internal supersede signal.
+    const combined = signal
+      ? this.combineSignals(signal, ownAbort.signal)
+      : ownAbort.signal;
+
     let release: (() => void) | undefined;
     const waiter = new Promise<void>((resolveWaiter) => {
       release = resolveWaiter;
@@ -3467,13 +3483,30 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.activeQueue = previous.then(() => waiter);
 
     try {
-      await this.raceAbort(previous, signal);
-      this.throwIfAborted(signal);
-      return await task();
+      // Wait for previous task to settle (it will abort quickly thanks to the abort above).
+      await previous.catch(() => undefined);
+      this.throwIfAborted(combined);
+      return await task(combined);
     } finally {
       release?.();
+      // Clean up own controller reference only if we're still the active one.
+      if (this.activeTaskAbort === ownAbort) {
+        this.activeTaskAbort = undefined;
+      }
     }
   }
+
+  /** Merge two AbortSignals — aborts when either one fires. */
+  private combineSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+    const controller = new AbortController();
+    const abort = (reason?: unknown) => controller.abort(reason);
+    if (a.aborted) { controller.abort(a.reason); return controller.signal; }
+    if (b.aborted) { controller.abort(b.reason); return controller.signal; }
+    a.addEventListener('abort', () => abort(a.reason), { once: true });
+    b.addEventListener('abort', () => abort(b.reason), { once: true });
+    return controller.signal;
+  }
+
 
   private async raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
     if (!signal) {

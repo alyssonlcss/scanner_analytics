@@ -296,6 +296,126 @@ type SavedFilterState = {
                     <span class="kpi-cr-val kpi-cr-val--opp">{{ t.value }}</span>
                   </div>
                 </div>
+                <!-- OS/Dia drill-down (3 piores) -->
+                <ng-container *ngIf="kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — 3 Piores
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
+                  </div>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.osDiaAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }} OS/dia</span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">OS/Dia <strong>{{ analysis.osDiaValue }}</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTrExceeds > 0">
+                          TR&gt;20% HD: <strong>{{ analysis.summary.countTrExceeds }}</strong>
+                        </span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTlExceeds > 0">
+                          TL&gt;20% HD: <strong>{{ analysis.summary.countTlExceeds }}</strong>
+                        </span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
+                          TempPrep≥20min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                        </span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
+                          SemOS≥20min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
+                        </span>
+                      </div>
+                      <ng-container *ngIf="analysis.flaggedOrders.length > 0; else noOsDiaEvidence">
+                        <div class="osdia-ev-list">
+                          <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                            <!-- Header: ordem + alertas -->
+                            <div class="osdia-ev-header">
+                              <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                              <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
+                            </div>
+                            <!-- Causa -->
+                            <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
+                              <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                              <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                              <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                            </p>
+                            <!-- Linha do tempo -->
+                            <div class="osdia-ev-timeline">
+                              <ng-container *ngIf="ev.prev_liberada; else primeiraOsLinha1">
+                                <span class="osdia-ev-ts-label">Lib. Anterior</span>
+                                <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Despachada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">A Caminho</span>
+                                <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">No Local</span>
+                                <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Liberada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                              </ng-container>
+                              <ng-template #primeiraOsLinha1>
+                                <span class="osdia-ev-ts-label">Início da jornada</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Início Calendário</span>
+                                <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">-</span>
+                                <span class="osdia-ev-ts-label">Log In</span>
+                                <span class="osdia-ev-ts-val">{{ ev.log_in || '—' }}</span>
+                              </ng-template>
+                            </div>
+                            <!-- 2ª linha só para 1ª OS da jornada: sequência da ordem -->
+                            <div class="osdia-ev-timeline" *ngIf="!ev.prev_liberada">
+                              <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
+                              <span class="osdia-ev-ts-sep">→</span>
+                              <span class="osdia-ev-ts-label">Despachada</span>
+                              <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                              <span class="osdia-ev-ts-sep">→</span>
+                              <span class="osdia-ev-ts-label">A Caminho</span>
+                              <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                              <span class="osdia-ev-ts-sep">→</span>
+                              <span class="osdia-ev-ts-label">No Local</span>
+                              <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                              <span class="osdia-ev-ts-sep">→</span>
+                              <span class="osdia-ev-ts-label">Liberada</span>
+                              <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                            </div>
+                            <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
+                            <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
+                              <span class="osdia-ev-int-icon">⏸</span>
+                              <span class="osdia-ev-int-label">Intervalo:</span>
+                              <span class="osdia-ev-int-val">{{ ev.inicio_intervalo }}</span>
+                              <span class="osdia-ev-int-sep">→</span>
+                              <span class="osdia-ev-int-val">{{ ev.fim_intervalo || '—' }}</span>
+                            </div>
+                            <!-- Alertas em prosa -->
+                            <ul class="osdia-ev-alerts">
+                              <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
+                                <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
+                                ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min — limite: 20% da HD)
+                                — tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
+                              </li>
+                              <li *ngIf="ev.flags.includes('tl_excede_hd')" class="osdia-ev-alert">
+                                <strong>Tempo de Deslocamento alto:</strong> {{ ev.tl_ordem_min }} min ({{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min) — limite sugerido: 20% da HD.
+                              </li>
+                              <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
+                                <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após despacho — limite: 20 min.
+                              </li>
+                              <li *ngIf="ev.flags.includes('sem_os_alto')" class="osdia-ev-alert">
+                                <strong>SemOrdem/OS:</strong> {{ ev.sem_os_min }} min<ng-container *ngIf="ev.prev_liberada"> sem nova OS após liberação da ordem anterior</ng-container><ng-container *ngIf="!ev.prev_liberada"> do Início Calendário até Despachada (1ª OS da jornada)</ng-container> — limite: 20 min.
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      </ng-container>
+                      <ng-template #noOsDiaEvidence>
+                        <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
               </section>
             </ng-container>
 
@@ -326,15 +446,15 @@ type SavedFilterState = {
 
             <!-- TempPrep / SemOs -->
             <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.tempPrepAndSemOs.length > 0">
-              <h2 class="rpt-section-title">⏱ TempPrep e SemOSentreOS <span class="rpt-section-note">(média diária em minutos)</span></h2>
+              <h2 class="rpt-section-title">⏱ TempPrep/Dia e SemOrdem/Dia <span class="rpt-section-note">(média diária em minutos)</span></h2>
               <div class="rpt-table-wrap">
                 <table class="rpt-table">
                   <thead>
                     <tr>
                       <th>Equipe</th>
                       <th class="rpt-td-num">Dias</th>
-                      <th class="rpt-td-num">TempPrep (min/dia)</th>
-                      <th class="rpt-td-num">SemOSentreOS (min/dia)</th>
+                      <th class="rpt-td-num">TempPrep/Dia (min)</th>
+                      <th class="rpt-td-num">SemOrdem/Dia (min)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1433,6 +1553,241 @@ type SavedFilterState = {
 
       .rpt-action-rec { font-size: 0.74rem; color: var(--text); line-height: 1.45; }
 
+      /* ── OS/Dia Drill-down ── */
+      .kpi-osdia-drill-head {
+        margin-top: 18px;
+        padding: 8px 0 6px;
+        border-top: 1px solid var(--border);
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .rpt-osdia-src-inline {
+        font-weight: 400;
+        font-size: 0.71rem;
+        color: var(--muted);
+      }
+
+      .rpt-osdia-src {
+        margin: -4px 0 12px;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+
+      .rpt-osdia-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .rpt-osdia-card {
+        background: var(--glass);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 18px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .rpt-osdia-card-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .rpt-osdia-team {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: var(--text);
+      }
+
+      .rpt-osdia-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 9px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      .rpt-osdia-badge--gap {
+        background: rgba(192, 18, 45, 0.1);
+        color: #b91c3a;
+        border: 1px solid rgba(192, 18, 45, 0.25);
+      }
+
+      .rpt-osdia-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .rpt-osdia-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        color: var(--muted-strong);
+      }
+
+      .rpt-osdia-chip strong { color: var(--text); }
+
+      /* Evidence prose cards */
+      .osdia-ev-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      .osdia-ev-item {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-left: 3px solid #b91c3a;
+        border-radius: 8px;
+        padding: 10px 14px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .osdia-ev-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .osdia-ev-ordem {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--text);
+      }
+
+      .osdia-ev-classe {
+        font-size: 0.72rem;
+        padding: 1px 7px;
+        border-radius: 20px;
+        background: var(--glass);
+        border: 1px solid var(--border);
+        color: var(--muted-strong);
+        font-weight: 600;
+      }
+
+      .osdia-ev-causa {
+        margin: 0;
+        font-size: 0.78rem;
+        color: var(--muted-strong);
+        font-style: italic;
+      }
+
+      .osdia-ev-timeline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 6px;
+        font-size: 0.73rem;
+      }
+
+      .osdia-ev-ts-label {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .osdia-ev-ts-first {
+        color: var(--accent-2);
+      }
+
+      .osdia-ev-ts-val {
+        color: var(--text);
+      }
+
+      .osdia-ev-ts-sep {
+        color: var(--muted);
+      }
+
+      .osdia-ev-interval {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 6px;
+        font-size: 0.72rem;
+        padding: 3px 6px;
+        background: rgba(37, 99, 235, 0.06);
+        border: 1px solid rgba(37, 99, 235, 0.15);
+        border-radius: 5px;
+        width: fit-content;
+      }
+
+      .osdia-ev-int-icon  { color: var(--accent-2); }
+      .osdia-ev-int-label { color: var(--accent-2); font-weight: 600; }
+      .osdia-ev-int-val   { color: var(--text); }
+      .osdia-ev-int-sep   { color: var(--muted); }
+
+      .osdia-ev-prev {
+        margin: 0;
+        font-size: 0.73rem;
+        color: var(--muted-strong);
+      }
+
+      .osdia-ev-prev strong {
+        color: var(--text);
+      }
+
+      .osdia-ev-alerts {
+        margin: 4px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 4px;
+      }
+
+      .osdia-ev-alert {
+        font-size: 0.76rem;
+        color: var(--text);
+        line-height: 1.5;
+        padding-left: 14px;
+        position: relative;
+      }
+
+      .osdia-ev-alert::before {
+        content: '⚠';
+        position: absolute;
+        left: 0;
+        color: #b91c3a;
+        font-size: 0.7rem;
+        top: 2px;
+      }
+
+      .osdia-ev-alert strong {
+        color: #b91c3a;
+      }
+
+      .rpt-td-flag {
+        color: #b91c3a;
+        font-weight: 700;
+      }
+
+      .rpt-osdia-flag {
+        display: inline-block;
+        background: rgba(192, 18, 45, 0.1);
+        color: #b91c3a;
+        border: 1px solid rgba(192, 18, 45, 0.25);
+        border-radius: 4px;
+        font-size: 0.66rem;
+        font-weight: 700;
+        padding: 1px 5px;
+        margin-right: 3px;
+        white-space: nowrap;
+      }
+
       /* ── Empty state ── */
       .rpt-empty {
         display: grid;
@@ -1667,6 +2022,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected objectKeys(obj: Record<string, unknown>): string[] {
     return Object.keys(obj);
+  }
+
+  protected osDiaFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      tr_excede_hd:   'TR>20%HD',
+      tl_excede_hd:   'TL>20%HD',
+      temp_prep_alto: 'TempPrep≥20min',
+      sem_os_alto:    'SemOS≥20min',
+    };
+    return labels[flag] ?? flag;
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {

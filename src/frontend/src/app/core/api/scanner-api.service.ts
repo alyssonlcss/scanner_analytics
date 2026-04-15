@@ -62,6 +62,47 @@ export interface ReportActionPlan {
   recommendations: string[];
 }
 
+export interface OsDiaOrderEvidence {
+  source: string;
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  inicio_intervalo: string;
+  fim_intervalo: string;
+  prev_liberada?: string;
+  prev_nr_ordem?: string;
+  inicio_calendario?: string;
+  log_in?: string;
+  tr_ordem_min: number;
+  tl_ordem_min: number;
+  hd_total_min: number;
+  hd_pct_tr: number;
+  hd_pct_tl: number;
+  tempo_padrao_min?: number;
+  temp_prep_os_min?: number;
+  sem_os_min?: number;
+  flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
+}
+
+export interface OsDiaTeamAnalysis {
+  team: string;
+  osDiaValue: number;
+  metaTarget: number;
+  gap: number;
+  hdTotalMin: number;
+  flaggedOrders: OsDiaOrderEvidence[];
+  summary: {
+    countTrExceeds: number;
+    countTlExceeds: number;
+    countTempPrepAlto: number;
+    countSemOsAlto: number;
+  };
+}
+
 export interface GeneratedReport {
   generatedAt: string;
   filtersApplied: {
@@ -85,6 +126,7 @@ export interface GeneratedReport {
     tempPrepAndSemOs: ReportTeamMetric[];
     crossedInsights: ReportCrossedInsight[];
     actionPlan: ReportActionPlan[];
+    osDiaAnalysis: OsDiaTeamAnalysis[];
   };
   outputFiles: {
     jsonPath: string;

@@ -1,0 +1,2869 @@
+{
+  "generatedAt": "2026-04-15T21:04:37.899Z",
+  "filtersApplied": {
+    "bases": [],
+    "teamTypes": [],
+    "includeExtraTags": true,
+    "extraTags": [
+      "-PD-",
+      "-ML-",
+      "-EP-",
+      "-LC-",
+      "-LL-",
+      "-CO-",
+      "-MP-",
+      "-IN-",
+      "-EN-",
+      "-MO-",
+      "-LV-"
+    ]
+  },
+  "totals": {
+    "teams": 46,
+    "deslocamentos": 188,
+    "rankingRows": 46,
+    "desviosRows": 0
+  },
+  "kpis": [
+    {
+      "kpi": "OS Dia",
+      "direction": "higher-is-better",
+      "topTeams": [
+        {
+          "team": "ITK-SG-01B",
+          "value": 7
+        },
+        {
+          "team": "ACU-TR-01D",
+          "value": 7
+        },
+        {
+          "team": "ITK-SP-05D",
+          "value": 6
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "IPK-RD-12C",
+          "value": 1
+        },
+        {
+          "team": "ITE-RD-10B",
+          "value": 2
+        },
+        {
+          "team": "ITK-SG-07C",
+          "value": 2
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 7,
+          "score": 16.5
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 7,
+          "score": 16.5
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 6,
+          "score": 16.5
+        },
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 5,
+          "score": 15.82
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 4,
+          "score": 13.24
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 3,
+          "score": 8.82
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 2,
+          "score": 4.41
+        },
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 1,
+          "score": 0
+        }
+      ],
+      "average": 4.09,
+      "metaTarget": 4.4
+    },
+    {
+      "kpi": "Eficiência",
+      "direction": "higher-is-better",
+      "topTeams": [
+        {
+          "team": "IPT-RD-23B",
+          "value": 305.1
+        },
+        {
+          "team": "ACA-RD-21C",
+          "value": 302.8
+        },
+        {
+          "team": "ACU-SG-01C",
+          "value": 261.5
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ITE-RD-10B",
+          "value": 27.1
+        },
+        {
+          "team": "ITK-SP-05D",
+          "value": 51.2
+        },
+        {
+          "team": "IPK-SK-01C",
+          "value": 52.2
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 165.4,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 229.1,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 150.7,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 132.3,
+          "score": 11.7
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 125.9,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 184.5,
+          "score": 11.7
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 131.2,
+          "score": 11.7
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 133.7,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 144.9,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 261.5,
+          "score": 11.7
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 210.4,
+          "score": 11.7
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 135.3,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 139.3,
+          "score": 11.7
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 133.5,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 207.9,
+          "score": 11.7
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 135.5,
+          "score": 11.7
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 132.2,
+          "score": 11.7
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 127.3,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 305.1,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 182,
+          "score": 11.7
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 127.4,
+          "score": 11.7
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 154.6,
+          "score": 11.7
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 133.9,
+          "score": 11.7
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 302.8,
+          "score": 11.7
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 205.6,
+          "score": 11.7
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 120.1,
+          "score": 11.37
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 118.6,
+          "score": 11.26
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 117.2,
+          "score": 11.17
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 111.9,
+          "score": 10.81
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 109.6,
+          "score": 10.65
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 109.1,
+          "score": 10.62
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 109.1,
+          "score": 10.62
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 108.1,
+          "score": 10.55
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 105.8,
+          "score": 10.39
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 105.1,
+          "score": 10.35
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 102.9,
+          "score": 10.2
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 96.3,
+          "score": 8.15
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 82.8,
+          "score": 1.4
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 59.8,
+          "score": 0
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 51.2,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 56.3,
+          "score": 0
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 52.2,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 79.1,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 68.8,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 27.1,
+          "score": 0
+        }
+      ],
+      "average": 135.18,
+      "metaTarget": 100
+    },
+    {
+      "kpi": "Utilização",
+      "direction": "higher-is-better",
+      "topTeams": [
+        {
+          "team": "TRR-TR-03C",
+          "value": 90.4
+        },
+        {
+          "team": "ACU-SG-01D",
+          "value": 84.4
+        },
+        {
+          "team": "ACU-TR-01D",
+          "value": 84.1
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ITJ-RD-04D",
+          "value": 32.5
+        },
+        {
+          "team": "IPK-RD-10B",
+          "value": 35.7
+        },
+        {
+          "team": "IPT-RD-32C",
+          "value": 46.4
+        }
+      ],
+      "scores": [
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 90.4,
+          "score": 11.2
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 84.4,
+          "score": 9.76
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 84.1,
+          "score": 9.64
+        },
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 84,
+          "score": 9.6
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 83.4,
+          "score": 9.36
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 82.3,
+          "score": 8.92
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 80.2,
+          "score": 8.08
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 79.5,
+          "score": 7.8
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 79.4,
+          "score": 7.76
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 78.2,
+          "score": 7.28
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 78.1,
+          "score": 7.24
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 77,
+          "score": 6.8
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 76.9,
+          "score": 6.76
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 76.7,
+          "score": 6.68
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 74.5,
+          "score": 5.8
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 74,
+          "score": 5.6
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 74,
+          "score": 5.6
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 72.7,
+          "score": 5.08
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 72.6,
+          "score": 5.04
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 72.2,
+          "score": 4.88
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 71.7,
+          "score": 4.68
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 71.3,
+          "score": 4.52
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 70.7,
+          "score": 4.28
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 70.4,
+          "score": 4.16
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 70.3,
+          "score": 4.12
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 70.1,
+          "score": 4.04
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 69.8,
+          "score": 3.92
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 68.8,
+          "score": 3.52
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 68.2,
+          "score": 3.28
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 67.5,
+          "score": 3
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 67.1,
+          "score": 2.84
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 65.2,
+          "score": 2.08
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 65,
+          "score": 2
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 65,
+          "score": 2
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 64.3,
+          "score": 1.72
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 60.8,
+          "score": 0.32
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 60.1,
+          "score": 0.04
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 46.4,
+          "score": 0
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 55.6,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 57.6,
+          "score": 0
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 32.5,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 59.6,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 35.7,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 59.4,
+          "score": 0
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 57.3,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 58.7,
+          "score": 0
+        }
+      ],
+      "average": 69.21,
+      "metaTarget": 85
+    },
+    {
+      "kpi": "Reparo Por OS",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "IPK-RD-12C",
+          "value": 1
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "value": 2
+        },
+        {
+          "team": "ITE-RD-02B",
+          "value": 2
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ACU-TR-01D",
+          "value": 7
+        },
+        {
+          "team": "ITK-SG-01B",
+          "value": 7
+        },
+        {
+          "team": "ACU-TR-01B",
+          "value": 6
+        }
+      ],
+      "scores": [
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 1,
+          "score": 5.8
+        },
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 7,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 7,
+          "score": 0
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 6,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 5,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 4,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 3,
+          "score": 0
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 2,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 2,
+          "score": 0
+        }
+      ],
+      "average": 4.09,
+      "metaTarget": 1.2
+    },
+    {
+      "kpi": "TME",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "IPT-RD-23B",
+          "value": 10
+        },
+        {
+          "team": "ITK-TR-02B",
+          "value": 15
+        },
+        {
+          "team": "IPT-RD-03C",
+          "value": 22
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "IPK-RD-12C",
+          "value": 266
+        },
+        {
+          "team": "ACU-SG-01C",
+          "value": 225
+        },
+        {
+          "team": "ITE-RD-10B",
+          "value": 138
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 15,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 29,
+          "score": 18.4
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 33,
+          "score": 18.4
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 38,
+          "score": 18.4
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 44,
+          "score": 18.4
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 26,
+          "score": 18.4
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 40,
+          "score": 18.4
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 34,
+          "score": 18.4
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 32,
+          "score": 18.4
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 35,
+          "score": 18.4
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 39,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 40,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 35,
+          "score": 18.4
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 32,
+          "score": 18.4
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 44,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 25,
+          "score": 18.4
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 32,
+          "score": 18.4
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 29,
+          "score": 18.4
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 42,
+          "score": 18.4
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 29,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 10,
+          "score": 18.4
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 37,
+          "score": 18.4
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 35,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 22,
+          "score": 18.4
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 44,
+          "score": 18.4
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 28,
+          "score": 18.4
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 36,
+          "score": 18.4
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 47,
+          "score": 17.04
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 48,
+          "score": 16.36
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 48,
+          "score": 16.36
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 51,
+          "score": 14.32
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 52,
+          "score": 13.64
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 54,
+          "score": 12.27
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 54,
+          "score": 12.27
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 62,
+          "score": 6.82
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 100,
+          "score": 0
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 225,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 81,
+          "score": 0
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 73,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 85,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 266,
+          "score": 0
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 78,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 138,
+          "score": 0
+        }
+      ],
+      "average": 54.58,
+      "metaTarget": 50
+    },
+    {
+      "kpi": "TME IMP",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "IPK-RD-10B",
+          "value": 6
+        },
+        {
+          "team": "TRR-TR-04D",
+          "value": 8
+        },
+        {
+          "team": "ITK-TR-02B",
+          "value": 10
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ACU-TR-03B",
+          "value": 64
+        },
+        {
+          "team": "ACA-RD-21C",
+          "value": 53
+        },
+        {
+          "team": "ACU-TR-01D",
+          "value": 33
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 10,
+          "score": 13.8
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 13,
+          "score": 13.8
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 8,
+          "score": 13.8
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 14,
+          "score": 13.8
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 12,
+          "score": 13.8
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 6,
+          "score": 13.8
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 18,
+          "score": 12.53
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 18,
+          "score": 12.53
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 21,
+          "score": 8.75
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 22,
+          "score": 7.5
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 23,
+          "score": 6.25
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 24,
+          "score": 5
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 33,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 64,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 53,
+          "score": 0
+        }
+      ],
+      "average": 22.6,
+      "metaTarget": 20
+    },
+    {
+      "kpi": "1º Login",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "ITK-TR-02B",
+          "value": 0
+        },
+        {
+          "team": "ACU-SG-01D",
+          "value": 0
+        },
+        {
+          "team": "IPT-RD-02C",
+          "value": 0
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ITE-RD-10B",
+          "value": 117
+        },
+        {
+          "team": "ACA-RD-21B",
+          "value": 43
+        },
+        {
+          "team": "IPT-RD-31B",
+          "value": 26
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 3,
+          "score": 6.3
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 1,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 3,
+          "score": 6.3
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 4,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 5,
+          "score": 6.3
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 0,
+          "score": 6.3
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 8,
+          "score": 5
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 11,
+          "score": 1.25
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 15,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 19,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 26,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 21,
+          "score": 0
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 18,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 23,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 43,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 117,
+          "score": 0
+        }
+      ],
+      "average": 6.89,
+      "metaTarget": 8
+    },
+    {
+      "kpi": "1º Desloc.",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "TRR-TR-03C",
+          "value": 0
+        },
+        {
+          "team": "ITK-SP-05D",
+          "value": 0
+        },
+        {
+          "team": "IPK-SK-01B",
+          "value": 6
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ITE-RD-10B",
+          "value": 166
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "value": 166
+        },
+        {
+          "team": "ITE-RD-02B",
+          "value": 101
+        }
+      ],
+      "scores": [
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 11,
+          "score": 10
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 8,
+          "score": 10
+        },
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 8,
+          "score": 10
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 18,
+          "score": 10
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 18,
+          "score": 10
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 19,
+          "score": 10
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 17,
+          "score": 10
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 19,
+          "score": 10
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 0,
+          "score": 10
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 0,
+          "score": 10
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 15,
+          "score": 10
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 13,
+          "score": 10
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 6,
+          "score": 10
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 19,
+          "score": 10
+        },
+        {
+          "team": "ITJ-RD-04D",
+          "rawValue": 7,
+          "score": 10
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 21,
+          "score": 9
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 22,
+          "score": 8
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 24,
+          "score": 6
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 25,
+          "score": 5
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 25,
+          "score": 5
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 26,
+          "score": 4
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 27,
+          "score": 3
+        },
+        {
+          "team": "IPK-RD-12C",
+          "rawValue": 27,
+          "score": 3
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 29,
+          "score": 1
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 29,
+          "score": 1
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 37,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SP-01B",
+          "rawValue": 77,
+          "score": 0
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 45,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 34,
+          "score": 0
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 166,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 46,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 101,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 33,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 33,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 44,
+          "score": 0
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 41,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 41,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 43,
+          "score": 0
+        },
+        {
+          "team": "IPK-RD-10B",
+          "rawValue": 54,
+          "score": 0
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 49,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 43,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 78,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 34,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 82,
+          "score": 0
+        },
+        {
+          "team": "ITK-SG-07C",
+          "rawValue": 37,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 166,
+          "score": 0
+        }
+      ],
+      "average": 37.33,
+      "metaTarget": 25
+    },
+    {
+      "kpi": "Retorno Base",
+      "direction": "lower-is-better",
+      "topTeams": [
+        {
+          "team": "ITK-RD-06C",
+          "value": 8
+        },
+        {
+          "team": "ITK-SG-01B",
+          "value": 14
+        },
+        {
+          "team": "IPK-RD-11B",
+          "value": 15
+        }
+      ],
+      "opportunityTeams": [
+        {
+          "team": "ACA-RD-03D",
+          "value": 146
+        },
+        {
+          "team": "IPT-RD-32C",
+          "value": 145
+        },
+        {
+          "team": "IPK-SK-01C",
+          "value": 120
+        }
+      ],
+      "scores": [
+        {
+          "team": "IPT-RD-02C",
+          "rawValue": 32,
+          "score": 7.5
+        },
+        {
+          "team": "IPT-RD-01B",
+          "rawValue": 17,
+          "score": 7.5
+        },
+        {
+          "team": "ITK-SG-01B",
+          "rawValue": 14,
+          "score": 7.5
+        },
+        {
+          "team": "ACU-TR-01D",
+          "rawValue": 34,
+          "score": 7.5
+        },
+        {
+          "team": "TRR-SP-02D",
+          "rawValue": 34,
+          "score": 7.5
+        },
+        {
+          "team": "ACU-TR-02D",
+          "rawValue": 16,
+          "score": 7.5
+        },
+        {
+          "team": "TRR-TR-03C",
+          "rawValue": 25,
+          "score": 7.5
+        },
+        {
+          "team": "IPK-RD-11B",
+          "rawValue": 15,
+          "score": 7.5
+        },
+        {
+          "team": "ITK-SP-05D",
+          "rawValue": 27,
+          "score": 7.5
+        },
+        {
+          "team": "ITK-RD-06C",
+          "rawValue": 8,
+          "score": 7.5
+        },
+        {
+          "team": "IPT-RD-23B",
+          "rawValue": 35,
+          "score": 7.5
+        },
+        {
+          "team": "ACU-SG-01C",
+          "rawValue": 39,
+          "score": 5.5
+        },
+        {
+          "team": "ITJ-TR-03B",
+          "rawValue": 39,
+          "score": 5.5
+        },
+        {
+          "team": "ACU-TR-03B",
+          "rawValue": 40,
+          "score": 5
+        },
+        {
+          "team": "ITJ-RD-05B",
+          "rawValue": 41,
+          "score": 4.5
+        },
+        {
+          "team": "TRR-TR-04D",
+          "rawValue": 48,
+          "score": 1
+        },
+        {
+          "team": "ITE-RD-02B",
+          "rawValue": 48,
+          "score": 1
+        },
+        {
+          "team": "ITE-RD-10B",
+          "rawValue": 48,
+          "score": 1
+        },
+        {
+          "team": "ITE-RD-03C",
+          "rawValue": 49,
+          "score": 0.5
+        },
+        {
+          "team": "ITK-TR-02B",
+          "rawValue": 60,
+          "score": 0
+        },
+        {
+          "team": "ACU-SG-01D",
+          "rawValue": 82,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-03D",
+          "rawValue": 146,
+          "score": 0
+        },
+        {
+          "team": "TRR-SG-01B",
+          "rawValue": 56,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-02B",
+          "rawValue": 52,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-21D",
+          "rawValue": 77,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-02B",
+          "rawValue": 58,
+          "score": 0
+        },
+        {
+          "team": "IPK-SK-01B",
+          "rawValue": 70,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-32C",
+          "rawValue": 145,
+          "score": 0
+        },
+        {
+          "team": "ITJ-TR-02D",
+          "rawValue": 79,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-01B",
+          "rawValue": 51,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-03B",
+          "rawValue": 54,
+          "score": 0
+        },
+        {
+          "team": "ACU-TR-02B",
+          "rawValue": 76,
+          "score": 0
+        },
+        {
+          "team": "ACU-SP-01C",
+          "rawValue": 60,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-03C",
+          "rawValue": 69,
+          "score": 0
+        },
+        {
+          "team": "IPT-RD-31B",
+          "rawValue": 52,
+          "score": 0
+        },
+        {
+          "team": "ITK-TR-04D",
+          "rawValue": 50,
+          "score": 0
+        },
+        {
+          "team": "IPK-SK-01C",
+          "rawValue": 120,
+          "score": 0
+        },
+        {
+          "team": "ITE-RD-02C",
+          "rawValue": 72,
+          "score": 0
+        },
+        {
+          "team": "ITJ-SG-07B",
+          "rawValue": 74,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21C",
+          "rawValue": 113,
+          "score": 0
+        },
+        {
+          "team": "ACA-RD-21B",
+          "rawValue": 104,
+          "score": 0
+        }
+      ],
+      "average": 56.8,
+      "metaTarget": 40
+    }
+  ],
+  "deviations": {
+    "mostRecurring": [],
+    "teamBreakdown": []
+  },
+  "specialAnalysis": {
+    "tempPrepAndSemOs": [
+      {
+        "team": "ITE-RD-10B",
+        "records": 1,
+        "tempPrepJornada": 181.38,
+        "semOrdemJornada": 257.48
+      },
+      {
+        "team": "ITJ-RD-05B",
+        "records": 1,
+        "tempPrepJornada": 168.9,
+        "semOrdemJornada": 176.18
+      },
+      {
+        "team": "ITJ-TR-02D",
+        "records": 1,
+        "tempPrepJornada": 72.15,
+        "semOrdemJornada": 137.45
+      },
+      {
+        "team": "ITE-RD-02B",
+        "records": 1,
+        "tempPrepJornada": 113.73,
+        "semOrdemJornada": 128.1
+      },
+      {
+        "team": "IPK-RD-11B",
+        "records": 1,
+        "tempPrepJornada": 30.72,
+        "semOrdemJornada": 123.28
+      },
+      {
+        "team": "ITJ-TR-03B",
+        "records": 1,
+        "tempPrepJornada": 46.87,
+        "semOrdemJornada": 108.18
+      },
+      {
+        "team": "ITK-RD-06C",
+        "records": 1,
+        "tempPrepJornada": 70.98,
+        "semOrdemJornada": 96
+      },
+      {
+        "team": "ITJ-SP-01B",
+        "records": 1,
+        "tempPrepJornada": 79.3,
+        "semOrdemJornada": 92.87
+      },
+      {
+        "team": "ITJ-SG-07B",
+        "records": 1,
+        "tempPrepJornada": 85.15,
+        "semOrdemJornada": 89.62
+      },
+      {
+        "team": "ITK-SG-01B",
+        "records": 1,
+        "tempPrepJornada": 26.98,
+        "semOrdemJornada": 88.18
+      },
+      {
+        "team": "IPT-RD-31B",
+        "records": 1,
+        "tempPrepJornada": 64.22,
+        "semOrdemJornada": 81.93
+      },
+      {
+        "team": "IPT-RD-03C",
+        "records": 1,
+        "tempPrepJornada": 74.08,
+        "semOrdemJornada": 75.57
+      },
+      {
+        "team": "ITK-TR-02B",
+        "records": 1,
+        "tempPrepJornada": 29.28,
+        "semOrdemJornada": 67.53
+      },
+      {
+        "team": "IPT-RD-23B",
+        "records": 1,
+        "tempPrepJornada": 102.1,
+        "semOrdemJornada": 65.05
+      },
+      {
+        "team": "ACU-TR-02B",
+        "records": 1,
+        "tempPrepJornada": 54.57,
+        "semOrdemJornada": 61.43
+      },
+      {
+        "team": "ACU-TR-02D",
+        "records": 1,
+        "tempPrepJornada": 38.8,
+        "semOrdemJornada": 58.35
+      },
+      {
+        "team": "ACA-RD-21B",
+        "records": 1,
+        "tempPrepJornada": 107.5,
+        "semOrdemJornada": 57.78
+      },
+      {
+        "team": "ACA-RD-02B",
+        "records": 1,
+        "tempPrepJornada": 56.4,
+        "semOrdemJornada": 52.87
+      },
+      {
+        "team": "IPT-RD-02C",
+        "records": 1,
+        "tempPrepJornada": 29.72,
+        "semOrdemJornada": 51.35
+      },
+      {
+        "team": "IPT-RD-32C",
+        "records": 1,
+        "tempPrepJornada": 86.12,
+        "semOrdemJornada": 51.13
+      },
+      {
+        "team": "ACU-SP-01C",
+        "records": 1,
+        "tempPrepJornada": 38.87,
+        "semOrdemJornada": 49.1
+      },
+      {
+        "team": "IPT-RD-01B",
+        "records": 1,
+        "tempPrepJornada": 52.8,
+        "semOrdemJornada": 49.03
+      },
+      {
+        "team": "ACU-TR-03B",
+        "records": 1,
+        "tempPrepJornada": 50.2,
+        "semOrdemJornada": 48.27
+      },
+      {
+        "team": "TRR-SP-02D",
+        "records": 1,
+        "tempPrepJornada": 27.98,
+        "semOrdemJornada": 47.8
+      },
+      {
+        "team": "IPT-RD-02B",
+        "records": 1,
+        "tempPrepJornada": 38.62,
+        "semOrdemJornada": 43.4
+      },
+      {
+        "team": "IPK-RD-10B",
+        "records": 1,
+        "tempPrepJornada": 64.07,
+        "semOrdemJornada": 42.73
+      },
+      {
+        "team": "ITE-RD-02C",
+        "records": 1,
+        "tempPrepJornada": 83.73,
+        "semOrdemJornada": 37.83
+      },
+      {
+        "team": "ITK-TR-04D",
+        "records": 1,
+        "tempPrepJornada": 84.02,
+        "semOrdemJornada": 34.42
+      },
+      {
+        "team": "ITE-RD-03C",
+        "records": 1,
+        "tempPrepJornada": 30.5,
+        "semOrdemJornada": 32.27
+      },
+      {
+        "team": "ACU-TR-01B",
+        "records": 1,
+        "tempPrepJornada": 164.75,
+        "semOrdemJornada": 29.15
+      },
+      {
+        "team": "TRR-SG-01B",
+        "records": 1,
+        "tempPrepJornada": 34.85,
+        "semOrdemJornada": 28.68
+      },
+      {
+        "team": "ACU-SG-01D",
+        "records": 1,
+        "tempPrepJornada": 15.45,
+        "semOrdemJornada": 28.22
+      },
+      {
+        "team": "ACA-RD-21C",
+        "records": 1,
+        "tempPrepJornada": 38.98,
+        "semOrdemJornada": 27.17
+      },
+      {
+        "team": "IPK-SK-01C",
+        "records": 1,
+        "tempPrepJornada": 35.12,
+        "semOrdemJornada": 24.95
+      },
+      {
+        "team": "ITE-RD-03B",
+        "records": 1,
+        "tempPrepJornada": 51.3,
+        "semOrdemJornada": 24.55
+      },
+      {
+        "team": "IPK-RD-12C",
+        "records": 1,
+        "tempPrepJornada": 27,
+        "semOrdemJornada": 21.6
+      },
+      {
+        "team": "ACU-TR-01D",
+        "records": 1,
+        "tempPrepJornada": 30.43,
+        "semOrdemJornada": 20.48
+      },
+      {
+        "team": "ITJ-RD-04D",
+        "records": 1,
+        "tempPrepJornada": 10.82,
+        "semOrdemJornada": 14.27
+      },
+      {
+        "team": "IPK-SK-01B",
+        "records": 1,
+        "tempPrepJornada": 35.97,
+        "semOrdemJornada": 13.02
+      },
+      {
+        "team": "TRR-TR-04D",
+        "records": 1,
+        "tempPrepJornada": 41.18,
+        "semOrdemJornada": 12.42
+      },
+      {
+        "team": "ACU-SG-01C",
+        "records": 1,
+        "tempPrepJornada": 42.65,
+        "semOrdemJornada": 12.38
+      },
+      {
+        "team": "ACA-RD-03D",
+        "records": 1,
+        "tempPrepJornada": 25.53,
+        "semOrdemJornada": 11.92
+      },
+      {
+        "team": "IPT-RD-21D",
+        "records": 1,
+        "tempPrepJornada": 31.6,
+        "semOrdemJornada": 5.82
+      },
+      {
+        "team": "ITK-SP-05D",
+        "records": 1,
+        "tempPrepJornada": 24,
+        "semOrdemJornada": -3.12
+      },
+      {
+        "team": "ITK-SG-07C",
+        "records": 1,
+        "tempPrepJornada": 49.6,
+        "semOrdemJornada": -12.38
+      },
+      {
+        "team": "TRR-TR-03C",
+        "records": 1,
+        "tempPrepJornada": 7.8,
+        "semOrdemJornada": -20.65
+      }
+    ],
+    "crossedInsights": [
+      {
+        "title": "Matriz Desvios vs Utilização",
+        "description": "Cruza equipes com desvios críticos de utilização/intervalo com os tempos calculados de TempPrep e SemOSentreOS.",
+        "evidence": []
+      },
+      {
+        "title": "Análise de Falsos Positivos de Retorno",
+        "description": "Identifica equipes com boa nota de Retorno Base e desvio de retorno suspeito (<8 min).",
+        "evidence": []
+      },
+      {
+        "title": "Culpabilidade do Ócio",
+        "description": "Relaciona alto SemOSentreOS com desvios de indisciplina de apontamento.",
+        "evidence": []
+      }
+    ],
+    "actionPlan": [
+      {
+        "team": "ITE-RD-10B",
+        "issues": [
+          "OS Dia abaixo do esperado (2, meta: 4.4)",
+          "Eficiência abaixo do esperado (27.1, meta: 100)",
+          "TME abaixo do esperado (138, meta: 50)",
+          "1º Login abaixo do esperado (117, meta: 8)",
+          "1º Desloc. abaixo do esperado (166, meta: 25)"
+        ],
+        "recommendations": [
+          "Revisar gestão de fila — ITE-RD-10B tem alto tempo sem OS entre ordens (257.48 min/dia em média).",
+          "Cobrar redução do TempPrep — equipe leva em média 181.38 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "ITJ-RD-05B",
+        "issues": [
+          "1º Desloc. abaixo do esperado (166, meta: 25)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ITE-RD-02B",
+        "issues": [
+          "1º Desloc. abaixo do esperado (101, meta: 25)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ITK-SG-01B",
+        "issues": [
+          "Reparo Por OS abaixo do esperado (7, meta: 1.2)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "IPT-RD-31B",
+        "issues": [
+          "1º Login abaixo do esperado (26, meta: 8)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ACA-RD-21B",
+        "issues": [
+          "1º Login abaixo do esperado (43, meta: 8)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "IPT-RD-32C",
+        "issues": [
+          "Utilização abaixo do esperado (46.4, meta: 85)",
+          "Retorno Base abaixo do esperado (145, meta: 40)"
+        ],
+        "recommendations": [
+          "Revisar gestão de fila — IPT-RD-32C tem alto tempo sem OS entre ordens (51.13 min/dia em média)."
+        ]
+      },
+      {
+        "team": "ACU-TR-03B",
+        "issues": [
+          "TME IMP abaixo do esperado (64, meta: 20)"
+        ],
+        "recommendations": [
+          "Cobrar redução do TempPrep — equipe leva em média 50.2 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "IPK-RD-10B",
+        "issues": [
+          "Utilização abaixo do esperado (35.7, meta: 85)"
+        ],
+        "recommendations": [
+          "Revisar gestão de fila — IPK-RD-10B tem alto tempo sem OS entre ordens (42.73 min/dia em média)."
+        ]
+      },
+      {
+        "team": "ACU-TR-01B",
+        "issues": [
+          "Reparo Por OS abaixo do esperado (6, meta: 1.2)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ACA-RD-21C",
+        "issues": [
+          "TME IMP abaixo do esperado (53, meta: 20)"
+        ],
+        "recommendations": [
+          "Cobrar redução do TempPrep — equipe leva em média 38.98 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "IPK-SK-01C",
+        "issues": [
+          "Eficiência abaixo do esperado (52.2, meta: 100)",
+          "Retorno Base abaixo do esperado (120, meta: 40)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "IPK-RD-12C",
+        "issues": [
+          "OS Dia abaixo do esperado (1, meta: 4.4)",
+          "TME abaixo do esperado (266, meta: 50)"
+        ],
+        "recommendations": [
+          "Cobrar redução do TempPrep — equipe leva em média 27 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "ACU-TR-01D",
+        "issues": [
+          "Reparo Por OS abaixo do esperado (7, meta: 1.2)",
+          "TME IMP abaixo do esperado (33, meta: 20)"
+        ],
+        "recommendations": [
+          "Cobrar redução do TempPrep — equipe leva em média 30.43 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "ITJ-RD-04D",
+        "issues": [
+          "Utilização abaixo do esperado (32.5, meta: 85)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ACU-SG-01C",
+        "issues": [
+          "TME abaixo do esperado (225, meta: 50)"
+        ],
+        "recommendations": [
+          "Cobrar redução do TempPrep — equipe leva em média 42.65 min/dia para confirmar deslocamento após despacho."
+        ]
+      },
+      {
+        "team": "ACA-RD-03D",
+        "issues": [
+          "Retorno Base abaixo do esperado (146, meta: 40)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ITK-SP-05D",
+        "issues": [
+          "Eficiência abaixo do esperado (51.2, meta: 100)"
+        ],
+        "recommendations": []
+      },
+      {
+        "team": "ITK-SG-07C",
+        "issues": [
+          "OS Dia abaixo do esperado (2, meta: 4.4)"
+        ],
+        "recommendations": []
+      }
+    ],
+    "osDiaAnalysis": [
+      {
+        "team": "IPK-RD-12C",
+        "osDiaValue": 1,
+        "metaTarget": 4.4,
+        "gap": 3.4,
+        "hdTotalMin": 540,
+        "flaggedOrders": [
+          {
+            "source": "Scanner 4.4 - CE M300",
+            "nr_ordem": "0040846145",
+            "classe": "PROTEÇÕES INTERMEDIÁRIAS",
+            "causa": "",
+            "despachada": "13/04/2026 17:21:36",
+            "a_caminho": "13/04/2026 17:27:19",
+            "no_local": "13/04/2026 18:22:18",
+            "liberada": "13/04/2026 22:48:44",
+            "inicio_intervalo": "",
+            "fim_intervalo": "",
+            "inicio_calendario": "13/04/2026 17:00:00",
+            "log_in": "13/04/2026 17:05:21",
+            "tr_ordem_min": 266,
+            "tl_ordem_min": 55,
+            "hd_total_min": 540,
+            "hd_pct_tr": 49.26,
+            "hd_pct_tl": 10.19,
+            "temp_prep_os_min": 27,
+            "sem_os_min": 21,
+            "flags": [
+              "tr_excede_hd",
+              "temp_prep_alto",
+              "sem_os_alto"
+            ]
+          }
+        ],
+        "summary": {
+          "countTrExceeds": 1,
+          "countTlExceeds": 0,
+          "countTempPrepAlto": 1,
+          "countSemOsAlto": 1
+        }
+      },
+      {
+        "team": "ITJ-SP-01B",
+        "osDiaValue": 2,
+        "metaTarget": 4.4,
+        "gap": 2.4,
+        "hdTotalMin": 587,
+        "flaggedOrders": [
+          {
+            "source": "Scanner 4.4 - CE M300",
+            "nr_ordem": "0040840211",
+            "classe": "AVARIA",
+            "causa": "DEGRADAÇÃO MATERIAL",
+            "despachada": "13/04/2026 08:23:01",
+            "a_caminho": "13/04/2026 09:17:29",
+            "no_local": "13/04/2026 11:02:17",
+            "liberada": "13/04/2026 16:11:37",
+            "inicio_intervalo": "",
+            "fim_intervalo": "",
+            "inicio_calendario": "13/04/2026 08:00:00",
+            "log_in": "13/04/2026 08:01:43",
+            "tr_ordem_min": 309,
+            "tl_ordem_min": 105,
+            "hd_total_min": 587,
+            "hd_pct_tr": 52.64,
+            "hd_pct_tl": 17.89,
+            "tempo_padrao_min": 350,
+            "temp_prep_os_min": 77,
+            "sem_os_min": 23,
+            "flags": [
+              "tr_excede_hd",
+              "temp_prep_alto",
+              "sem_os_alto"
+            ]
+          },
+          {
+            "source": "Scanner 4.4 - CE M300",
+            "nr_ordem": "0040846115",
+            "classe": "PROTEÇÕES INTERMEDIÁRIAS",
+            "causa": "DESCARGAS ATMOSFÉRICAS",
+            "despachada": "13/04/2026 17:21:28",
+            "a_caminho": "13/04/2026 17:23:46",
+            "no_local": "13/04/2026 17:36:53",
+            "liberada": "13/04/2026 18:20:41",
+            "inicio_intervalo": "",
+            "fim_intervalo": "",
+            "prev_liberada": "13/04/2026 16:11:37",
+            "prev_nr_ordem": "0040840211",
+            "inicio_calendario": "13/04/2026 08:00:00",
+            "log_in": "13/04/2026 08:01:43",
+            "tr_ordem_min": 44,
+            "tl_ordem_min": 13,
+            "hd_total_min": 587,
+            "hd_pct_tr": 7.5,
+            "hd_pct_tl": 2.21,
+            "tempo_padrao_min": 45,
+            "temp_prep_os_min": 2.3,
+            "sem_os_min": 69.85,
+            "flags": [
+              "sem_os_alto"
+            ]
+          }
+        ],
+        "summary": {
+          "countTrExceeds": 1,
+          "countTlExceeds": 0,
+          "countTempPrepAlto": 1,
+          "countSemOsAlto": 2
+        }
+      },
+      {
+        "team": "ITE-RD-02B",
+        "osDiaValue": 2,
+        "metaTarget": 4.4,
+        "gap": 2.4,
+        "hdTotalMin": 491,
+        "flaggedOrders": [
+          {
+            "source": "Scanner 4.4 - CE M300",
+            "nr_ordem": "BA02364936",
+            "classe": "DISPARO DE CABECEIRA",
+            "causa": "DEGRADAÇÃO MATERIAL",
+            "despachada": "13/04/2026 07:29:12",
+            "a_caminho": "13/04/2026 07:41:46",
+            "no_local": "13/04/2026 07:43:10",
+            "liberada": "13/04/2026 11:23:12",
+            "inicio_intervalo": "",
+            "fim_intervalo": "",
+            "inicio_calendario": "13/04/2026 06:00:00",
+            "log_in": "13/04/2026 05:52:13",
+            "tr_ordem_min": 220,
+            "tl_ordem_min": 2,
+            "hd_total_min": 491,
+            "hd_pct_tr": 44.81,
+            "hd_pct_tl": 0.41,
+            "tempo_padrao_min": 240,
+            "temp_prep_os_min": 101,
+            "sem_os_min": 89,
+            "flags": [
+              "tr_excede_hd",
+              "temp_prep_alto",
+              "sem_os_alto"
+            ]
+          },
+          {
+            "source": "Scanner 4.4 - CE M300",
+            "nr_ordem": "0040843297",
+            "classe": "AVARIA",
+            "causa": "DEFEITO EM MEDIDOR",
+            "despachada": "13/04/2026 12:47:06",
+            "a_caminho": "13/04/2026 12:59:50",
+            "no_local": "13/04/2026 13:06:32",
+            "liberada": "13/04/2026 14:00:19",
+            "inicio_intervalo": "13/04/2026 11:57:22",
+            "fim_intervalo": "13/04/2026 12:42:50",
+            "prev_liberada": "13/04/2026 11:23:12",
+            "prev_nr_ordem": "BA02364936",
+            "inicio_calendario": "13/04/2026 06:00:00",
+            "log_in": "13/04/2026 05:52:13",
+            "tr_ordem_min": 54,
+            "tl_ordem_min": 7,
+            "hd_total_min": 491,
+            "hd_pct_tr": 11,
+            "hd_pct_tl": 1.43,
+            "tempo_padrao_min": 50,
+            "temp_prep_os_min": 12.73,
+            "sem_os_min": 38.9,
+            "flags": [
+              "sem_os_alto"
+            ]
+          }
+        ],
+        "summary": {
+          "countTrExceeds": 1,
+          "countTlExceeds": 0,
+          "countTempPrepAlto": 1,
+          "countSemOsAlto": 2
+        }
+      }
+    ]
+  },
+  "outputFiles": {
+    "jsonPath": "C:\\Users\\BR0083895903\\source\\scanner_analytics\\src\\data\\scanner-analytics-report.json",
+    "markdownPath": "C:\\Users\\BR0083895903\\source\\scanner_analytics\\src\\data\\scanner-analytics-report.md"
+  }
+}
