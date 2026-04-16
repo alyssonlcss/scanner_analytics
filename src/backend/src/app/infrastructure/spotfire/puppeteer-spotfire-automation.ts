@@ -5951,7 +5951,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     for (let i = 0; i < n; i++) {
       await page.mouse.click(downCoords.x, downCoords.y);
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 80));
     }
 
     this.log('scrollRightPanelDownN: scrolled down', { filterTitle, n });
@@ -6061,7 +6061,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       await new Promise((r) => setTimeout(r, 80));
 
       if (i % 2 === 0 && await checkVisible()) {
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 80));
         return true;
       }
     }
@@ -6207,7 +6207,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             }
           }
 
-          await new Promise((r) => setTimeout(r, 150));
+          // Slow-path needs a brief settle; fast-path items are already rendered.
+          await new Promise((r) => setTimeout(r, needsSlowScroll ? 80 : 60));
 
           // Step 2 — get coordinates; on fast-path fall back to slow scroll if null.
           let coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
@@ -6225,7 +6226,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
           // Step 3 — click (page.mouse.click honours keyboard.down('Control') state).
           await page.mouse.click(coords.x, coords.y);
-          await new Promise((r) => setTimeout(r, 300));
+          // Slow-path (first of month): give Spotfire time to register before verifying.
+          // Fast-path: minimal delay — Ctrl is held so no full re-render between clicks.
+          await new Promise((r) => setTimeout(r, needsSlowScroll ? 150 : 60));
 
           // Step 4 — verify selection.
           const isSelected = await page.evaluate((args: { title: string; label: string }) => {
@@ -6255,7 +6258,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             this.logStep('data-referencia', 'OK', `selected date ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
           } else {
             this.logStep('data-referencia', 'WARN', `click did not select date`, { dateValue, attempt });
-            await new Promise((r) => setTimeout(r, 200));
+            await new Promise((r) => setTimeout(r, 80));
           }
         }
 
@@ -6264,11 +6267,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           this.logStep('data-referencia', 'WARN', `could not select date "${dateValue}" after ${maxRetries} attempts`);
         }
 
-        await this.waitForSpotfireIdle(page, 8000);
-
-        // Detect silent reload after idle wait — e.g. Spotfire refreshed
-        // while the wait was running. Must come before the batch-scroll check.
-        await this.assertDataReferenciaFilterVisible(page, filterTitle);
+        // Idle wait strategy: while Ctrl is held, Spotfire does not re-render the
+        // data view on each individual click, so waiting per date is wasteful.
+        // Only wait for idle on slow-path dates (first of each month) and right
+        // after batch scrolls — that is when the UI actually updates.
+        if (needsSlowScroll) {
+          await this.waitForSpotfireIdle(page, 8000);
+          await this.assertDataReferenciaFilterVisible(page, filterTitle);
+        }
 
         // Batch-scroll: the first visible window has only 3 real date slots because
         // "(All) X values" occupies the top row. After those 3 are selected, scroll
@@ -6281,6 +6287,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (itemSelected && shouldScrollBatch && nextIsSameMonth) {
           this.logStep('data-referencia', 'OK', 'batch-scrolling down 4 positions for next batch', { batchSelectCount });
           await this.scrollRightPanelDownN(page, filterTitle, 4);
+          // Wait for idle and check reload only after the batch scroll.
+          await this.waitForSpotfireIdle(page, 8000);
+          await this.assertDataReferenciaFilterVisible(page, filterTitle);
         }
       }
     } finally {
