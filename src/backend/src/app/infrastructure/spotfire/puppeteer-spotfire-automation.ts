@@ -3830,13 +3830,20 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       const isCorrectReport = currentFile && expectedFile && currentFile === expectedFile;
 
       if (currentUrl.includes('/analysis') && isCorrectReport && await this.isAnalysisReady(page)) {
-        this.info('Reutilizando página existente do Spotfire');
-        this.log('reusing existing Spotfire analysis page', {
+        // Reload the existing tab so scroll state and filter visual state are
+        // fully reset before applying new filters. This is faster than a full
+        // navigation to the analysis URL and covers "aplicar", "reaplicar" and
+        // backend startup cases where a tab is already open.
+        this.info('Recarregando página existente do Spotfire para resetar estado...');
+        this.log('reloading existing Spotfire analysis page', {
           reportTitle,
           currentUrl,
           currentFile,
           expectedFile,
         });
+        await page.reload({ waitUntil: 'networkidle2', timeout: 120000 });
+        await this.completeLoginIfRequired(page);
+        await this.waitForSpotfireIdle(page);
         return;
       }
 
