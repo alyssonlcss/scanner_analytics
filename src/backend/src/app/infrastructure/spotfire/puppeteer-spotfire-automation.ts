@@ -5915,6 +5915,48 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.log('scrollRightPanelFilterToTop: scrolled to top', { filterTitle, clicks });
   }
 
+  /**
+   * Clicks the "down" scroll button of a right-panel filter N times.
+   * Used to advance the visible window by N rows after selecting a batch of dates.
+   */
+  private async scrollRightPanelDownN(page: Page, filterTitle: string, n: number): Promise<void> {
+    const downCoords = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+
+      if (!panelRoot) return null;
+
+      const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
+      });
+
+      if (!filterEl) return null;
+
+      const downButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-bottom');
+      if (!downButton) return null;
+
+      const rect = downButton.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    }, filterTitle);
+
+    if (!downCoords) {
+      this.log('scrollRightPanelDownN: down button not found, skipping', { filterTitle, n });
+      return;
+    }
+
+    for (let i = 0; i < n; i++) {
+      await page.mouse.click(downCoords.x, downCoords.y);
+      await new Promise((r) => setTimeout(r, 60));
+    }
+
+    this.log('scrollRightPanelDownN: scrolled down', { filterTitle, n });
+  }
+
   private async scrollRightPanelItemIntoView(
     page: Page,
     filterTitle: string,
@@ -6108,17 +6150,43 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     this.emitProgress(request, `Aplicando filtro Data Referência (${dates.length} dia(s))...`);
 
-    // Same approach as applyScrollableListFilterPhysical:
-    // scroll via buttons, click via page.mouse.click, hold Ctrl via keyboard.down
+    // Batch-scroll strategy for speed:
+    //   • Dates format is DD/MM/YYYY — month key = characters 3-10 ("MM/YYYY").
+    //   • First date of each month group (and the very first date) uses the slow
+    //     scrollRightPanelItemIntoView to find the item precisely.
+    //   • All other dates within the same month are clicked directly (fast path)
+    //     because after every 4 successful selections we scroll the list down 4
+    //     positions, keeping the next 4 dates in view without per-item scanning.
+    //   • If the fast-path click misses (coords not found), we fall back to the
+    //     slow scroll path automatically.
+    const monthKey = (d: string) => d.substring(3); // "MM/YYYY"
     const maxRetries = 3;
     let ctrlHeld = false;
     const failedDates: string[] = [];
+    let batchSelectCount = 0;   // selections within current month batch
+    let currentMonthKey = '';
 
     try {
       for (let index = 0; index < dates.length; index += 1) {
         const dateValue = dates[index];
         const useCtrl = index > 0;
         let itemSelected = false;
+
+        // Detect silent Spotfire reload: if the filter panel is gone, the page
+        // reloaded without throwing. Throw a recognisable error so that the
+        // outer withSpotfireRecovery restarts the whole operation from scratch.
+        await this.assertDataReferenciaFilterVisible(page, filterTitle);
+
+        const dateMonth = monthKey(dateValue);
+        const isNewMonth = dateMonth !== currentMonthKey;
+
+        if (isNewMonth) {
+          currentMonthKey = dateMonth;
+          batchSelectCount = 0;
+        }
+
+        // true when we MUST scroll to find the item (first of month or first overall)
+        const needsSlowScroll = index === 0 || isNewMonth;
 
         // Hold Ctrl from the second item onwards and KEEP IT HELD
         if (useCtrl && !ctrlHeld) {
@@ -6128,27 +6196,38 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
-          // Step 1: Scroll the item into view using scroll buttons
-          const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
-          if (!scrolled) {
-            this.logStep('data-referencia', 'WARN', 'could not scroll date into view', { dateValue, attempt });
-            continue;
+          // Step 1 — ensure the item is visible.
+          //   Slow path: for the first date of each month or on retry.
+          //   Fast path: trust that batch-scroll keeps next items in view.
+          if (needsSlowScroll || attempt > 0) {
+            const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
+            if (!scrolled) {
+              this.logStep('data-referencia', 'WARN', 'could not scroll date into view', { dateValue, attempt });
+              continue;
+            }
           }
 
           await new Promise((r) => setTimeout(r, 150));
 
-          // Step 2: Get coordinates and click via page.mouse.click
-          // (page.mouse.click respects keyboard.down('Control') state)
-          const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
+          // Step 2 — get coordinates; on fast-path fall back to slow scroll if null.
+          let coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
+          if (!coords && !needsSlowScroll) {
+            this.logStep('data-referencia', 'WARN', 'fast-path: item not visible, falling back to slow scroll', { dateValue });
+            const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
+            if (scrolled) {
+              coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
+            }
+          }
           if (!coords) {
             this.logStep('data-referencia', 'WARN', 'could not get item coords', { dateValue, attempt });
             continue;
           }
 
+          // Step 3 — click (page.mouse.click honours keyboard.down('Control') state).
           await page.mouse.click(coords.x, coords.y);
           await new Promise((r) => setTimeout(r, 300));
 
-          // Step 3: Verify this item is now selected
+          // Step 4 — verify selection.
           const isSelected = await page.evaluate((args: { title: string; label: string }) => {
             function nc(v: string | null | undefined): string {
               return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -6172,6 +6251,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
           if (isSelected) {
             itemSelected = true;
+            batchSelectCount++;
             this.logStep('data-referencia', 'OK', `selected date ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
           } else {
             this.logStep('data-referencia', 'WARN', `click did not select date`, { dateValue, attempt });
@@ -6185,6 +6265,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         await this.waitForSpotfireIdle(page, 8000);
+
+        // Detect silent reload after idle wait — e.g. Spotfire refreshed
+        // while the wait was running. Must come before the batch-scroll check.
+        await this.assertDataReferenciaFilterVisible(page, filterTitle);
+
+        // Batch-scroll: the first visible window has only 3 real date slots because
+        // "(All) X values" occupies the top row. After those 3 are selected, scroll
+        // down 4 to reveal the next 4 dates, then every 4 after that.
+        // Pattern: scroll at batchSelectCount = 3, 7, 11, 15, ...
+        const nextDate = index < dates.length - 1 ? dates[index + 1] : null;
+        const nextIsSameMonth = nextDate !== null && monthKey(nextDate) === currentMonthKey;
+        const shouldScrollBatch = batchSelectCount === 3
+          || (batchSelectCount > 3 && (batchSelectCount - 3) % 4 === 0);
+        if (itemSelected && shouldScrollBatch && nextIsSameMonth) {
+          this.logStep('data-referencia', 'OK', 'batch-scrolling down 4 positions for next batch', { batchSelectCount });
+          await this.scrollRightPanelDownN(page, filterTitle, 4);
+        }
       }
     } finally {
       if (ctrlHeld) {
@@ -6211,6 +6308,34 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     this.logStep('data-referencia', 'OK', `Data Referência filter applied: ${selectedCount}/${dates.length} date(s) selected`);
     this.emitProgress(request, 'Filtro Data Referência aplicado');
+  }
+
+  /**
+   * Checks that the right-panel filter named `filterTitle` is still present in
+   * the DOM. If it is gone (because Spotfire silently reloaded the page without
+   * throwing a Puppeteer error), throws an error whose message matches
+   * `isSpotfireReloadError` so that `withSpotfireRecovery` triggers a full retry.
+   */
+  private async assertDataReferenciaFilterVisible(page: Page, filterTitle: string): Promise<void> {
+    const found = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+      if (!panelRoot) return false;
+      return Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).some((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
+      });
+    }, filterTitle).catch(() => false);
+
+    if (!found) {
+      throw new Error(
+        `execution context was destroyed: filter panel for "${filterTitle}" is no longer in the DOM — ` +
+        `Spotfire likely reloaded silently`,
+      );
+    }
   }
 
   private isSpotfireReloadError(error: unknown): boolean {
