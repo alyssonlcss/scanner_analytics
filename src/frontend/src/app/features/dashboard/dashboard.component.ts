@@ -1871,6 +1871,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected readonly loading = signal(false);
   protected readonly progressMessage = signal('');
+  protected readonly progressLog = signal<string[]>([]);
+  protected readonly latestFilterLog = computed(() => {
+    const log = this.progressLog();
+    return log.length > 0 ? log[log.length - 1] : '';
+  });
   protected readonly generatingReport = computed(() => this.progressMessage().toLowerCase().startsWith('gerando relat'));
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
@@ -2304,6 +2309,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.cancelActiveDownloadRequest();
     this.loading.set(true);
     this.progressMessage.set('');
+    this.progressLog.set([]);
     this.errorMessage.set('');
 
     const selectedFilters = this.buildSelectedFilters();
@@ -2318,7 +2324,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       },
       {
         onProgress: (message) => {
-          this.zone.run(() => this.progressMessage.set(message));
+          this.zone.run(() => {
+            this.progressMessage.set(message);
+            if (message.startsWith('✓ Filtro')) {
+              this.progressLog.update((log) => [...log, message]);
+            }
+          });
         },
         onResult: () => {
           this.zone.run(() => {

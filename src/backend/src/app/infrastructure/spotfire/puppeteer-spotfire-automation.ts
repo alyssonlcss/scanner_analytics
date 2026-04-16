@@ -180,7 +180,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             if (filtersToApply.length > 0) {
               this.info(`Aplicando ${filtersToApply.length} filtro(s): ${filtersToApply.map(f => f.title).join(', ')}`);
               this.emitProgress(req, `Aplicando ${filtersToApply.length} filtro(s)...`);
-              await this.raceAbort(this.applySelectedFilters(page, filtersToApply), req.signal);
+              await this.raceAbort(this.applySelectedFilters(page, filtersToApply, req), req.signal);
               await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
               filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
               this.logFiltersSummary(filters);
@@ -336,7 +336,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
   }
 
-  private async applySelectedFilters(page: Page, filters: SpotfireFilter[]): Promise<void> {
+  private async applySelectedFilters(page: Page, filters: SpotfireFilter[], req?: ScannerRunRequest): Promise<void> {
     this.log('applying selected filters from request (sequential with validation)', {
       count: filters.length,
       order: filters.map((f) => f.title),
@@ -486,6 +486,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
       const expectedLabel = (filter.selectedValues ?? []).join(', ') || filter.textValue || '';
       this.info(`Filtro "${filter.title}" [${filterIndex + 1}/${filters.length}]: esperado=[${expectedLabel}] → aplicado ✓`);
+      if (req) {
+        this.emitProgress(req, `✓ Filtro "${filter.title}": [${expectedLabel || '—'}]`);
+      }
 
       this.logStep('filter-sequence', 'OK', `filter ${filterIndex + 1}/${filters.length} validated - proceeding to next`, {
         title: filter.title,
