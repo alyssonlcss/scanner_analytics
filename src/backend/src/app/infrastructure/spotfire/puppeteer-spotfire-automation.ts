@@ -109,7 +109,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         const abortHandler = () => {
-          this.logStep('data-download', 'WARN', 'aborting extraction run because a newer request replaced it');
+          if (this.isSupersededAbort(req.signal)) {
+            this.logStep('data-download', 'WARN', 'extraction superseded by a newer request — keeping session alive for reuse');
+            return;
+          }
+          this.logStep('data-download', 'WARN', 'aborting extraction run — disposing session');
           void this.disposeAutomationSession().catch(() => undefined);
         };
 
@@ -290,6 +294,8 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
           if (extractionResult !== undefined && this.environment.spotfire.keepOpen) {
             this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
+          } else if (this.isSupersededAbort(req.signal)) {
+            this.logStep('browser', 'OK', 'keeping browser and page open because job was superseded — next job will reuse this session');
           } else {
             const reason = extractionResult !== undefined
               ? 'closing browser because keepOpen=false'
@@ -3640,6 +3646,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
+  private isSupersededAbort(signal?: AbortSignal): boolean {
+    if (!signal?.aborted) return false;
+    const reason = signal.reason;
+    // Handles both DOMException (internal runSerialized supersede) and plain Error
+    // (external HTTP controller in create-server.ts) — both use the same message.
+    return reason instanceof Error
+      && reason.name === 'AbortError'
+      && reason.message === 'data download superseded by a newer request';
+  }
+
   private async runSerialized<T>(task: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     // Abort whatever is currently running — latest request wins.
     this.activeTaskAbort?.abort(new DOMException('data download superseded by a newer request', 'AbortError'));
@@ -5849,6 +5865,56 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
    * Scrolls to an item in the right-panel Data Referência filter using scroll buttons.
    * Returns true if the item was found and scrolled into view.
    */
+  /**
+   * Scrolls the list inside a right-panel filter back to the very top by
+   * clicking its "up" scroll button repeatedly until the first real item is visible.
+   */
+  private async scrollRightPanelFilterToTop(page: Page, filterTitle: string): Promise<void> {
+    const scrollButtons = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+
+      if (!panelRoot) return null;
+
+      const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
+      });
+
+      if (!filterEl) return null;
+
+      const upButton = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-top');
+      if (!upButton) return null;
+
+      const rect = upButton.getBoundingClientRect();
+      let totalItems = 50;
+      for (const item of filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')) {
+        const match = (item.getAttribute('title') ?? '').match(/\(All\)\s*(\d+)\s*values?/i);
+        if (match) { totalItems = parseInt(match[1], 10); break; }
+      }
+
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), totalItems };
+    }, filterTitle);
+
+    if (!scrollButtons) {
+      this.log('scrollRightPanelFilterToTop: scroll button not found, skipping', { filterTitle });
+      return;
+    }
+
+    // Click the "up" button enough times to guarantee we reach position 0.
+    const clicks = scrollButtons.totalItems + 5;
+    for (let i = 0; i < clicks; i++) {
+      await page.mouse.click(scrollButtons.x, scrollButtons.y);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
+    this.log('scrollRightPanelFilterToTop: scrolled to top', { filterTitle, clicks });
+  }
+
   private async scrollRightPanelItemIntoView(
     page: Page,
     filterTitle: string,
@@ -6030,6 +6096,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.ensureRightFiltersPanelOpen(page);
 
     const filterTitle = 'Data Referência';
+
+    // Scroll the filter list back to the top before selecting dates so that
+    // the "only scroll down" strategy in scrollRightPanelItemIntoView works
+    // correctly even when the tab is reused across "reaplicar" calls.
+    await this.scrollRightPanelFilterToTop(page, filterTitle);
+
     this.logStep('data-referencia', 'START', `applying ${dates.length} date(s) in right panel`, {
       dates,
     });
