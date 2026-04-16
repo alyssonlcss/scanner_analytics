@@ -643,6 +643,8 @@ type SavedFilterState = {
         pointer-events: none;
         align-content: center;
         justify-items: center;
+        background: rgba(200, 190, 180, 0.35);
+        backdrop-filter: blur(6px);
       }
 
       .report-loading p {
