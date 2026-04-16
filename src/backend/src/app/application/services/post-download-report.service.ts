@@ -164,8 +164,6 @@ const KPI_DIRECTIONS: Record<string, 'higher-is-better' | 'lower-is-better'> = {
   'OS Dia': 'higher-is-better',
   'Eficiência': 'higher-is-better',
   'Utilização': 'higher-is-better',
-  'Reparo Por OS': 'lower-is-better',
-  'TME': 'lower-is-better',
   'TME IMP': 'lower-is-better',
   '1º Login': 'lower-is-better',
   '1º Desloc.': 'lower-is-better',
@@ -176,8 +174,6 @@ const KPI_ALIASES: Record<string, string[]> = {
   'OS Dia': ['Ativ/Equipe/Dia', 'OS Dia', 'OS/Dia', 'OS_Dia'],
   'Eficiência': ['Eficiencia', 'Eficiência'],
   'Utilização': ['Utilização', 'Utilizacao'],
-  'Reparo Por OS': ['Qtd Serv IIº', 'Qtd Serv II', 'Reparo Por OS', 'Reparo/OS'],
-  'TME': ['TMR Secundário', 'TMR Secundario', 'TMR Sec', 'TME'],
   'TME IMP': ['TMR Improd.', 'TMR Improd', 'TME IMP', 'TME_IMP'],
   '1º Login': ['1º Login', '1o Login', 'Primeiro Login'],
   '1º Desloc.': ['1º Desloc', '1º Desloc.', '1o Desloc'],
@@ -198,8 +194,6 @@ const KPI_THRESHOLDS: KpiThreshold[] = [
   { kpi: 'OS Dia',        direction: 'higher-is-better', worst:  1.0,  meta:  4.4,  metaScore: 15,  best:  5.5,  maxScore: 16.5 },
   { kpi: 'Eficiência',    direction: 'higher-is-better', worst: 80,    meta: 100,   metaScore: 10,  best: 125,   maxScore: 11.7 },
   { kpi: 'Utilização',    direction: 'higher-is-better', worst: 60,    meta:  85,   metaScore: 10,  best:  88,   maxScore: 11.2 },
-  { kpi: 'Reparo Por OS', direction: 'lower-is-better',  worst:  1.32, meta:   1.2, metaScore:  5,  best:   1.18, maxScore:  5.8 },
-  { kpi: 'TME',           direction: 'lower-is-better',  worst: 72,    meta:  50,   metaScore: 15,  best:  45,   maxScore: 18.4 },
   { kpi: 'TME IMP',       direction: 'lower-is-better',  worst: 28,    meta:  20,   metaScore: 10,  best:  17,   maxScore: 13.8 },
   { kpi: '1º Login',      direction: 'lower-is-better',  worst: 12,    meta:   8,   metaScore:  5,  best:   7,   maxScore:  6.3 },
   { kpi: '1º Desloc.',    direction: 'lower-is-better',  worst: 30,    meta:  25,   metaScore:  5,  best:  20,   maxScore: 10   },
@@ -949,7 +943,7 @@ export class PostDownloadReportService {
           }
         }
 
-        if (insight.kpi === 'TME' || insight.kpi === 'TME IMP') {
+        if (insight.kpi === 'TME IMP') {
           if (tm.tempPrepJornada > 20) {
             recommendations.push(
               `Cobrar redução do TempPrep — equipe leva em média ${tm.tempPrepJornada} min/dia para confirmar deslocamento após despacho.`,
