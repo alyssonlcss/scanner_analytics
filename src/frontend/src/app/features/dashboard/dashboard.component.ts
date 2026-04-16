@@ -417,7 +417,25 @@ type SavedFilterState = {
                         </div>
                       </ng-container>
                       <ng-template #noOsDiaEvidence>
-                        <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
+                        <ng-container *ngIf="analysis.idleAnalysis; else noProblemData">
+                          <div class="osdia-idle-notice">
+                            <div class="osdia-idle-header">
+                              <span class="osdia-idle-icon">💤</span>
+                              <strong>Poucas ordens — possível ociosidade</strong>
+                            </div>
+                            <p class="osdia-idle-desc">
+                              Esta equipe executou apenas <strong>{{ analysis.totalOrders }}</strong> ordem(ns) no período e nenhuma apresentou alertas nos critérios avaliados.
+                            </p>
+                            <div class="osdia-idle-metrics">
+                              <span class="osdia-idle-chip osdia-idle-chip--hd">HD Total <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--ht">HT Total <strong>{{ analysis.htTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%)</strong></span>
+                            </div>
+                          </div>
+                        </ng-container>
+                        <ng-template #noProblemData>
+                          <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
+                        </ng-template>
                       </ng-template>
                     </div>
                   </div>
@@ -1558,6 +1576,66 @@ type SavedFilterState = {
       .rpt-cross-val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
       .rpt-no-data { margin: 0; font-size: 0.76rem; color: var(--muted); font-style: italic; }
+
+      /* ── Idle notice (equipe com poucas ordens sem alertas) ── */
+      .osdia-idle-notice {
+        margin-top: 10px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: rgba(234, 179, 8, 0.07);
+        border: 1px solid rgba(234, 179, 8, 0.28);
+        display: grid;
+        gap: 8px;
+      }
+
+      .osdia-idle-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #92400e;
+      }
+
+      .osdia-idle-icon { font-size: 1rem; line-height: 1; }
+
+      .osdia-idle-desc {
+        margin: 0;
+        font-size: 0.76rem;
+        color: #78350f;
+        line-height: 1.45;
+      }
+
+      .osdia-idle-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .osdia-idle-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 600;
+      }
+
+      .osdia-idle-chip--hd {
+        background: rgba(37, 99, 235, 0.1);
+        color: #1e40af;
+      }
+
+      .osdia-idle-chip--ht {
+        background: rgba(22, 163, 74, 0.1);
+        color: #166534;
+      }
+
+      .osdia-idle-chip--idle {
+        background: rgba(234, 179, 8, 0.15);
+        color: #92400e;
+      }
 
       /* ── Plano de Ação ── */
       .rpt-action-grid {

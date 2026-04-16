@@ -145,12 +145,18 @@ interface OsDiaTeamAnalysis {
   metaTarget: number;
   gap: number;
   hdTotalMin: number;
+  htTotalMin: number;
+  totalOrders: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
     countTrExceeds: number;
     countTlExceeds: number;
     countTempPrepAlto: number;
     countSemOsAlto: number;
+  };
+  idleAnalysis?: {
+    idleMin: number;
+    idlePct: number;
   };
 }
 
@@ -1085,6 +1091,7 @@ export class PostDownloadReportService {
     const trOrdemCol     = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
     const tlOrdemCol     = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
     const hdTotalCol     = deslocAcc.resolve(['HD Total', 'HD_Total']);
+    const htTotalCol     = deslocAcc.resolve(['HT total', 'HT Total', 'HT_Total']);
     const tempoPadraoCol      = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
     const inicioCalendarioCol  = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logInCorrigidoCol    = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
@@ -1110,6 +1117,8 @@ export class PostDownloadReportService {
     // 4. Collect evidence per team and accumulate HD totals
     const teamEvidences = new Map<string, OsDiaOrderEvidence[]>();
     const teamHdTotals = new Map<string, { sum: number; count: number }>();
+    const teamHtTotals = new Map<string, { sum: number; count: number }>();
+    const teamTotalOrders = new Map<string, number>();
 
     for (const { team, rows: groupRows } of grouped.values()) {
       // sort by A_Caminho ascending (same logic as calculateTempPrepSemOs)
@@ -1179,6 +1188,22 @@ export class PostDownloadReportService {
           }
         }
       }
+
+      // Accumulate HT Total (min trabalhados)
+      if (htTotalCol) {
+        for (const row of ordered) {
+          const htVal = parseNumber(String(row[htTotalCol] ?? ''));
+          if (htVal !== null && Number.isFinite(htVal)) {
+            const e = teamHtTotals.get(team) ?? { sum: 0, count: 0 };
+            e.sum += htVal;
+            e.count += 1;
+            teamHtTotals.set(team, e);
+          }
+        }
+      }
+
+      // Accumulate total order count for this team
+      teamTotalOrders.set(team, (teamTotalOrders.get(team) ?? 0) + ordered.length);
 
       // Build evidence for flagged orders
       const evidences = teamEvidences.get(team) ?? [];
@@ -1269,6 +1294,15 @@ export class PostDownloadReportService {
       const flaggedOrders = teamEvidences.get(team) ?? [];
       const hdEntry       = teamHdTotals.get(team);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
+      const htEntry       = teamHtTotals.get(team);
+      const avgHtTotal    = htEntry ? round2(htEntry.sum / htEntry.count) : 0;
+      const totalOrders   = teamTotalOrders.get(team) ?? 0;
+
+      const idleMin = round2(avgHdTotal - avgHtTotal);
+      const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
+        totalOrders < 3 && flaggedOrders.length === 0 && avgHdTotal > 0
+          ? { idleMin, idlePct: round2((idleMin / avgHdTotal) * 100) }
+          : undefined;
 
       result.push({
         team,
@@ -1276,6 +1310,8 @@ export class PostDownloadReportService {
         metaTarget:  OS_DIA_META,
         gap:         round2(OS_DIA_META - osDiaValue),
         hdTotalMin:  avgHdTotal,
+        htTotalMin:  avgHtTotal,
+        totalOrders,
         flaggedOrders,
         summary: {
           countTrExceeds:    flaggedOrders.filter((e) => e.flags.includes('tr_excede_hd')).length,
@@ -1283,6 +1319,7 @@ export class PostDownloadReportService {
           countTempPrepAlto: flaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
           countSemOsAlto:    flaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
         },
+        idleAnalysis,
       });
     }
 

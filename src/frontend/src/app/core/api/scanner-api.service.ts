@@ -94,12 +94,18 @@ export interface OsDiaTeamAnalysis {
   metaTarget: number;
   gap: number;
   hdTotalMin: number;
+  htTotalMin: number;
+  totalOrders: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
     countTrExceeds: number;
     countTlExceeds: number;
     countTempPrepAlto: number;
     countSemOsAlto: number;
+  };
+  idleAnalysis?: {
+    idleMin: number;
+    idlePct: number;
   };
 }
 
