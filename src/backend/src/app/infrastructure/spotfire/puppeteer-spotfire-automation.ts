@@ -6083,6 +6083,34 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     return false;
   }
 
+  /** Clicks the UP scroll button of a right-panel filter N times. */
+  private async scrollRightPanelUpN(page: Page, filterTitle: string, n: number, delayMs = 40): Promise<void> {
+    if (n <= 0) return;
+    const upCoords = await page.evaluate((title: string) => {
+      function nc(v: string | null | undefined): string {
+        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
+      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+      if (!panelRoot) return null;
+      const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
+      });
+      if (!filterEl) return null;
+      const btn = filterEl.querySelector<HTMLElement>('.ScrollbarButton.sfpc-top');
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    }, filterTitle);
+
+    if (!upCoords) return;
+    for (let i = 0; i < n; i++) {
+      await page.mouse.click(upCoords.x, upCoords.y);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+
   private async scrollRightPanelItemIntoView(
     page: Page,
     filterTitle: string,
@@ -6423,17 +6451,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     this.emitProgress(request, `Aplicando filtro Data Referência (${dates.length} dia(s))...`);
 
-    // Strategy — one-directional forward scroll:
-    //   • currentScrollPos tracks scroll state (0 = top, after scrollRightPanelFilterToTop).
-    //   • For each target date: targetScrollPos = max(0, listPos-1) so the date
-    //     lands at the 2nd slot of the visible window (not at the top edge).
-    //   • delta = targetScrollPos - currentScrollPos → scrollRightPanelDownN at 40ms.
-    //   • Within a month range (consecutive days): delta = 1 per date → very fast.
-    //   • Cross-month gap: delta spans all skipped calendar days between ranges.
-    //   • Ctrl is held from the 2nd date onwards (Spotfire buffers multi-select).
-    //   • waitForSpotfireIdle is called ONLY after the very first (Ctrl-less) click.
+    // Strategy — one-directional forward scroll with per-date confirm-before-advance:
+    //   • currentScrollPos tracks scroll state (0 = top).
+    //   • For each date: scroll DOWN to targetScrollPos, click, verify via title attr.
+    //   • On failure: read which dates are currently visible, compute the exact
+    //     correction (up or +1 down), adjust, retry — WITHOUT going back to top.
+    //   • Ctrl held from 2nd date. waitForSpotfireIdle ONLY after the first click.
     const monthKey = (d: string) => d.substring(3); // "MM/YYYY"
-    const maxRetries = 5;
+    const maxRetries = 6;
     let ctrlHeld = false;
     const failedDates: string[] = [];
     let currentMonthKey = '';
@@ -6460,28 +6485,72 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         { selected, failed, pending });
     };
 
-    // Verify whether a date is marked sfpc-selected in the filter DOM.
-    // Uses title OR textContent to locate the item (Spotfire sometimes omits title attr).
-    const verifySelected = async (label: string): Promise<boolean> =>
+    // Verify selection specifically via title="DD/MM/YYYY" + sfpc-selected class.
+    // Returns 'selected' | 'not_selected' | 'not_in_dom' so callers know WHY.
+    const verifySelected = async (label: string): Promise<'selected' | 'not_selected' | 'not_in_dom'> =>
       page.evaluate((args: { ft: string; label: string }) => {
         function nc(v: string | null | undefined): string {
           return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         }
         const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
           ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-        if (!panelRoot) return false;
+        if (!panelRoot) return 'not_in_dom' as const;
         const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
           const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
           return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.ft);
         });
-        if (!filterEl) return false;
-        const item = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-          .find((it) => {
-            const t = (it.getAttribute('title') ?? it.textContent ?? '').replace(/\s+/g, ' ').trim();
-            return t === args.label;
-          });
-        return item?.classList.contains('sfpc-selected') ?? false;
+        if (!filterEl) return 'not_in_dom' as const;
+        // Primary: exact title attribute match (as the user requires).
+        const safeTitle = args.label.replace(/"/g, '\\"');
+        let item: HTMLElement | null = filterEl.querySelector<HTMLElement>(`[title="${safeTitle}"]`);
+        // Fallback: textContent match in case Spotfire omits the title attr.
+        if (!item) {
+          item = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
+            .find((it) => (it.getAttribute('title') ?? it.textContent ?? '').replace(/\s+/g, ' ').trim() === args.label) ?? null;
+        }
+        if (!item) return 'not_in_dom' as const;
+        return item.classList.contains('sfpc-selected') ? 'selected' as const : 'not_selected' as const;
       }, { ft: filterTitle, label });
+
+    // Poll verifySelected up to maxWaitMs, stopping early on 'selected'.
+    // Returns the final status.
+    const pollSelected = async (label: string, maxWaitMs: number): Promise<'selected' | 'not_selected' | 'not_in_dom'> => {
+      const interval = 100;
+      const rounds = Math.ceil(maxWaitMs / interval);
+      let status: 'selected' | 'not_selected' | 'not_in_dom' = 'not_selected';
+      for (let t = 0; t < rounds; t++) {
+        await new Promise((r) => setTimeout(r, interval));
+        status = await verifySelected(label);
+        if (status === 'selected') break;
+      }
+      return status;
+    };
+
+    // Get the date labels currently visible in the filter list (title="DD/MM/YYYY" items).
+    // Returns them in DOM order (top → bottom).
+    const getVisibleDates = (): Promise<string[]> =>
+      page.evaluate((ft: string) => {
+        function nc(v: string | null | undefined): string {
+          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        }
+        const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+          ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+        if (!panelRoot) return [] as string[];
+        const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+          return nc(el?.getAttribute('title') ?? el?.textContent) === nc(ft);
+        });
+        if (!filterEl) return [] as string[];
+        const result: string[] = [];
+        for (const item of filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')) {
+          const t = (item.getAttribute('title') ?? '').trim();
+          // Only date-format items (DD/MM/YYYY).
+          if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) continue;
+          const rect = item.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) result.push(t);
+        }
+        return result;
+      }, filterTitle);
 
     try {
       for (let index = 0; index < dates.length; index += 1) {
@@ -6511,11 +6580,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           ctrlHeld = true;
         }
 
-        // ── Scroll to target position ──────────────────────────────────────────
-        // The Spotfire list has (All) at display-position 0 and fullDateList[i]
-        // at display-position i+1. targetScrollPos = listPos-1 → item lands at
-        // the 3rd slot of the 4-item window (not at the bottom edge), giving a
-        // comfortable margin for sub-pixel rendering and thin borders.
+        // ── Step 1: scroll DOWN to target position ─────────────────────────────
+        // fullDateList[i] is at display-pos i+1 ((All) is at 0).
+        // targetScrollPos = listPos-1 → item at 3rd slot of 4-item window.
         const listPos = listPositions.get(dateValue) ?? index;
         const targetScrollPos = Math.max(0, listPos - 1);
         const delta = Math.max(0, targetScrollPos - currentScrollPos);
@@ -6523,68 +6590,86 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         if (delta > 0) {
           if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
           if (delta > 1) {
-            this.logAlways(`[data-referencia] scroll +${delta} para "${dateValue}" (pos ${currentScrollPos}→${targetScrollPos})`);
+            this.logAlways(`[data-referencia] ↓ +${delta} para "${dateValue}" (pos ${currentScrollPos}→${targetScrollPos})`);
           }
           await this.scrollRightPanelDownN(page, filterTitle, delta, undefined, 40);
           currentScrollPos = targetScrollPos;
           if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
+          await new Promise((r) => setTimeout(r, 80)); // settle
         }
-        await new Promise((r) => setTimeout(r, 80)); // settle
 
-        // ── Click with retries — only proceeds to next date once confirmed ─────
-        // IMPORTANT: always check if already selected BEFORE re-clicking.
-        // Ctrl+click on an already-selected item DESELECTS it (toggle). If the
-        // first click worked but the DOM update was delayed past our poll window,
-        // a naive retry would undo the selection.
+        // ── Step 2: click + verify — retry with scroll correction on failure ───
+        // RULE: never click again if item is already selected (toggle danger).
+        // On each failure: inspect visible dates → compute exact correction →
+        //   scroll UP or +1 DOWN → retry. Never reset to top.
         for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
-          // Pre-check on every retry: if a previous slow click already worked, stop.
+          // Pre-check before every attempt (including attempt 0 — belt and braces).
+          const preStatus = await verifySelected(dateValue);
+          if (preStatus === 'selected') {
+            itemSelected = true;
+            selectedByMonth.get(currentMonthKey)?.push(dateValue);
+            this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue} (pre-check)`, { attempt });
+            break;
+          }
+
+          // Scroll correction on retries.
           if (attempt > 0) {
-            const alreadySelected = await verifySelected(dateValue);
-            if (alreadySelected) {
-              itemSelected = true;
-              selectedByMonth.get(currentMonthKey)?.push(dateValue);
-              this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue} (confirmed late)`, { attempt });
-              break;
-            }
-            // Genuinely not selected — scroll 1 more to shift item away from edge.
             if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
-            this.logAlways(`[data-referencia] retry ${attempt}: scroll +1 para "${dateValue}"`);
-            await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
-            currentScrollPos++;
+
+            // Inspect which dates are currently visible to know exactly where we are.
+            const visible = await getVisibleDates();
+            this.logAlways(`[data-referencia] retry ${attempt} — visíveis: [${visible.join(', ')}] — alvo: "${dateValue}"`);
+
+            if (visible.length > 0) {
+              const firstVisPos = listPositions.get(visible[0]) ?? 0;
+              const lastVisPos = listPositions.get(visible[visible.length - 1]) ?? 0;
+
+              if (listPos < firstVisPos) {
+                // Target is ABOVE the visible window — scroll UP to bring it in.
+                const upClicks = Math.min(firstVisPos - listPos + 1, 8);
+                this.logAlways(`[data-referencia] ↑ ${upClicks} para trazer "${dateValue}" para cima`);
+                await this.scrollRightPanelUpN(page, filterTitle, upClicks, 40);
+                currentScrollPos = Math.max(0, currentScrollPos - upClicks);
+              } else if (listPos > lastVisPos) {
+                // Target is BELOW the visible window — scroll DOWN 1 more.
+                this.logAlways(`[data-referencia] ↓ +1 para trazer "${dateValue}" para baixo`);
+                await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
+                currentScrollPos++;
+              } else {
+                // Target should be in window — maybe clipped at edge, scroll +1.
+                await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
+                currentScrollPos++;
+              }
+            } else {
+              // No visible dates — just nudge down 1.
+              await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
+              currentScrollPos++;
+            }
+
             if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
-            await new Promise((r) => setTimeout(r, 80));
+            await new Promise((r) => setTimeout(r, 80)); // settle after correction
           }
 
           const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
           if (!coords) {
             this.logStep('data-referencia', 'WARN', 'could not get item coords', { dateValue, attempt, currentScrollPos });
-            continue;
+            continue; // next retry will inspect visible and correct
           }
 
           await page.mouse.click(coords.x, coords.y);
 
-          // Poll for sfpc-selected up to 800 ms — Spotfire applies selection state
-          // asynchronously; slow machines need more time for the DOM class update.
-          let isSelected = false;
-          for (let t = 0; t < 8 && !isSelected; t++) {
-            await new Promise((r) => setTimeout(r, 100));
-            isSelected = await verifySelected(dateValue);
-          }
+          // Poll up to 1 s — Spotfire updates sfpc-selected asynchronously.
+          const status = await pollSelected(dateValue, 1000);
 
-          if (isSelected) {
+          if (status === 'selected') {
             itemSelected = true;
             selectedByMonth.get(currentMonthKey)?.push(dateValue);
             this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
           } else {
-            this.logStep('data-referencia', 'WARN', `click did not select`, { dateValue, attempt });
+            this.logStep('data-referencia', 'WARN',
+              status === 'not_in_dom' ? 'item left DOM after click (virtualised list moved)' : 'click did not select',
+              { dateValue, attempt });
           }
-        }
-
-        // Final safety net: one last check in case the last click landed after the poll window.
-        if (!itemSelected && await verifySelected(dateValue)) {
-          itemSelected = true;
-          selectedByMonth.get(currentMonthKey)?.push(dateValue);
-          this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue} (confirmed after retries)`);
         }
 
         if (!itemSelected) {
@@ -6594,7 +6679,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         }
 
         // Only wait for Spotfire to re-render after the very first (Ctrl-less) click.
-        // Ctrl+clicks don't trigger a full re-render until Ctrl is released.
         if (index === 0) {
           await this.waitForSpotfireIdle(page, 8000);
           await this.assertDataReferenciaFilterVisible(page, filterTitle);
