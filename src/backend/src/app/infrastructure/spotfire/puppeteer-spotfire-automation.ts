@@ -91,173 +91,224 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         outputDirectory,
       });
 
-      const abortHandler = () => {
-        this.logStep('data-download', 'WARN', 'aborting extraction run because a newer request replaced it');
-        void this.disposeAutomationSession().catch(() => undefined);
-      };
+      // ── Full-extraction retry loop ─────────────────────────────────────────
+      // If a filter or any step fails (non-abort), the session is disposed and
+      // the entire data-download is restarted up to MAX_EXTRACTION_RETRIES times.
+      const MAX_EXTRACTION_RETRIES = 2;
+      let lastExtractionError: unknown;
 
-      req.signal?.addEventListener('abort', abortHandler, { once: true });
-
-      const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), req.signal);
-      const errorMonitor = this.startErrorPopupMonitor(page, req);
-
-      try {
+      for (let extractionAttempt = 1; extractionAttempt <= MAX_EXTRACTION_RETRIES; extractionAttempt++) {
         this.throwIfAborted(req.signal);
 
-        if (createdNewPage && !this.usesExternalBrowserConnection()) {
-          this.emitProgress(req, 'Preparando navegador...');
-          await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), req.signal);
-          this.logStep('browser', 'OK', 'created new browser page for extraction run', {
-            width: 1600,
-            height: 1000,
-          });
+        if (extractionAttempt > 1) {
+          this.info(`[data-download] Reiniciando extração completa (tentativa ${extractionAttempt}/${MAX_EXTRACTION_RETRIES})...`);
+          this.emitProgress(req, `Reiniciando extração (tentativa ${extractionAttempt}/${MAX_EXTRACTION_RETRIES})...`);
+          // Brief pause before reopening the browser session
+          await new Promise<void>((r) => setTimeout(r, 3000));
+          this.throwIfAborted(req.signal);
         }
 
-        this.emitProgress(req, 'Abrindo análise no Spotfire...');
-        await this.withSpotfireRecovery(page, async () => {
-          await this.raceAbort(
-            this.openAnalysis(page, req.reportTitle ?? this.environment.spotfire.defaultReportTitle),
-            req.signal,
-          );
-        }, req);
-        this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
-          currentUrl: page.url(),
-        });
+        const abortHandler = () => {
+          this.logStep('data-download', 'WARN', 'aborting extraction run because a newer request replaced it');
+          void this.disposeAutomationSession().catch(() => undefined);
+        };
 
-        this.emitProgress(req, 'Preparando visualização...');
-        await this.withSpotfireRecovery(page, async () => {
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
+        req.signal?.addEventListener('abort', abortHandler, { once: true });
 
-          if (req.analysisTab?.trim()) {
-            this.emitProgress(req, `Abrindo aba "${req.analysisTab}"...`);
-            await this.raceAbort(this.openAnalysisTab(page, req.analysisTab), req.signal);
+        const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), req.signal);
+        const errorMonitor = this.startErrorPopupMonitor(page, req);
+
+        let extractionResult: ScannerAutomationResult | undefined;
+
+        try {
+          this.throwIfAborted(req.signal);
+
+          if (createdNewPage && !this.usesExternalBrowserConnection()) {
+            this.emitProgress(req, 'Preparando navegador...');
+            await this.raceAbort(page.setViewport({ width: 1600, height: 1000 }), req.signal);
+            this.logStep('browser', 'OK', 'created new browser page for extraction run', {
+              width: 1600,
+              height: 1000,
+            });
           }
 
-          await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
-        }, req);
-        const { availableTabs, availableTables, filters } = await this.withSpotfireRecovery(page, async () => {
-          this.emitProgress(req, 'Carregando filtros...');
-          await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
-          
-          if (!req.skipFilterReset) {
-            this.info('Resetando filtros...');
-            this.emitProgress(req, 'Resetando filtros...');
-            await this.raceAbort(this.resetVisibleFilters(page), req.signal);
-            await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
-          } else {
-            this.log('skipping filter reset because skipFilterReset=true');
-          }
-
-          const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), req.signal);
-          this.emitProgress(req, 'Lendo tabelas disponíveis...');
-          const availableTables = await this.raceAbort(this.loadAvailableTables(page), req.signal);
-          this.emitProgress(req, 'Lendo estado dos filtros...');
-          let filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
-
-          this.logFiltersSummary(filters);
-
-          const filtersToApply = this.buildFiltersToApply(filters, req);
-
-          if (filtersToApply.length > 0) {
-            this.info(`Aplicando ${filtersToApply.length} filtro(s): ${filtersToApply.map(f => f.title).join(', ')}`);
-            this.emitProgress(req, `Aplicando ${filtersToApply.length} filtro(s)...`);
-            await this.raceAbort(this.applySelectedFilters(page, filtersToApply), req.signal);
-            await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
-            filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
-            this.logFiltersSummary(filters);
-          }
-
-          return { availableTabs, availableTables, filters };
-        }, req);
-
-        // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
-        if (req.periodSelection?.dayRange) {
+          this.emitProgress(req, 'Abrindo análise no Spotfire...');
           await this.withSpotfireRecovery(page, async () => {
             await this.raceAbort(
-              this.applyDataReferenciaFilter(page, req.periodSelection!, req),
+              this.openAnalysis(page, req.reportTitle ?? this.environment.spotfire.defaultReportTitle),
               req.signal,
             );
           }, req);
-        }
+          this.logStep('analysis', 'OK', 'opened Spotfire analysis URL and starting tab/filter/export actions', {
+            currentUrl: page.url(),
+          });
 
-        const exportedFiles: Array<string | undefined> = [];
-        const MAX_TABLE_RETRIES = 2;
+          this.emitProgress(req, 'Preparando visualização...');
+          await this.withSpotfireRecovery(page, async () => {
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
 
-        // New multi-table export logic
-        if (req.tablesToExport && req.tablesToExport.length > 0) {
-          this.logStep('export', 'START', `starting multi-table export for ${req.tablesToExport.length} tables`);
-          this.emitProgress(req, 'Preparando exportação das tabelas...');
-          const totalTables = req.tablesToExport.length;
-          
-          for (let i = 0; i < totalTables; i++) {
-            const tableConfig = req.tablesToExport[i];
-            const label = `[${i + 1}/${totalTables}]`;
-            this.logStep('export', 'START', `${label} exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
+            if (req.analysisTab?.trim()) {
+              this.emitProgress(req, `Abrindo aba "${req.analysisTab}"...`);
+              await this.raceAbort(this.openAnalysisTab(page, req.analysisTab), req.signal);
+            }
 
-            let exportedFile: string | undefined;
-            let lastError: string | undefined;
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
+          }, req);
+          const { availableTabs, availableTables, filters } = await this.withSpotfireRecovery(page, async () => {
+            this.emitProgress(req, 'Carregando filtros...');
+            await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
 
-            for (let attempt = 1; attempt <= 1 + MAX_TABLE_RETRIES; attempt++) {
-              try {
-                exportedFile = await this.exportSingleTableFromTab(
-                  page, outputDirectory, req, tableConfig.tab, tableConfig.tableTitle, label,
-                );
+            if (!req.skipFilterReset) {
+              this.info('Resetando filtros...');
+              this.emitProgress(req, 'Resetando filtros...');
+              await this.raceAbort(this.resetVisibleFilters(page), req.signal);
+              await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+            } else {
+              this.log('skipping filter reset because skipFilterReset=true');
+            }
 
-                if (exportedFile) {
-                  this.logStep('export', 'OK', `${label} downloaded "${tableConfig.tableTitle}" -> ${exportedFile}`);
-                  break;
+            const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), req.signal);
+            this.emitProgress(req, 'Lendo tabelas disponíveis...');
+            const availableTables = await this.raceAbort(this.loadAvailableTables(page), req.signal);
+            this.emitProgress(req, 'Lendo estado dos filtros...');
+            let filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
+
+            this.logFiltersSummary(filters);
+
+            const filtersToApply = this.buildFiltersToApply(filters, req);
+
+            if (filtersToApply.length > 0) {
+              this.info(`Aplicando ${filtersToApply.length} filtro(s): ${filtersToApply.map(f => f.title).join(', ')}`);
+              this.emitProgress(req, `Aplicando ${filtersToApply.length} filtro(s)...`);
+              await this.raceAbort(this.applySelectedFilters(page, filtersToApply), req.signal);
+              await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+              filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
+              this.logFiltersSummary(filters);
+            }
+
+            return { availableTabs, availableTables, filters };
+          }, req);
+
+          // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
+          if (req.periodSelection?.dayRange) {
+            await this.withSpotfireRecovery(page, async () => {
+              await this.raceAbort(
+                this.applyDataReferenciaFilter(page, req.periodSelection!, req),
+                req.signal,
+              );
+            }, req);
+          }
+
+          const exportedFiles: Array<string | undefined> = [];
+          const MAX_TABLE_RETRIES = 2;
+
+          // New multi-table export logic
+          if (req.tablesToExport && req.tablesToExport.length > 0) {
+            this.logStep('export', 'START', `starting multi-table export for ${req.tablesToExport.length} tables`);
+            this.emitProgress(req, 'Preparando exportação das tabelas...');
+            const totalTables = req.tablesToExport.length;
+
+            for (let i = 0; i < totalTables; i++) {
+              const tableConfig = req.tablesToExport[i];
+              const label = `[${i + 1}/${totalTables}]`;
+              this.logStep('export', 'START', `${label} exporting table "${tableConfig.tableTitle}" from tab "${tableConfig.tab}"`);
+
+              let exportedFile: string | undefined;
+              let lastError: string | undefined;
+
+              for (let attempt = 1; attempt <= 1 + MAX_TABLE_RETRIES; attempt++) {
+                try {
+                  exportedFile = await this.exportSingleTableFromTab(
+                    page, outputDirectory, req, tableConfig.tab, tableConfig.tableTitle, label,
+                  );
+
+                  if (exportedFile) {
+                    this.logStep('export', 'OK', `${label} downloaded "${tableConfig.tableTitle}" -> ${exportedFile}`);
+                    break;
+                  }
+
+                  // No file returned — treat as failure for retry
+                  lastError = 'nenhum arquivo gerado pelo download';
+                  this.info(`${label} Tabela "${tableConfig.tableTitle}" — download sem arquivo (tentativa ${attempt}/${1 + MAX_TABLE_RETRIES})`);
+                } catch (err) {
+                  lastError = err instanceof Error ? err.message : String(err);
+                  this.info(`${label} Erro ao exportar "${tableConfig.tableTitle}" (tentativa ${attempt}/${1 + MAX_TABLE_RETRIES}): ${lastError}`);
                 }
 
-                // No file returned — treat as failure for retry
-                lastError = 'nenhum arquivo gerado pelo download';
-                this.info(`${label} Tabela "${tableConfig.tableTitle}" — download sem arquivo (tentativa ${attempt}/${1 + MAX_TABLE_RETRIES})`);
-              } catch (err) {
-                lastError = err instanceof Error ? err.message : String(err);
-                this.info(`${label} Erro ao exportar "${tableConfig.tableTitle}" (tentativa ${attempt}/${1 + MAX_TABLE_RETRIES}): ${lastError}`);
+                if (attempt <= MAX_TABLE_RETRIES) {
+                  this.info(`${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
+                  this.emitProgress(req, `${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
+                  await this.waitForSpotfireIdle(page);
+                }
               }
 
-              if (attempt <= MAX_TABLE_RETRIES) {
-                this.info(`${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
-                this.emitProgress(req, `${label} Tentando novamente exportar "${tableConfig.tableTitle}"...`);
-                await this.waitForSpotfireIdle(page);
+              exportedFiles.push(exportedFile);
+              if (!exportedFile) {
+                this.info(`${label} Tabela "${tableConfig.tableTitle}" FALHOU após ${1 + MAX_TABLE_RETRIES} tentativas ✗`);
+                this.emitProgress(req, `${label} Tabela "${tableConfig.tableTitle}" não pôde ser baixada — pulando`);
               }
             }
 
-            exportedFiles.push(exportedFile);
-            if (!exportedFile) {
-              this.info(`${label} Tabela "${tableConfig.tableTitle}" FALHOU após ${1 + MAX_TABLE_RETRIES} tentativas ✗`);
-              this.emitProgress(req, `${label} Tabela "${tableConfig.tableTitle}" não pôde ser baixada — pulando`);
-            }
+            const successCount = exportedFiles.filter(Boolean).length;
+            this.info(`Exportação: ${successCount}/${totalTables} tabelas baixadas${successCount === totalTables ? ' ✓' : ''}`);
+            this.logStep('export', 'OK', `multi-table export completed: ${successCount}/${totalTables} files downloaded`);
+          } else {
+            this.logStep('export', 'WARN', 'no tables configured for export (check SPOTFIRE_DOWNLOAD_TABLES env var)');
           }
-          
-          const successCount = exportedFiles.filter(Boolean).length;
-          this.info(`Exportação: ${successCount}/${totalTables} tabelas baixadas${successCount === totalTables ? ' ✓' : ''}`);
-          this.logStep('export', 'OK', `multi-table export completed: ${successCount}/${totalTables} files downloaded`);
-        } else {
-          this.logStep('export', 'WARN', 'no tables configured for export (check SPOTFIRE_DOWNLOAD_TABLES env var)');
+
+          const successFiles = exportedFiles.filter((f): f is string => Boolean(f));
+          this.log(`export summary: ${successFiles.length} files downloaded`, { exportedFiles });
+
+          extractionResult = {
+            filters,
+            availableTabs,
+            availableTables,
+            exportFilePath: exportedFiles.find(Boolean),
+            exportedFiles,
+          };
+        } catch (err) {
+          lastExtractionError = err;
+
+          // Abort errors are never retried — propagate immediately
+          if ((err instanceof Error && err.name === 'AbortError') || req.signal?.aborted) {
+            throw err;
+          }
+
+          if (extractionAttempt < MAX_EXTRACTION_RETRIES) {
+            this.info(
+              `[data-download] Extração falhou na tentativa ${extractionAttempt}/${MAX_EXTRACTION_RETRIES}: ` +
+              `${err instanceof Error ? err.message : String(err)} — encerrando sessão e reiniciando...`,
+            );
+            this.logStep('data-download', 'WARN', `attempt ${extractionAttempt} failed — will retry full data-download`, {
+              error: err instanceof Error ? err.message : String(err),
+              extractionAttempt,
+            });
+          }
+        } finally {
+          errorMonitor.stop();
+          req.signal?.removeEventListener('abort', abortHandler);
+
+          if (extractionResult !== undefined && this.environment.spotfire.keepOpen) {
+            this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
+          } else {
+            const reason = extractionResult !== undefined
+              ? 'closing browser because keepOpen=false'
+              : `closing browser after failed extraction attempt ${extractionAttempt}`;
+            this.logStep('browser', 'WARN', reason);
+            await this.disposeAutomationSession().catch(() => undefined);
+          }
         }
 
-        const successFiles = exportedFiles.filter((f): f is string => Boolean(f));
-        this.log(`export summary: ${successFiles.length} files downloaded`, { exportedFiles });
-
-        return {
-          filters,
-          availableTabs,
-          availableTables,
-          exportFilePath: exportedFiles.find(Boolean),
-          exportedFiles,
-        };
-      } finally {
-        errorMonitor.stop();
-        req.signal?.removeEventListener('abort', abortHandler);
-
-        if (!this.environment.spotfire.keepOpen) {
-          this.logStep('browser', 'WARN', 'closing browser because keepOpen=false');
-          await this.disposeAutomationSession();
-        } else {
-          this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
+        if (extractionResult !== undefined) {
+          return extractionResult;
         }
+        // extractionResult is undefined → error was non-abort, loop continues
       }
+
+      // All retries exhausted
+      throw lastExtractionError instanceof Error
+        ? lastExtractionError
+        : new Error('runExtraction exhausted all retries');
     }, request.signal);
   }
 
@@ -322,10 +373,26 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       let lastAttemptReason = 'not attempted';
       const MAX_FILTER_RETRIES = 2;
 
-      // Outer retry loop: each retry re-locates and re-applies the filter from scratch
+      // Outer retry loop: each retry re-locates and re-applies the filter from scratch.
+      // On the last outer round we also reset all filters before retrying.
       for (let retryRound = 0; retryRound <= MAX_FILTER_RETRIES; retryRound += 1) {
         if (retryRound > 0) {
-          this.info(`Filtro "${filter.title}" — nova tentativa (${retryRound}/${MAX_FILTER_RETRIES})...`);
+          if (retryRound === MAX_FILTER_RETRIES) {
+            // Last round: full reset before retrying to clear any stale filter state
+            this.info(`Filtro "${filter.title}" — resetando filtros e tentando novamente (round ${retryRound}/${MAX_FILTER_RETRIES})...`);
+            await this.resetVisibleFilters(page);
+            await this.ensureAllFiltersVisible(page);
+            // Re-apply all previously confirmed filters so the state is consistent
+            for (const prevTitle of appliedFilters) {
+              const prevFilter = filters.find((f) => f.title === prevTitle);
+              if (prevFilter) {
+                await this.waitForSpotfireIdle(page);
+                await this.applySingleFilter(page, prevFilter);
+              }
+            }
+          } else {
+            this.info(`Filtro "${filter.title}" — nova tentativa (round ${retryRound}/${MAX_FILTER_RETRIES})...`);
+          }
           await this.waitForSpotfireIdle(page);
           await this.ensureAllFiltersVisible(page);
         }
@@ -350,9 +417,49 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           await this.waitForSpotfireIdle(page);
         }
 
-        if (result.applied) {
-          break;
+        if (!result.applied) {
+          continue; // go to next outer round
         }
+
+        // ── Post-apply verification ──────────────────────────────────────────
+        // Read back the actual filter state and confirm the value was accepted.
+        const MAX_VERIFY_RETRIES = 2;
+        let verified = false;
+        let verifyReason = 'not checked';
+
+        for (let verifyAttempt = 1; verifyAttempt <= MAX_VERIFY_RETRIES; verifyAttempt += 1) {
+          await this.waitForSpotfireIdle(page);
+          const check = await this.verifyFilterApplied(page, filter);
+          verifyReason = check.reason;
+
+          this.log('post-apply filter verification', {
+            title: filter.title,
+            verifyAttempt,
+            match: check.match,
+            reason: check.reason,
+            actual: check.actual ?? null,
+          });
+
+          if (check.match) {
+            verified = true;
+            break;
+          }
+
+          if (verifyAttempt < MAX_VERIFY_RETRIES) {
+            this.info(`Filtro "${filter.title}" — verificação falhou (tentativa ${verifyAttempt}/${MAX_VERIFY_RETRIES}): ${check.reason}. Reaplicando...`);
+            // Re-apply and try verification again
+            await this.applySingleFilter(page, filter);
+          }
+        }
+
+        if (verified) {
+          break; // outer retry loop done for this filter
+        }
+
+        // Verification failed — treat as not applied and go to next outer round
+        result = { applied: false, reason: `verification failed: ${verifyReason}` };
+        lastAttemptReason = result.reason;
+        this.info(`Filtro "${filter.title}" — verificação não confirmada após ${MAX_VERIFY_RETRIES} tentativas: ${verifyReason}`);
       }
 
       if (!result.applied) {
@@ -3363,6 +3470,74 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await new Promise((r) => setTimeout(r, 200));
 
     return { applied: true, reason: 'text filter applied' };
+  }
+
+  /**
+   * Reads the current DOM state of a single filter and checks whether the
+   * applied value matches what was requested.  Returns `{ match: true }` on
+   * success or `{ match: false, reason }` with a human-readable mismatch
+   * description so the caller can decide whether to retry.
+   */
+  private async verifyFilterApplied(
+    page: Page,
+    filter: SpotfireFilter,
+  ): Promise<{ match: boolean; reason: string; actual?: string }> {
+    try {
+      const currentFilters = await this.readVisibleFilters(page);
+      const found = currentFilters.find(
+        (f) => this.normalizeForCompare(f.title) === this.normalizeForCompare(filter.title),
+      );
+
+      if (!found) {
+        return { match: false, reason: 'filter not found after application' };
+      }
+
+      const nc = (v: string | null | undefined) => this.normalizeForCompare(v);
+
+      if (filter.kind === 'text') {
+        const expected = nc(filter.textValue);
+        const actual   = nc(found.textValue);
+        const match    = actual === expected || actual.includes(expected) || expected.includes(actual);
+        return match
+          ? { match: true, reason: 'text value matches' }
+          : { match: false, reason: `text mismatch: expected="${filter.textValue}" actual="${found.textValue}"`, actual: found.textValue ?? '' };
+      }
+
+      if (filter.kind === 'range') {
+        const expMin = nc(filter.range?.selectedMin);
+        const expMax = nc(filter.range?.selectedMax);
+        const actMin = nc(found.range?.selectedMin);
+        const actMax = nc(found.range?.selectedMax);
+        const match  = expMin === actMin && expMax === actMax;
+        return match
+          ? { match: true, reason: 'range matches' }
+          : { match: false, reason: `range mismatch: expected=[${expMin}..${expMax}] actual=[${actMin}..${actMax}]` };
+      }
+
+      // list / toggle-group: every requested value must appear in selectedValues
+      const requested = (filter.selectedValues ?? []).map(nc).filter(Boolean);
+      const actual    = (found.selectedValues  ?? []).map(nc);
+
+      if (requested.length === 0) {
+        return { match: true, reason: 'no specific values required' };
+      }
+
+      const missing = requested.filter((v) => !actual.includes(v));
+      if (missing.length === 0) {
+        return { match: true, reason: 'all selected values present' };
+      }
+
+      return {
+        match:  false,
+        reason: `missing values: [${missing.join(', ')}] — actual: [${actual.join(', ')}]`,
+        actual: actual.join(', '),
+      };
+    } catch (err) {
+      return {
+        match:  false,
+        reason: `verification threw: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
   }
 
   private hasRequestedFilterValue(filter: SpotfireFilter): boolean {
