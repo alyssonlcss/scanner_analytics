@@ -6139,9 +6139,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     const filterTitle = 'Data Referência';
 
-    // Scroll the filter list back to the top before selecting dates so that
-    // the "only scroll down" strategy in scrollRightPanelItemIntoView works
-    // correctly even when the tab is reused across "reaplicar" calls.
+    // Scroll the Data Referência list back to position 0 so the "only scroll
+    // down" batch strategy always starts from day 01.
+    // Only the right-panel list scroll is reset here — left-panel filters
+    // (Ano, Mês, Atuação, Base) are intentionally left untouched.
     await this.scrollRightPanelFilterToTop(page, filterTitle);
 
     this.logStep('data-referencia', 'START', `applying ${dates.length} date(s) in right panel`, {
