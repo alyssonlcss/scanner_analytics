@@ -75,7 +75,13 @@ type SavedFilterState = {
   template: `
     <main class="shell">
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
-        <div class="loading-spinner" *ngIf="!errorMessage()"></div>
+        <div class="loading-success-icon" *ngIf="!errorMessage() && generatingReport()">
+          <svg viewBox="0 0 52 52" aria-hidden="true">
+            <circle class="loading-success-circle" cx="26" cy="26" r="23" fill="none" stroke-width="3"/>
+            <polyline class="loading-success-check" points="14,27 22,35 38,18" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="loading-spinner" *ngIf="!errorMessage() && !generatingReport()"></div>
         <div class="loading-error-icon" *ngIf="errorMessage()">⚠</div>
         <p *ngIf="!errorMessage()">{{ progressMessage() || 'Aplicando filtros e baixando tabelas' }}</p>
         <p *ngIf="errorMessage()" class="loading-error-text">{{ errorMessage() }}</p>
@@ -690,6 +696,40 @@ type SavedFilterState = {
         border: 4px solid rgba(193, 18, 31, 0.14);
         border-top-color: var(--accent);
         animation: loading-spin 0.9s linear infinite;
+      }
+
+      .loading-success-icon {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 14px;
+      }
+
+      .loading-success-icon svg {
+        width: 56px;
+        height: 56px;
+        overflow: visible;
+      }
+
+      .loading-success-circle {
+        stroke: var(--accent);
+        stroke-dasharray: 145;
+        stroke-dashoffset: 145;
+        animation: success-circle 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      }
+
+      .loading-success-check {
+        stroke: var(--accent);
+        stroke-dasharray: 40;
+        stroke-dashoffset: 40;
+        animation: success-check 0.35s 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      }
+
+      @keyframes success-circle {
+        to { stroke-dashoffset: 0; }
+      }
+
+      @keyframes success-check {
+        to { stroke-dashoffset: 0; }
       }
 
       @keyframes loading-spin {
@@ -1829,6 +1869,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected readonly loading = signal(false);
   protected readonly progressMessage = signal('');
+  protected readonly generatingReport = computed(() => this.progressMessage().toLowerCase().startsWith('gerando relat'));
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
   protected readonly reportBarHidden = signal(true);
