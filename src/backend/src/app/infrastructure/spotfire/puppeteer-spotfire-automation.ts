@@ -6196,7 +6196,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         // true when we MUST scroll to find the item (first of month or first overall)
         const needsSlowScroll = index === 0 || isNewMonth;
 
-        // Hold Ctrl from the second item onwards and KEEP IT HELD
+        // Hold Ctrl from the second item onwards and KEEP IT HELD between date clicks.
+        // IMPORTANT: Ctrl must be released before any scroll-button click and
+        // re-acquired before the next date click, because Spotfire interprets
+        // Ctrl+scrollbar-click as a different action (jump to edge, etc.).
         if (useCtrl && !ctrlHeld) {
           await page.keyboard.down('Control');
           ctrlHeld = true;
@@ -6208,7 +6211,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           //   Slow path: for the first date of each month or on retry.
           //   Fast path: trust that batch-scroll keeps next items in view.
           if (needsSlowScroll || attempt > 0) {
+            // Release Ctrl before clicking scroll buttons.
+            if (ctrlHeld) {
+              await page.keyboard.up('Control');
+              ctrlHeld = false;
+            }
             const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
+            // Re-acquire Ctrl after scrolling, before clicking the date item.
+            if (useCtrl && !ctrlHeld) {
+              await page.keyboard.down('Control');
+              ctrlHeld = true;
+            }
             if (!scrolled) {
               this.logStep('data-referencia', 'WARN', 'could not scroll date into view', { dateValue, attempt });
               continue;
@@ -6222,7 +6235,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           let coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
           if (!coords && !needsSlowScroll) {
             this.logStep('data-referencia', 'WARN', 'fast-path: item not visible, falling back to slow scroll', { dateValue });
+            // Release Ctrl before scroll fallback.
+            if (ctrlHeld) {
+              await page.keyboard.up('Control');
+              ctrlHeld = false;
+            }
             const scrolled = await this.scrollRightPanelItemIntoView(page, filterTitle, dateValue);
+            // Re-acquire Ctrl after fallback scroll.
+            if (useCtrl && !ctrlHeld) {
+              await page.keyboard.down('Control');
+              ctrlHeld = true;
+            }
             if (scrolled) {
               coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
             }
@@ -6294,7 +6317,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           || (batchSelectCount > 3 && (batchSelectCount - 3) % 4 === 0);
         if (itemSelected && shouldScrollBatch && nextIsSameMonth) {
           this.logStep('data-referencia', 'OK', 'batch-scrolling down 4 positions for next batch', { batchSelectCount });
+          // Release Ctrl before clicking scroll buttons — Ctrl+scroll has different semantics.
+          if (ctrlHeld) {
+            await page.keyboard.up('Control');
+            ctrlHeld = false;
+          }
           await this.scrollRightPanelDownN(page, filterTitle, 4);
+          // Ctrl will be re-acquired at the top of the next loop iteration.
           // Wait for idle and check reload only after the batch scroll.
           await this.waitForSpotfireIdle(page, 8000);
           await this.assertDataReferenciaFilterVisible(page, filterTitle);
