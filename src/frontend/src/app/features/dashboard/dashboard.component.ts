@@ -330,6 +330,18 @@ type SavedFilterState = {
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
                         </span>
                       </div>
+                      <!-- Alerta de ociosidade: exibido sempre que idlePct >= 10% -->
+                      <div class="osdia-idle-notice" *ngIf="analysis.idleAnalysis">
+                        <div class="osdia-idle-header">
+                          <span class="osdia-idle-icon">⚠️</span>
+                          <strong>Ociosidade elevada — {{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}% da jornada sem trabalho registrado</strong>
+                        </div>
+                        <div class="osdia-idle-metrics">
+                          <span class="osdia-idle-chip osdia-idle-chip--hd">HD Total <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
+                          <span class="osdia-idle-chip osdia-idle-chip--ht">HT Total <strong>{{ analysis.htTotalMin | number:'1.0-0' }} min ({{ analysis.hdTotalMin > 0 ? (analysis.htTotalMin / analysis.hdTotalMin * 100 | number:'1.1-1') : '—' }}% da HD)</strong></span>
+                          <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
+                        </div>
+                      </div>
                       <ng-container *ngIf="analysis.flaggedOrders.length > 0; else noOsDiaEvidence">
                         <div class="osdia-ev-list">
                           <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
@@ -417,25 +429,7 @@ type SavedFilterState = {
                         </div>
                       </ng-container>
                       <ng-template #noOsDiaEvidence>
-                        <ng-container *ngIf="analysis.idleAnalysis; else noProblemData">
-                          <div class="osdia-idle-notice">
-                            <div class="osdia-idle-header">
-                              <span class="osdia-idle-icon">💤</span>
-                              <strong>Poucas ordens — possível ociosidade</strong>
-                            </div>
-                            <p class="osdia-idle-desc">
-                              Esta equipe executou apenas <strong>{{ analysis.totalOrders }}</strong> ordem(ns) no período e nenhuma apresentou alertas nos critérios avaliados.
-                            </p>
-                            <div class="osdia-idle-metrics">
-                              <span class="osdia-idle-chip osdia-idle-chip--hd">HD Total <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
-                              <span class="osdia-idle-chip osdia-idle-chip--ht">HT Total <strong>{{ analysis.htTotalMin | number:'1.0-0' }} min</strong></span>
-                              <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%)</strong></span>
-                            </div>
-                          </div>
-                        </ng-container>
-                        <ng-template #noProblemData>
-                          <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
-                        </ng-template>
+                        <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
                       </ng-template>
                     </div>
                   </div>

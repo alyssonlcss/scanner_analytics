@@ -227,7 +227,7 @@ export class PostDownloadReportService {
     const deviationInsights = this.buildDeviationInsights(filtered.desvios);
     const crossedInsights = this.buildCrossedInsights(teamMetrics, kpis, deviationInsights.teamBreakdown);
     const actionPlan = this.buildActionPlans(teamMetrics, kpis, deviationInsights.teamBreakdown);
-    const osDiaAnalysis = this.analyzeOsDia(filtered.deslocamentos, filtered.ranking);
+    const osDiaAnalysis = this.analyzeOsDia(filtered.deslocamentos, filtered.ranking, kpis);
 
     const generatedAt = new Date().toISOString();
     const report: GeneratedReport = {
@@ -1022,7 +1022,7 @@ export class PostDownloadReportService {
     return plans.slice(0, 25);
   }
 
-  private analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[]): OsDiaTeamAnalysis[] {
+  private analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): OsDiaTeamAnalysis[] {
     if (deslocRows.length === 0 || rankingRows.length === 0) {
       return [];
     }
@@ -1054,11 +1054,20 @@ export class PostDownloadReportService {
       }
     }
 
+    // Use the same 3 worst teams from the OS Dia KPI ranking opportunityTeams.
+    // Fall back to all-below-meta if no KPI insight is available.
+    const osDiaInsight = kpis.find((k) => k.kpi === 'OS Dia');
     const underPerforming = new Map<string, number>();
-    for (const [team, { sum, count }] of teamOsDiaTotals.entries()) {
-      const avg = sum / count;
-      if (avg < OS_DIA_META) {
-        underPerforming.set(team, avg);
+    if (osDiaInsight && osDiaInsight.opportunityTeams.length > 0) {
+      for (const t of osDiaInsight.opportunityTeams) {
+        underPerforming.set(t.team, t.value);
+      }
+    } else {
+      for (const [team, { sum, count }] of teamOsDiaTotals.entries()) {
+        const avg = sum / count;
+        if (avg < OS_DIA_META) {
+          underPerforming.set(team, avg);
+        }
       }
     }
 
@@ -1293,9 +1302,10 @@ export class PostDownloadReportService {
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
 
       const idleMin = round2(avgHdTotal - avgHtTotal);
+      const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
       const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
-        totalOrders < 3 && flaggedOrders.length === 0 && avgHdTotal > 0
-          ? { idleMin, idlePct: round2((idleMin / avgHdTotal) * 100) }
+        avgHdTotal > 0 && idlePct >= 10
+          ? { idleMin, idlePct }
           : undefined;
 
       result.push({
@@ -1317,7 +1327,14 @@ export class PostDownloadReportService {
       });
     }
 
-    return result.sort((a, b) => b.gap - a.gap).slice(0, 3);
+    return result.sort((a, b) => {
+      // Primary: lowest OS/Dia first
+      if (a.osDiaValue !== b.osDiaValue) return a.osDiaValue - b.osDiaValue;
+      // Secondary: most total alerts first
+      const aAlerts = a.summary.countTrExceeds + a.summary.countTlExceeds + a.summary.countTempPrepAlto + a.summary.countSemOsAlto;
+      const bAlerts = b.summary.countTrExceeds + b.summary.countTlExceeds + b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
+      return bAlerts - aAlerts;
+    }).slice(0, 3);
   }
 
   private buildMarkdownReport(report: GeneratedReport): string {
