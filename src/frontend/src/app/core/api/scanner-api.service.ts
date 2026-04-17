@@ -281,10 +281,15 @@ export class ScannerApiService {
     reportFilters?: {
       bases?: string[];
       teamTypes?: Array<'propria' | 'parceira'>;
+      teams?: string[];
       includeExtraTags?: boolean;
     };
   }): Observable<ScannerReportGenerateResult> {
     return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/generate`, payload);
+  }
+
+  public getTeams(): Observable<{ teams: string[] }> {
+    return this.http.get<{ teams: string[] }>(`${this.baseUrl}/scanner/reports/teams`);
   }
 
   public getExportDownloadUrl(jobId: string): string {

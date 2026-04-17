@@ -7,7 +7,7 @@ import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
 type ReportTypeValue = 'operacional';
-type ReportFilterKey = 'reportBase' | 'reportTipoEquipe';
+type ReportFilterKey = 'reportBase' | 'reportTipoEquipe' | 'reportEquipe';
 
 type SelectFilterState = {
   key: FilterKey;
@@ -2038,6 +2038,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private reportBarHideTimer: ReturnType<typeof setTimeout> | null = null;
   private isPointerInTopRevealZone = false;
   private hasLoadedDownloadData = false;
+  private availableTeams: string[] = [];
   private dragSelectionState: { key: FilterKey; mode: 'add' | 'remove'; anchorIndex: number; baseline: Set<string> } | null = null;
   private dragScrollTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly boundEndFilterDrag = () => {
@@ -2466,6 +2467,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               this.loading.set(false);
               this.progressMessage.set('');
               this.setupAnimations();
+              this.fetchAndUpdateTeams();
             },
             error: () => {
               this.loading.set(false);
@@ -2516,6 +2518,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         this.loading.set(false);
         this.progressMessage.set('');
         this.setupAnimations();
+        this.fetchAndUpdateTeams();
       },
       error: () => {
         this.loading.set(false);
@@ -2595,16 +2598,25 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         options: this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
         enabled: true,
       },
+      {
+        key: 'reportEquipe',
+        title: 'Equipe',
+        value: [ALL_OPTION],
+        options: this.withAllOption(this.availableTeams),
+        enabled: true,
+      },
     ];
   }
 
   private buildReportFiltersPayload(): {
     bases?: string[];
     teamTypes?: Array<'propria' | 'parceira'>;
+    teams?: string[];
     includeExtraTags: boolean;
   } {
     const baseFilter = this.reportFilterStates().find((filter) => filter.key === 'reportBase');
     const teamTypeFilter = this.reportFilterStates().find((filter) => filter.key === 'reportTipoEquipe');
+    const equipeFilter = this.reportFilterStates().find((filter) => filter.key === 'reportEquipe');
 
     const normalize = (filter: ReportSelectFilterState | undefined): string[] => {
       if (!filter || filter.value.includes(ALL_OPTION)) {
@@ -2618,12 +2630,30 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       .filter((value): value is 'propria' | 'parceira' => value !== null);
 
     const selectedBases = normalize(baseFilter);
+    const selectedTeams = normalize(equipeFilter);
 
     return {
       bases: selectedBases.length > 0 ? selectedBases : undefined,
       teamTypes: selectedTypes.length > 0 ? selectedTypes : undefined,
+      teams: selectedTeams.length > 0 ? selectedTeams : undefined,
       includeExtraTags: true,
     };
+  }
+
+  private fetchAndUpdateTeams(): void {
+    this.api.getTeams().subscribe({
+      next: (result) => {
+        this.availableTeams = result.teams;
+        const current = this.reportFilterStates();
+        const equipeFilter = current.find((f) => f.key === 'reportEquipe');
+        const currentValue = equipeFilter?.value ?? [ALL_OPTION];
+        this.reportFilterStates.set(current.map((f) =>
+          f.key === 'reportEquipe'
+            ? { ...f, options: this.withAllOption(result.teams), value: currentValue }
+            : f,
+        ));
+      },
+    });
   }
 
   private scheduleInstantReportRefresh(): void {

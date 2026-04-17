@@ -54,6 +54,7 @@ const reportGenerationSchema = z.object({
   reportFilters: z.object({
     bases: z.array(z.string().trim().min(1)).optional(),
     teamTypes: z.array(z.enum(['propria', 'parceira'])).optional(),
+    teams: z.array(z.string().trim().min(1)).optional(),
     includeExtraTags: z.boolean().optional(),
   }).optional(),
 });
@@ -242,6 +243,29 @@ export async function createServer() {
     }
 
     return reply.send(job);
+  });
+
+  server.get('/api/scanner/reports/teams', async (_request, reply) => {
+    const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
+    const potentialFiles = resolveDownloadedFiles(dataDirectory, downloadTargets);
+    const downloadedFiles: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
+
+    for (const file of potentialFiles) {
+      try {
+        await access(file.filePath);
+        downloadedFiles.push(file);
+      } catch { /* skip missing */ }
+    }
+
+    if (downloadedFiles.length === 0) {
+      const entries = await readdir(dataDirectory).catch(() => [] as string[]);
+      for (const entry of entries.filter((e) => e.toLowerCase().endsWith('.csv'))) {
+        downloadedFiles.push({ analysisTab: 'unknown', tableTitle: entry.replace(/\.csv$/i, ''), fileName: entry, filePath: join(dataDirectory, entry) });
+      }
+    }
+
+    const teams = await postDownloadReport.listTeams({ dataDirectory, downloadedFiles });
+    return reply.send({ teams });
   });
 
   server.post('/api/scanner/reports/generate', async (request, reply) => {

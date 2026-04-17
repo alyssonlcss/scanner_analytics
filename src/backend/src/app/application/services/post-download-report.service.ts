@@ -20,6 +20,7 @@ export interface DownloadedFileRef {
 export interface ReportFilterInput {
   bases?: string[];
   teamTypes?: TeamType[];
+  teams?: string[];
   includeExtraTags?: boolean;
 }
 
@@ -213,6 +214,25 @@ const KPI_THRESHOLDS: KpiThreshold[] = [
 export class PostDownloadReportService {
   public constructor(private readonly environment: Environment) {}
 
+  public async listTeams(params: {
+    dataDirectory: string;
+    downloadedFiles: DownloadedFileRef[];
+  }): Promise<string[]> {
+    const displacementFile = this.findFile(params.downloadedFiles, ['tab_completa', 'deslocamentos']);
+    if (!displacementFile) return [];
+    const rows = await this.readCsv(displacementFile.filePath);
+    if (rows.length === 0) return [];
+    const accessor = createAccessor(rows[0]);
+    const teamCol = accessor.resolve(['Equipe', 'Team', 'Equipe Nome']);
+    if (!teamCol) return [];
+    const teams = new Set<string>();
+    for (const row of rows) {
+      const v = (row[teamCol] ?? '').trim();
+      if (v) teams.add(v);
+    }
+    return Array.from(teams).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }
+
   public async generate(params: {
     dataDirectory: string;
     downloadedFiles: DownloadedFileRef[];
@@ -366,6 +386,14 @@ export class PostDownloadReportService {
   }
 
   private buildTeamMatcher(reportFilters: ReportFilterInput | undefined, includeExtraTags: boolean): (team: string) => boolean {
+    const selectedTeams = new Set((reportFilters?.teams ?? []).map((t) => t.toUpperCase().trim()));
+    if (selectedTeams.size > 0) {
+      return (teamNameRaw: string): boolean => {
+        const teamName = teamNameRaw.toUpperCase().trim();
+        return teamName.length > 0 && selectedTeams.has(teamName);
+      };
+    }
+
     const selectedBases = new Set((reportFilters?.bases ?? []).map((base) => normalizeToken(base)));
     const selectedTypes = new Set(reportFilters?.teamTypes ?? []);
     const hasBaseFilter = selectedBases.size > 0;
