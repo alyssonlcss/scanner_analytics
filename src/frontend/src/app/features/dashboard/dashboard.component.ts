@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
-import { type GeneratedReport, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type OsDiaOrderEvidence, ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
@@ -338,7 +338,8 @@ type SavedFilterState = {
                         </div>
                         <div class="osdia-idle-metrics">
                           <span class="osdia-idle-chip osdia-idle-chip--hd">HD Total <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
-                          <span class="osdia-idle-chip osdia-idle-chip--ht">HT Total <strong>{{ analysis.htTotalMin | number:'1.0-0' }} min ({{ analysis.hdTotalMin > 0 ? (analysis.htTotalMin / analysis.hdTotalMin * 100 | number:'1.1-1') : '—' }}% da HD)</strong></span>
+                          <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
+                          <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
                           <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
                         </div>
                       </div>
@@ -373,6 +374,11 @@ type SavedFilterState = {
                                 <span class="osdia-ev-ts-sep">→</span>
                                 <span class="osdia-ev-ts-label">Liberada</span>
                                 <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                                <ng-container *ngIf="getFimJornadaDetail(ev); let fj">
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Log Off</span>
+                                  <span class="osdia-ev-ts-val">{{ fj.to || '—' }}</span>
+                                </ng-container>
                               </ng-container>
                               <ng-template #primeiraOsLinha1>
                                 <span class="osdia-ev-ts-label">Início da jornada</span>
@@ -399,6 +405,11 @@ type SavedFilterState = {
                               <span class="osdia-ev-ts-sep">→</span>
                               <span class="osdia-ev-ts-label">Liberada</span>
                               <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                              <ng-container *ngIf="getFimJornadaDetail(ev); let fj">
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Log Off</span>
+                                <span class="osdia-ev-ts-val">{{ fj.to || '—' }}</span>
+                              </ng-container>
                             </div>
                             <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
                             <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
@@ -421,8 +432,18 @@ type SavedFilterState = {
                               <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
                                 <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 15 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 25 min</ng-container>.
                               </li>
-                              <li *ngIf="ev.flags.includes('sem_os_alto')" class="osdia-ev-alert">
-                                <strong>SemOrdem/OS:</strong> {{ ev.sem_os_min }} min<ng-container *ngIf="ev.prev_liberada"> sem nova OS após liberação da ordem anterior</ng-container><ng-container *ngIf="!ev.prev_liberada"> do Início Calendário até Despachada (1ª OS da jornada)</ng-container> — limite: 10 min.
+                              <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
+                                <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min — limite: 10 min.
+                                <ol class="osdia-sem-os-list">
+                                  <li *ngFor="let d of ev.sem_os_details">
+                                    <ng-container [ngSwitch]="d.type">
+                                      <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                      <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                      <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '—' }}) e Log Off Corrigido ({{ d.to || '—' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container>.</ng-container>
+                                      <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '—' }}) até Início Intervalo ({{ d.to || '—' }}).</ng-container>
+                                    </ng-container>
+                                  </li>
+                                </ol>
                               </li>
                             </ul>
                           </div>
@@ -1621,9 +1642,14 @@ type SavedFilterState = {
         color: #1e40af;
       }
 
-      .osdia-idle-chip--ht {
-        background: rgba(22, 163, 74, 0.1);
-        color: #166534;
+      .osdia-idle-chip--prep {
+        background: rgba(234, 179, 8, 0.1);
+        color: #92400e;
+      }
+
+      .osdia-idle-chip--sem {
+        background: rgba(249, 115, 22, 0.1);
+        color: #9a3412;
       }
 
       .osdia-idle-chip--idle {
@@ -1884,6 +1910,15 @@ type SavedFilterState = {
         color: #b91c3a;
       }
 
+      .osdia-sem-os-list {
+        margin: 2px 0 0 6px;
+        padding: 0;
+        list-style: decimal;
+        font-size: 0.74rem;
+        color: var(--text);
+        line-height: 1.5;
+      }
+
       .rpt-td-flag {
         color: #b91c3a;
         font-weight: 700;
@@ -2008,6 +2043,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.dragSelectionState = null;
     this.dragScrollTimer = null;
   };
+  private readonly boundKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'F5') {
+      event.preventDefault();
+      this.zone.run(() => this.regenerateReport());
+    }
+  };
   private readonly boundWindowMouseMove = (event: MouseEvent) => {
     const topRevealZonePx = 42;
     const isInTopZone = event.clientY <= topRevealZonePx;
@@ -2054,11 +2095,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     window.addEventListener('mouseup', this.boundEndFilterDrag);
     window.addEventListener('mousemove', this.boundWindowMouseMove, { passive: true });
+    window.addEventListener('keydown', this.boundKeyDown);
   }
 
   public ngOnDestroy(): void {
     window.removeEventListener('mouseup', this.boundEndFilterDrag);
     window.removeEventListener('mousemove', this.boundWindowMouseMove);
+    window.removeEventListener('keydown', this.boundKeyDown);
     if (this.reportApplyTimer) {
       clearTimeout(this.reportApplyTimer);
       this.reportApplyTimer = null;
@@ -2146,12 +2189,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected osDiaFlagLabel(flag: string): string {
     const labels: Record<string, string> = {
-      tr_excede_hd:   'TR>20%HD',
-      tl_excede_hd:   'TL>20%HD',
-      temp_prep_alto: 'TempPrep≥20min',
-      sem_os_alto:    'SemOS≥10min',
+      tr_excede_hd:       'TR>20%HD',
+      tl_excede_hd:       'TL>20%HD',
+      temp_prep_alto:     'TempPrep≥20min',
+      sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
+  }
+
+  protected getFimJornadaDetail(ev: OsDiaOrderEvidence): NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null {
+    return ev.sem_os_details?.find((d: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number]) => d.type === 'fim_jornada') ?? null;
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {
@@ -2449,6 +2496,32 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.loading.set(false);
     this.errorMessage.set('');
     this.progressMessage.set('');
+  }
+
+  private regenerateReport(): void {
+    if (this.loading()) return;
+
+    this.loading.set(true);
+    this.progressMessage.set('Regenerando relatório analítico...');
+    this.errorMessage.set('');
+
+    this.reportRefreshSubscription?.unsubscribe();
+    this.reportRefreshSubscription = this.api.generateReport({
+      reportFilters: this.buildReportFiltersPayload(),
+    }).subscribe({
+      next: (result) => {
+        this.hasLoadedDownloadData = true;
+        this.reportData.set(result.generatedReport);
+        this.loading.set(false);
+        this.progressMessage.set('');
+        this.setupAnimations();
+      },
+      error: () => {
+        this.loading.set(false);
+        this.progressMessage.set('');
+        this.errorMessage.set('Falha ao regenerar relatório');
+      },
+    });
   }
 
   private cancelActiveDownloadRequest(): void {

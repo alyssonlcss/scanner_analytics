@@ -135,7 +135,14 @@ interface OsDiaOrderEvidence {
   hd_pct_tl: number;
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
-  sem_os_min?: number;
+  sem_os_details?: Array<{
+    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    min: number;
+    from?: string;
+    to?: string;
+    interval_discounted?: boolean;
+  }>;
+  sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
 }
 
@@ -145,7 +152,8 @@ interface OsDiaTeamAnalysis {
   metaTarget: number;
   gap: number;
   hdTotalMin: number;
-  htTotalMin: number;
+  tempPrepTotalMin: number;
+  semOrdemTotalMin: number;
   totalOrders: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
@@ -414,6 +422,7 @@ export class PostDownloadReportService {
     const inicioIntervaloCol = accessor.resolve(['Inicio Intervalo', 'Início Intervalo']);
     const fimIntervaloCol = accessor.resolve(['Fim Intervalo']);
     const inicioCalendarioAggCol = accessor.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
+    const logOffCorrigidoCol = accessor.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol || !firstDeslocCol || !firstDespachoCol) {
       return [];
@@ -504,6 +513,31 @@ export class PostDownloadReportService {
         }
 
         semOsValues.push(semOs.value);
+      }
+
+      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval
+      if (logOffCorrigidoCol && liberadaCol) {
+        const lastRow = ordered[ordered.length - 1];
+        const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
+        const logOff = parseDateTimeBr(String(lastRow[logOffCorrigidoCol] ?? ''));
+        if (lastLiberada && logOff && logOff.getTime() > lastLiberada.getTime()) {
+          let gapMin = minutesBetween(logOff, lastLiberada);
+          // Discount 60min interval if it hasn't been applied yet
+          const intStart = inicioIntervaloCol ? parseDateTimeBr(String(lastRow[inicioIntervaloCol] ?? '')) : null;
+          const intEnd   = fimIntervaloCol    ? parseDateTimeBr(String(lastRow[fimIntervaloCol]    ?? '')) : null;
+          let intervalDiscounted = false;
+          if (!isInterOrdem && intStart && intEnd &&
+              intStart.getTime() >= lastLiberada.getTime() &&
+              intEnd.getTime() <= logOff.getTime()) {
+            const intDuration = minutesBetween(intEnd, intStart);
+            const discount = Math.min(intDuration, 60);
+            gapMin -= discount;
+            intervalDiscounted = true;
+          }
+          if (gapMin > 0) {
+            semOsValues.push(gapMin);
+          }
+        }
       }
 
       const tempPrepJornada = safeSum(tempPrepValues);
@@ -1094,10 +1128,10 @@ export class PostDownloadReportService {
     const trOrdemCol     = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
     const tlOrdemCol     = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
     const hdTotalCol     = deslocAcc.resolve(['HD Total', 'HD_Total']);
-    const htTotalCol     = deslocAcc.resolve(['HT total', 'HT Total', 'HT_Total']);
     const tempoPadraoCol      = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
     const inicioCalendarioCol  = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logInCorrigidoCol    = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
+    const logOffCorrigidoCol2  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) {
       return [];
@@ -1120,8 +1154,9 @@ export class PostDownloadReportService {
     // 4. Collect evidence per team and accumulate HD totals
     const teamEvidences = new Map<string, OsDiaOrderEvidence[]>();
     const teamHdTotals = new Map<string, { sum: number; count: number }>();
-    const teamHtTotals = new Map<string, { sum: number; count: number }>();
     const teamTotalOrders = new Map<string, number>();
+    const teamTempPrepSum = new Map<string, number>();
+    const teamSemOrdemSum = new Map<string, number>();
 
     for (const { team, rows: groupRows } of grouped.values()) {
       // sort by A_Caminho ascending (same logic as calculateTempPrepSemOs)
@@ -1179,6 +1214,32 @@ export class PostDownloadReportService {
         semOsValues.push(semOs.value);
       }
 
+      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval
+      let semOsFimJornadaMin = Number.NaN;
+      let semOsFimIntervalDiscounted = false;
+      if (logOffCorrigidoCol2 && liberadaCol) {
+        const lastRow = ordered[ordered.length - 1];
+        const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
+        const logOff = parseDateTimeBr(String(lastRow[logOffCorrigidoCol2] ?? ''));
+        if (lastLiberada && logOff && logOff.getTime() > lastLiberada.getTime()) {
+          let gapMin = minutesBetween(logOff, lastLiberada);
+          const intStart = inicioIntervaloCol ? parseDateTimeBr(String(lastRow[inicioIntervaloCol] ?? '')) : null;
+          const intEnd   = fimIntervaloCol    ? parseDateTimeBr(String(lastRow[fimIntervaloCol]    ?? '')) : null;
+          if (!isInterOrdem && intStart && intEnd &&
+              intStart.getTime() >= lastLiberada.getTime() &&
+              intEnd.getTime() <= logOff.getTime()) {
+            const intDuration = minutesBetween(intEnd, intStart);
+            const discount = Math.min(intDuration, 60);
+            gapMin -= discount;
+            semOsFimIntervalDiscounted = true;
+          }
+          if (gapMin > 0) {
+            semOsFimJornadaMin = gapMin;
+            semOsValues.push(gapMin);
+          }
+        }
+      }
+
       // Accumulate HD Total
       if (hdTotalCol) {
         for (const row of ordered) {
@@ -1192,16 +1253,15 @@ export class PostDownloadReportService {
         }
       }
 
-      // Accumulate HT Total (min trabalhados)
-      if (htTotalCol) {
-        for (const row of ordered) {
-          const htVal = parseNumber(String(row[htTotalCol] ?? ''));
-          if (htVal !== null && Number.isFinite(htVal)) {
-            const e = teamHtTotals.get(team) ?? { sum: 0, count: 0 };
-            e.sum += htVal;
-            e.count += 1;
-            teamHtTotals.set(team, e);
-          }
+      // Accumulate TempPrep and SemOrdem per team
+      for (const v of tempPrepValues) {
+        if (Number.isFinite(v) && v > 0) {
+          teamTempPrepSum.set(team, (teamTempPrepSum.get(team) ?? 0) + v);
+        }
+      }
+      for (const v of semOsValues) {
+        if (Number.isFinite(v) && v > 0) {
+          teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
         }
       }
 
@@ -1239,23 +1299,70 @@ export class PostDownloadReportService {
           flags.push('sem_os_alto');
         }
 
-        if (flags.length === 0) {
-          continue;
-        }
-
-        // Only include interval if it falls within [prev_liberada, liberada_atual]
+        // Detect intervalo_deslocamento: interval between prev Liberada and current A Caminho
         const prevLiberadaDate   = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
+        const aCaminhoDate       = parseDateTimeBr(String(row[caminhoCol] ?? ''));
         const liberadaAtualDate  = liberadaCol ? parseDateTimeBr(String(row[liberadaCol] ?? '')) : null;
         const inicioIntervaloRaw = inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '';
         const fimIntervaloRaw    = fimIntervaloCol    ? String(row[fimIntervaloCol]    ?? '').trim() : '';
         const inicioIntervaloDate = inicioIntervaloRaw ? parseDateTimeBr(inicioIntervaloRaw) : null;
+        const fimIntervaloDate    = fimIntervaloRaw    ? parseDateTimeBr(fimIntervaloRaw)    : null;
 
+        const hasIntervaloDeslocamento = Boolean(
+          prevLiberadaDate && aCaminhoDate &&
+          inicioIntervaloDate && fimIntervaloDate &&
+          inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
+          fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
+        );
+        if (hasIntervaloDeslocamento) {
+          flags.push('sem_os_alto');
+        }
+
+        // Remove duplicate flags
+        const uniqueFlags = [...new Set(flags)] as OsDiaOrderEvidence['flags'];
+
+        if (uniqueFlags.length === 0) {
+          continue;
+        }
+
+        // Only include interval if it falls within [prev_liberada, liberada_atual]
         const intervaloNaJanela = Boolean(
           inicioIntervaloDate &&
           liberadaAtualDate &&
           inicioIntervaloDate.getTime() <= liberadaAtualDate.getTime() &&
           (prevLiberadaDate === null || inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime()),
         );
+
+        // Build sem_os_details
+        const semOsDetails: NonNullable<OsDiaOrderEvidence['sem_os_details']> = [];
+        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
+          if (i === 0) {
+            semOsDetails.push({
+              type: 'inicio_jornada',
+              min:  round2(semOsMin),
+              from: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+              to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+            });
+          } else {
+            semOsDetails.push({
+              type: 'entre_ordens',
+              min:  round2(semOsMin),
+              from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+              to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+            });
+          }
+        }
+        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate) {
+          const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
+          semOsDetails.push({
+            type: 'intervalo_deslocamento',
+            min:  intMin,
+            from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+            to:   inicioIntervaloRaw || undefined,
+          });
+        }
+
+        const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
 
         evidences.push({
           source:           'Scanner 4.4 - CE M300',
@@ -1279,9 +1386,71 @@ export class PostDownloadReportService {
           hd_pct_tl:         hdPctTl,
           tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
           temp_prep_os_min:  Number.isFinite(tempPrepOs) ? round2(tempPrepOs) : undefined,
-          sem_os_min:        Number.isFinite(semOsMin)   ? round2(semOsMin)   : undefined,
-          flags,
+          sem_os_details:    semOsDetails.length > 0 ? semOsDetails : undefined,
+          sem_os_total_min:  semOsTotalMin,
+          flags:             uniqueFlags,
         });
+      }
+      // Add fim de jornada to the last order's evidence
+      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= SEM_OS_THRESHOLD_MIN) {
+        const lastRow = ordered[ordered.length - 1];
+        const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
+        const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() : undefined;
+        const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() : undefined;
+        const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
+          type: 'fim_jornada',
+          min:  round2(semOsFimJornadaMin),
+          from: liberadaStr || undefined,
+          to:   logOffStr || undefined,
+          interval_discounted: semOsFimIntervalDiscounted || undefined,
+        };
+
+        const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
+        if (existingEvidence) {
+          const details = existingEvidence.sem_os_details ?? [];
+          details.push(fimDetail);
+          existingEvidence.sem_os_details = details;
+          existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
+          if (!existingEvidence.flags.includes('sem_os_alto')) {
+            existingEvidence.flags.push('sem_os_alto');
+          }
+        } else {
+          // Last order had no flags — create evidence entry with full info
+          const i = ordered.length - 1;
+          const row = lastRow;
+          const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
+          const tlOrdemMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
+          const hdTotalMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
+          const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
+          const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+          const prevRow = i > 0 ? ordered[i - 1] : null;
+          evidences.push({
+            source:           'Scanner 4.4 - CE M300',
+            nr_ordem:          lastNrOrdem,
+            classe:            classeCol  ? String(row[classeCol]  ?? '').trim() : '',
+            causa:             causaCol   ? String(row[causaCol]   ?? '').trim() : '',
+            despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+            a_caminho:         String(row[caminhoCol] ?? '').trim(),
+            no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
+            liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
+            inicio_intervalo:  '',
+            fim_intervalo:     '',
+            prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
+            prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+            inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+            log_in:            logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
+            tr_ordem_min:      round2(trOrdemMin),
+            tl_ordem_min:      round2(tlOrdemMin),
+            hd_total_min:      round2(hdTotalMin),
+            hd_pct_tr:         hdPctTr,
+            hd_pct_tl:         hdPctTl,
+            tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
+            sem_os_details:    [fimDetail],
+            sem_os_total_min:  round2(semOsFimJornadaMin),
+            flags:             ['sem_os_alto'],
+          });
+        }
       }
       teamEvidences.set(team, evidences);
     }
@@ -1297,11 +1466,11 @@ export class PostDownloadReportService {
       const flaggedOrders = teamEvidences.get(team) ?? [];
       const hdEntry       = teamHdTotals.get(team);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
-      const htEntry       = teamHtTotals.get(team);
-      const avgHtTotal    = htEntry ? round2(htEntry.sum / htEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
+      const tempPrepTotal = round2(teamTempPrepSum.get(team) ?? 0);
+      const semOrdemTotal = round2(teamSemOrdemSum.get(team) ?? 0);
 
-      const idleMin = round2(avgHdTotal - avgHtTotal);
+      const idleMin = round2(tempPrepTotal + semOrdemTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
       const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
         avgHdTotal > 0 && idlePct >= 10
@@ -1314,7 +1483,8 @@ export class PostDownloadReportService {
         metaTarget:  OS_DIA_META,
         gap:         round2(OS_DIA_META - osDiaValue),
         hdTotalMin:  avgHdTotal,
-        htTotalMin:  avgHtTotal,
+        tempPrepTotalMin: tempPrepTotal,
+        semOrdemTotalMin: semOrdemTotal,
         totalOrders,
         flaggedOrders,
         summary: {
@@ -1524,7 +1694,7 @@ export class PostDownloadReportService {
             const flagStr = ev.flags.map((f) => flagLabel[f] ?? f).join(', ');
             const prevOsCell = ev.prev_nr_ordem ?? '—';
             const tempPrepCell = ev.temp_prep_os_min !== undefined ? fmt(ev.temp_prep_os_min) : '—';
-            const semOsCell   = ev.sem_os_min      !== undefined ? fmt(ev.sem_os_min)      : '—';
+            const semOsCell   = ev.sem_os_total_min !== undefined ? fmt(ev.sem_os_total_min) : '—';
             lines.push(
               `| ${ev.nr_ordem} | ${prevOsCell} | ${ev.classe} | ${ev.causa} | ${ev.despachada} | ${ev.liberada} | ${fmt(ev.tr_ordem_min)} | ${fmt(ev.hd_pct_tr)}% | ${fmt(ev.tl_ordem_min)} | ${fmt(ev.hd_pct_tl)}% | ${tempPrepCell} | ${semOsCell} | **${flagStr}** |`,
             );

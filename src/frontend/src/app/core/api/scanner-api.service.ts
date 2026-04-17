@@ -84,7 +84,14 @@ export interface OsDiaOrderEvidence {
   hd_pct_tl: number;
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
-  sem_os_min?: number;
+  sem_os_details?: Array<{
+    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    min: number;
+    from?: string;
+    to?: string;
+    interval_discounted?: boolean;
+  }>;
+  sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
 }
 
@@ -94,7 +101,8 @@ export interface OsDiaTeamAnalysis {
   metaTarget: number;
   gap: number;
   hdTotalMin: number;
-  htTotalMin: number;
+  tempPrepTotalMin: number;
+  semOrdemTotalMin: number;
   totalOrders: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
