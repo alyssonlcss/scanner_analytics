@@ -137,7 +137,7 @@ type SavedFilterState = {
 
         <aside class="filter-drawer" [class.filter-drawer-open]="filterDrawerOpen()">
           <div class="drawer-head">
-            <h2>Filtros</h2>
+            <h2>Filtros de extração</h2>
             <button type="button" class="drawer-submit" (click)="submit()">
               {{ loading() ? 'Reaplicar' : 'Filtrar' }}
             </button>
