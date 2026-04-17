@@ -75,6 +75,7 @@ export interface OsDiaOrderEvidence {
   fim_intervalo: string;
   prev_liberada?: string;
   prev_nr_ordem?: string;
+  prev_despachada?: string;
   inicio_calendario?: string;
   log_in?: string;
   tr_ordem_min: number;
@@ -90,6 +91,7 @@ export interface OsDiaOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
+    retorno_base_avg_discounted?: number;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;

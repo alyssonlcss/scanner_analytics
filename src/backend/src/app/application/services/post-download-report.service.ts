@@ -126,6 +126,7 @@ interface OsDiaOrderEvidence {
   fim_intervalo: string;
   prev_liberada?: string;
   prev_nr_ordem?: string;
+  prev_despachada?: string;
   inicio_calendario?: string;
   log_in?: string;
   tr_ordem_min: number;
@@ -141,6 +142,7 @@ interface OsDiaOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
+    retorno_base_avg_discounted?: number;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
@@ -229,9 +231,10 @@ export class PostDownloadReportService {
       params.reportFilters,
     );
 
-    const tempSemOs = this.calculateTempPrepSemOs(filtered.deslocamentos);
-    const teamMetrics = this.buildTeamMetrics(tempSemOs);
     const kpis = this.buildKpiInsights(filtered.ranking);
+    const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
+    const tempSemOs = this.calculateTempPrepSemOs(filtered.deslocamentos, retornoBaseAvg);
+    const teamMetrics = this.buildTeamMetrics(tempSemOs);
     const deviationInsights = this.buildDeviationInsights(filtered.desvios);
     const crossedInsights = this.buildCrossedInsights(teamMetrics, kpis, deviationInsights.teamBreakdown);
     const actionPlan = this.buildActionPlans(teamMetrics, kpis, deviationInsights.teamBreakdown);
@@ -407,7 +410,7 @@ export class PostDownloadReportService {
     };
   }
 
-  private calculateTempPrepSemOs(rows: CsvRow[]): TempSemOsRow[] {
+  private calculateTempPrepSemOs(rows: CsvRow[], retornoBaseAvgMin: number): TempSemOsRow[] {
     if (rows.length === 0) {
       return [];
     }
@@ -517,7 +520,7 @@ export class PostDownloadReportService {
         semOsValues.push(semOs.value);
       }
 
-      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval
+      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval and retorno base avg
       if (logOffCorrigidoCol && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
         const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
@@ -535,6 +538,10 @@ export class PostDownloadReportService {
             const discount = Math.min(intDuration, 60);
             gapMin -= discount;
             intervalDiscounted = true;
+          }
+          // Subtract average retorno base
+          if (retornoBaseAvgMin > 0) {
+            gapMin -= retornoBaseAvgMin;
           }
           if (gapMin > 0) {
             semOsValues.push(gapMin);
@@ -1216,7 +1223,8 @@ export class PostDownloadReportService {
         semOsValues.push(semOs.value);
       }
 
-      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval
+      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval and retorno base avg
+      const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
       let semOsFimJornadaMin = Number.NaN;
       let semOsFimIntervalDiscounted = false;
       if (logOffCorrigidoCol2 && liberadaCol) {
@@ -1234,6 +1242,10 @@ export class PostDownloadReportService {
             const discount = Math.min(intDuration, 60);
             gapMin -= discount;
             semOsFimIntervalDiscounted = true;
+          }
+          // Subtract average retorno base
+          if (retornoBaseAvg > 0) {
+            gapMin -= retornoBaseAvg;
           }
           if (gapMin > 0) {
             semOsFimJornadaMin = gapMin;
@@ -1379,6 +1391,7 @@ export class PostDownloadReportService {
           fim_intervalo:     intervaloNaJanela ? fimIntervaloRaw    : '',
           prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
           prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+          prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
           inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
           log_in:            logInCorrigidoCol   ? String(row[logInCorrigidoCol]   ?? '').trim() || undefined : undefined,
           tr_ordem_min:      round2(trOrdemMin),
@@ -1405,6 +1418,7 @@ export class PostDownloadReportService {
           from: liberadaStr || undefined,
           to:   logOffStr || undefined,
           interval_discounted: semOsFimIntervalDiscounted || undefined,
+          retorno_base_avg_discounted: retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
         };
 
         const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
@@ -1440,6 +1454,7 @@ export class PostDownloadReportService {
             fim_intervalo:     '',
             prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
             prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+            prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
             inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
             log_in:            logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
             tr_ordem_min:      round2(trOrdemMin),

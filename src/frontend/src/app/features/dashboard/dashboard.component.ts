@@ -358,10 +358,20 @@ type SavedFilterState = {
                               <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                             </p>
                             <!-- Linha do tempo -->
-                            <div class="osdia-ev-timeline">
-                              <ng-container *ngIf="ev.prev_liberada; else primeiraOsLinha1">
+                            <ng-container *ngIf="ev.prev_liberada; else primeiraOsBlock">
+                              <!-- OS Anterior -->
+                              <div class="osdia-ev-timeline">
+                                <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior ({{ ev.prev_nr_ordem || '—' }})</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Desp. Anterior</span>
+                                <span class="osdia-ev-ts-val">{{ ev.prev_despachada || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
                                 <span class="osdia-ev-ts-label">Lib. Anterior</span>
                                 <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
+                              </div>
+                              <!-- OS Atual -->
+                              <div class="osdia-ev-timeline">
+                                <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
                                 <span class="osdia-ev-ts-sep">→</span>
                                 <span class="osdia-ev-ts-label">Despachada</span>
                                 <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
@@ -374,43 +384,34 @@ type SavedFilterState = {
                                 <span class="osdia-ev-ts-sep">→</span>
                                 <span class="osdia-ev-ts-label">Liberada</span>
                                 <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                <ng-container *ngIf="getFimJornadaDetail(ev); let fj">
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Log Off</span>
-                                  <span class="osdia-ev-ts-val">{{ fj.to || '—' }}</span>
-                                </ng-container>
-                              </ng-container>
-                              <ng-template #primeiraOsLinha1>
-                                <span class="osdia-ev-ts-label">Início da jornada</span>
+                              </div>
+                            </ng-container>
+                            <ng-template #primeiraOsBlock>
+                              <div class="osdia-ev-timeline">
+                                <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
                                 <span class="osdia-ev-ts-sep">→</span>
                                 <span class="osdia-ev-ts-label">Início Calendário</span>
                                 <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
                                 <span class="osdia-ev-ts-sep">-</span>
                                 <span class="osdia-ev-ts-label">Log In</span>
                                 <span class="osdia-ev-ts-val">{{ ev.log_in || '—' }}</span>
-                              </ng-template>
-                            </div>
-                            <!-- 2ª linha só para 1ª OS da jornada: sequência da ordem -->
-                            <div class="osdia-ev-timeline" *ngIf="!ev.prev_liberada">
-                              <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
-                              <span class="osdia-ev-ts-sep">→</span>
-                              <span class="osdia-ev-ts-label">Despachada</span>
-                              <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                              <span class="osdia-ev-ts-sep">→</span>
-                              <span class="osdia-ev-ts-label">A Caminho</span>
-                              <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                              <span class="osdia-ev-ts-sep">→</span>
-                              <span class="osdia-ev-ts-label">No Local</span>
-                              <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                              <span class="osdia-ev-ts-sep">→</span>
-                              <span class="osdia-ev-ts-label">Liberada</span>
-                              <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                              <ng-container *ngIf="getFimJornadaDetail(ev); let fj">
+                              </div>
+                              <div class="osdia-ev-timeline">
+                                <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
                                 <span class="osdia-ev-ts-sep">→</span>
-                                <span class="osdia-ev-ts-label">Log Off</span>
-                                <span class="osdia-ev-ts-val">{{ fj.to || '—' }}</span>
-                              </ng-container>
-                            </div>
+                                <span class="osdia-ev-ts-label">Despachada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">A Caminho</span>
+                                <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">No Local</span>
+                                <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Liberada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                              </div>
+                            </ng-template>
                             <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
                             <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
                               <span class="osdia-ev-int-icon">⏸</span>
@@ -439,7 +440,7 @@ type SavedFilterState = {
                                     <ng-container [ngSwitch]="d.type">
                                       <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
                                       <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
-                                      <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '—' }}) e Log Off Corrigido ({{ d.to || '—' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container>.</ng-container>
+                                      <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '—' }}) e Log Off Corrigido ({{ d.to || '—' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_avg_discounted"> — média retorno base ({{ d.retorno_base_avg_discounted }} min) descontada</ng-container>.</ng-container>
                                       <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '—' }}) até Início Intervalo ({{ d.to || '—' }}).</ng-container>
                                     </ng-container>
                                   </li>
