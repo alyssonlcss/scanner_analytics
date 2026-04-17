@@ -387,6 +387,8 @@ export class PostDownloadReportService {
       ? this.environment.report.extraTeamTags.map((tag) => tag.toUpperCase())
       : [];
 
+    const useExtraTagsFallback = !hasBaseFilter && !hasTypeFilter;
+
     return (teamNameRaw: string): boolean => {
       const teamName = teamNameRaw.toUpperCase().trim();
       if (teamName.length === 0) {
@@ -398,7 +400,7 @@ export class PostDownloadReportService {
         : Array.from(allowedPrefixes).some((prefix) => teamName.startsWith(prefix));
 
       if (!prefixMatch) {
-        return extraTags.some((tag) => teamName.includes(tag));
+        return useExtraTagsFallback && extraTags.some((tag) => teamName.includes(tag));
       }
 
       return true;
