@@ -48,6 +48,12 @@ const ATUACAO_HD_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'L
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
 const REPORT_BASE_OPTIONS = ['Itapajé', 'Itapipoca', 'Trairi', 'Acaraú'];
 const REPORT_TEAM_TYPE_OPTIONS = ['Própria', 'Parceira'];
+const REPORT_BASE_PREFIX_MAP: Record<string, { own: string; partner: string }> = {
+  'Itapajé':   { own: 'ITJ-', partner: 'ITE-' },
+  'Itapipoca': { own: 'ITK-', partner: 'IPK-' },
+  'Trairi':    { own: 'TRR-', partner: 'IPT-' },
+  'Acaraú':    { own: 'ACU-', partner: 'ACA-' },
+};
 const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
   atuacaoHd: { sourceTitle: 'Atuação', sourceKind: 'list' },
   base: { sourceTitle: 'Base', sourceKind: 'list' },
@@ -629,6 +635,7 @@ type SavedFilterState = {
       .report-filter-groups {
         display: flex;
         flex-wrap: wrap;
+        justify-content: center;
         gap: 8px;
         width: min(1000px, 100%);
         pointer-events: auto;
@@ -2345,7 +2352,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected toggleReportFilterOption(key: ReportFilterKey, option: string): void {
     const filters = this.reportFilterStates();
-    this.reportFilterStates.set(filters.map((filter) => filter.key === key ? { ...filter, value: [option] } : filter));
+    const updated = filters.map((filter) => filter.key === key ? { ...filter, value: [option] } : filter);
+    this.reportFilterStates.set(this.cascadeReportFilters(updated));
     this.scheduleInstantReportRefresh();
   }
 
@@ -2776,18 +2784,89 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
   }
 
+  private cascadeReportFilters(filters: ReportSelectFilterState[]): ReportSelectFilterState[] {
+    const baseF = filters.find((f) => f.key === 'reportBase');
+    const tipoF = filters.find((f) => f.key === 'reportTipoEquipe');
+    const equipeF = filters.find((f) => f.key === 'reportEquipe');
+
+    const selectedBase = baseF && !baseF.value.includes(ALL_OPTION) ? baseF.value[0] : null;
+    const selectedTipo = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value[0] : null;
+    const selectedEquipe = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value[0] : null;
+
+    // Build allowed prefixes from base + tipo
+    const allowedPrefixes: string[] = [];
+    const bases = selectedBase ? [selectedBase] : REPORT_BASE_OPTIONS;
+    for (const base of bases) {
+      const mapping = REPORT_BASE_PREFIX_MAP[base];
+      if (!mapping) continue;
+      if (!selectedTipo || selectedTipo === 'Própria') allowedPrefixes.push(mapping.own.toUpperCase());
+      if (!selectedTipo || selectedTipo === 'Parceira') allowedPrefixes.push(mapping.partner.toUpperCase());
+    }
+
+    // Filter equipe options
+    const filteredTeams = this.availableTeams.filter((team) => {
+      const upper = team.toUpperCase();
+      return allowedPrefixes.length === 0 || allowedPrefixes.some((p) => upper.startsWith(p));
+    });
+
+    // If selected equipe no longer matches, reset to All
+    const equipeStillValid = selectedEquipe && filteredTeams.some((t) => t === selectedEquipe);
+
+    // Reverse: if equipe is selected, narrow Base and Tipo options
+    let filteredBases = REPORT_BASE_OPTIONS;
+    let filteredTypes = REPORT_TEAM_TYPE_OPTIONS;
+
+    if (selectedEquipe && equipeStillValid) {
+      const upper = selectedEquipe.toUpperCase();
+      filteredBases = REPORT_BASE_OPTIONS.filter((base) => {
+        const m = REPORT_BASE_PREFIX_MAP[base];
+        return m && (upper.startsWith(m.own.toUpperCase()) || upper.startsWith(m.partner.toUpperCase()));
+      });
+      filteredTypes = REPORT_TEAM_TYPE_OPTIONS.filter((tipo) => {
+        return REPORT_BASE_OPTIONS.some((base) => {
+          const m = REPORT_BASE_PREFIX_MAP[base];
+          if (!m) return false;
+          if (tipo === 'Própria') return upper.startsWith(m.own.toUpperCase());
+          if (tipo === 'Parceira') return upper.startsWith(m.partner.toUpperCase());
+          return false;
+        });
+      });
+    }
+
+    return filters.map((f) => {
+      if (f.key === 'reportEquipe') {
+        return {
+          ...f,
+          options: this.withAllOption(filteredTeams),
+          value: equipeStillValid ? f.value : [ALL_OPTION],
+        };
+      }
+      if (f.key === 'reportBase') {
+        const baseStillValid = selectedBase && filteredBases.includes(selectedBase);
+        return {
+          ...f,
+          options: this.withAllOption(filteredBases),
+          value: baseStillValid ? f.value : (selectedBase && !baseStillValid ? [ALL_OPTION] : f.value),
+        };
+      }
+      if (f.key === 'reportTipoEquipe') {
+        const tipoStillValid = selectedTipo && filteredTypes.includes(selectedTipo);
+        return {
+          ...f,
+          options: this.withAllOption(filteredTypes),
+          value: tipoStillValid ? f.value : (selectedTipo && !tipoStillValid ? [ALL_OPTION] : f.value),
+        };
+      }
+      return f;
+    });
+  }
+
   private fetchAndUpdateTeams(): void {
     this.api.getTeams().subscribe({
       next: (result) => {
         this.availableTeams = result.teams;
         const current = this.reportFilterStates();
-        const equipeFilter = current.find((f) => f.key === 'reportEquipe');
-        const currentValue = equipeFilter?.value ?? [ALL_OPTION];
-        this.reportFilterStates.set(current.map((f) =>
-          f.key === 'reportEquipe'
-            ? { ...f, options: this.withAllOption(result.teams), value: currentValue }
-            : f,
-        ));
+        this.reportFilterStates.set(this.cascadeReportFilters(current));
       },
     });
   }
