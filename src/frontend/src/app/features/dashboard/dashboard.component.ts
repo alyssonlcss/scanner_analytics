@@ -874,7 +874,7 @@ type SavedFilterState = {
 
       .filter-fab {
         position: fixed;
-        top: 72px;
+        top: 18px;
         right: 24px;
         z-index: 1102;
         width: 42px;
