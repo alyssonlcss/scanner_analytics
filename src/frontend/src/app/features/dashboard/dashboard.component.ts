@@ -91,17 +91,26 @@ type SavedFilterState = {
       <ng-container *ngIf="filtersVisible()">
         <header class="report-filter-bar" [class.report-filter-bar-hidden]="reportBarHidden()">
           <div class="report-filter-groups">
-            <section class="report-filter-group" *ngFor="let filter of reportFilterStates(); trackBy: trackByReportFilterKey">
-              <span class="report-filter-label">{{ filter.title }}</span>
-              <label class="report-filter-select-shell">
-                <select
-                  class="report-filter-select"
-                  [value]="filter.value[0]"
-                  (change)="onReportSelectChange(filter.key, $event)">
-                  <option *ngFor="let option of filter.options; trackBy: trackByOption" [value]="option">{{ option }}</option>
-                </select>
-              </label>
-            </section>
+            <div class="rf-chip" *ngFor="let filter of reportFilterStates(); trackBy: trackByReportFilterKey"
+                 (click)="toggleDropdown(filter.key, $event)">
+              <span class="rf-chip-label">{{ filter.title }}</span>
+              <span class="rf-chip-value">{{ filter.value[0] }}</span>
+              <svg class="rf-chip-arrow" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="rf-dropdown" *ngIf="openDropdownKey() === filter.key" (click)="$event.stopPropagation()">
+                <input *ngIf="filter.options.length > 8" class="rf-dropdown-search" type="text" placeholder="Buscar…"
+                       [value]="dropdownSearch()" (input)="onDropdownSearch($event)" (click)="$event.stopPropagation()"/>
+                <div class="rf-dropdown-list">
+                  <button *ngFor="let option of filteredDropdownOptions(filter)"
+                          class="rf-dropdown-option" [class.rf-dropdown-option-active]="filter.value[0] === option"
+                          type="button" (click)="selectDropdownOption(filter.key, option, $event)">
+                    <span class="rf-opt-check" *ngIf="filter.value[0] === option">
+                      <svg viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                    {{ option }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -605,7 +614,7 @@ type SavedFilterState = {
         z-index: 1105;
         display: flex;
         justify-content: center;
-        padding: 12px 18px 0;
+        padding: 14px 18px 0;
         background: transparent;
         border: none;
         box-shadow: none;
@@ -618,53 +627,137 @@ type SavedFilterState = {
       }
 
       .report-filter-groups {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        width: min(760px, 100%);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        width: min(1000px, 100%);
         pointer-events: auto;
       }
 
-      .report-filter-group {
-        display: grid;
-        gap: 4px;
-        min-width: 0;
+      /* ── Chip trigger ── */
+      .rf-chip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px 6px 14px;
+        border-radius: 20px;
+        background: rgba(255,255,255,0.82);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(60,40,30,0.12);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        cursor: pointer;
+        user-select: none;
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        white-space: nowrap;
       }
-
-      .report-filter-label {
-        font-size: 0.62rem;
+      .rf-chip:hover {
+        border-color: rgba(60,40,30,0.22);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.09);
+      }
+      .rf-chip-label {
+        font-size: 0.66rem;
         font-weight: 700;
         color: var(--muted-strong);
         text-transform: uppercase;
-        letter-spacing: 0.16em;
+        letter-spacing: 0.12em;
+      }
+      .rf-chip-value {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text);
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .rf-chip-arrow {
+        width: 10px;
+        height: 10px;
+        color: var(--muted-strong);
+        transition: transform 0.18s;
+        flex-shrink: 0;
       }
 
-      .report-filter-select-shell {
-        display: block;
+      /* ── Dropdown panel ── */
+      .rf-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        min-width: 200px;
+        max-height: 320px;
+        display: flex;
+        flex-direction: column;
+        background: rgba(255,255,255,0.96);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(60,40,30,0.10);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+        padding: 6px;
+        z-index: 1200;
+        animation: rfDropIn 0.14s ease;
+      }
+      @keyframes rfDropIn {
+        from { opacity: 0; transform: translateY(-6px); }
+        to   { opacity: 1; transform: translateY(0); }
       }
 
-      .report-filter-select {
+      .rf-dropdown-search {
         width: 100%;
         border: none;
-        border-bottom: 2px solid rgba(60, 40, 30, 0.18);
-        border-radius: 0;
+        border-bottom: 1px solid rgba(60,40,30,0.10);
         background: transparent;
-        color: var(--text);
+        padding: 7px 10px;
         font: inherit;
-        font-size: 0.9rem;
-        font-weight: 600;
-        padding: 5px 2px;
-        cursor: pointer;
-        outline: none;
-      }
-
-      .report-filter-select option {
-        background: #f5f4f0;
+        font-size: 0.82rem;
         color: var(--text);
+        outline: none;
+        border-radius: 6px 6px 0 0;
+      }
+      .rf-dropdown-search::placeholder {
+        color: var(--muted);
       }
 
-      .report-filter-select:focus {
-        border-bottom-color: var(--accent);
+      .rf-dropdown-list {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        flex: 1;
+      }
+
+      .rf-dropdown-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        border: none;
+        background: transparent;
+        padding: 7px 10px;
+        font: inherit;
+        font-size: 0.82rem;
+        color: var(--text);
+        cursor: pointer;
+        border-radius: 8px;
+        transition: background 0.1s;
+        text-align: left;
+      }
+      .rf-dropdown-option:hover {
+        background: rgba(60,40,30,0.06);
+      }
+      .rf-dropdown-option-active {
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .rf-opt-check {
+        display: inline-flex;
+        width: 14px;
+        height: 14px;
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+      .rf-opt-check svg {
+        width: 100%;
+        height: 100%;
       }
 
       .report-loading {
@@ -1124,7 +1217,7 @@ type SavedFilterState = {
 
       @media (max-width: 720px) {
         .report-filter-groups {
-          grid-template-columns: 1fr;
+          gap: 6px;
         }
 
         .workspace-stage {
@@ -1993,6 +2086,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly reportType = signal<ReportTypeValue>('operacional');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
   protected readonly reportFilterStates = signal<ReportSelectFilterState[]>([]);
+  protected readonly openDropdownKey = signal<ReportFilterKey | null>(null);
+  protected readonly dropdownSearch = signal('');
   protected readonly dayRange = signal({ min: 1, max: 31 });
   protected readonly resolvedDayRange = computed(() => {
     const r = this.dayRange();
@@ -2051,6 +2146,17 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       this.zone.run(() => this.regenerateReport());
     }
   };
+  private readonly boundCloseDropdown = (event: MouseEvent) => {
+    if (this.openDropdownKey() !== null) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.rf-chip')) {
+        this.zone.run(() => {
+          this.openDropdownKey.set(null);
+          this.dropdownSearch.set('');
+        });
+      }
+    }
+  };
   private readonly boundWindowMouseMove = (event: MouseEvent) => {
     const topRevealZonePx = 42;
     const isInTopZone = event.clientY <= topRevealZonePx;
@@ -2098,12 +2204,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     window.addEventListener('mouseup', this.boundEndFilterDrag);
     window.addEventListener('mousemove', this.boundWindowMouseMove, { passive: true });
     window.addEventListener('keydown', this.boundKeyDown);
+    window.addEventListener('click', this.boundCloseDropdown, true);
   }
 
   public ngOnDestroy(): void {
     window.removeEventListener('mouseup', this.boundEndFilterDrag);
     window.removeEventListener('mousemove', this.boundWindowMouseMove);
     window.removeEventListener('keydown', this.boundKeyDown);
+    window.removeEventListener('click', this.boundCloseDropdown, true);
     if (this.reportApplyTimer) {
       clearTimeout(this.reportApplyTimer);
       this.reportApplyTimer = null;
@@ -2244,6 +2352,34 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected onReportSelectChange(key: ReportFilterKey, event: Event): void {
     const value = String((event.target as HTMLSelectElement | null)?.value ?? ALL_OPTION);
     this.toggleReportFilterOption(key, value);
+  }
+
+  protected toggleDropdown(key: ReportFilterKey, event: Event): void {
+    event.stopPropagation();
+    if (this.openDropdownKey() === key) {
+      this.openDropdownKey.set(null);
+      this.dropdownSearch.set('');
+    } else {
+      this.openDropdownKey.set(key);
+      this.dropdownSearch.set('');
+    }
+  }
+
+  protected onDropdownSearch(event: Event): void {
+    this.dropdownSearch.set((event.target as HTMLInputElement).value);
+  }
+
+  protected filteredDropdownOptions(filter: ReportSelectFilterState): string[] {
+    const q = this.dropdownSearch().toLowerCase().trim();
+    if (!q) return filter.options;
+    return filter.options.filter((o) => o.toLowerCase().includes(q));
+  }
+
+  protected selectDropdownOption(key: ReportFilterKey, option: string, event: Event): void {
+    event.stopPropagation();
+    this.toggleReportFilterOption(key, option);
+    this.openDropdownKey.set(null);
+    this.dropdownSearch.set('');
   }
 
   protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
