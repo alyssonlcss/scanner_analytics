@@ -133,7 +133,7 @@ export interface EficienciaOrderEvidence {
   hd_total_min: number;
   hd_pct_tr: number;
   tempo_padrao_min?: number;
-  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio'>;
+  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
 }
 
 export interface EficienciaTeamAnalysis {
@@ -146,7 +146,7 @@ export interface EficienciaTeamAnalysis {
   globalAvgDeslocamentoMin: number;
   globalAvgExecucaoMin: number;
   analysisType: 'top_performer' | 'underperformer';
-  flags: Array<'masked_efficiency' | 'short_displacement'>;
+  flags: Array<'short_displacement'>;
   flaggedOrders: EficienciaOrderEvidence[];
   tempoPadraoVazioOrders: EficienciaOrderEvidence[];
   simulatedEficiencia?: number;

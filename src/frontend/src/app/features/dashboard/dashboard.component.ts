@@ -474,7 +474,7 @@ type SavedFilterState = {
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of sortedEficienciaAnalysis(kpi.evidenceAnalysis)">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of sortedEficienciaAnalysis(kpi.evidenceAnalysis)" [hidden]="analysis.flaggedOrders.length === 0 && (!analysis.tempoPadraoVazioOrders || analysis.tempoPadraoVazioOrders.length === 0)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge"
@@ -493,13 +493,11 @@ type SavedFilterState = {
                         </span>
                       </div>
                       <!-- Card único de warnings -->
-                      <ng-container *ngIf="analysis.flags.length > 0 || analysis.flaggedOrders.length > 0 || (analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0); else noEficienciaEvidence">
+                      <ng-container *ngIf="analysis.flaggedOrders.length > 0 || (analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0); else noEficienciaEvidence">
                         <div class="osdia-idle-notice">
                           <div class="osdia-idle-header">
                             <span class="osdia-idle-icon">⚠️</span>
-                            <strong>
-                              {{ analysis.flags.includes('masked_efficiency') ? 'Eficiência possivelmente mascarada por apontamento' : 'Alertas detectados' }}
-                            </strong>
+                            <strong>Alertas detectados</strong>
                           </div>
 
                           <!-- Flags de equipe -->
@@ -539,13 +537,17 @@ type SavedFilterState = {
                                 <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
                               </div>
                               <ul class="osdia-ev-alerts">
+                                <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
+                                  <strong>Tempo de Reparo muito baixo:</strong> {{ ev.tr_ordem_min }} min
+                                  (abaixo de 20% do tempo padrão<ng-container *ngIf="ev.tempo_padrao_min !== undefined"> de {{ ev.tempo_padrao_min }} min</ng-container> e da média global de {{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min).
+                                </li>
+                                <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
+                                  <strong>Deslocamento (TL) muito curto:</strong> {{ ev.tl_ordem_min }} min
+                                  (&le; {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min &mdash; 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min).
+                                </li>
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
                                   ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min &mdash; limite: 20% da HD) &mdash; tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
-                                </li>
-                                <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Deslocamento (TL) muito curto:</strong> {{ ev.tl_ordem_min }} min
-                                  (limite: &le; {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min &mdash; 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min).
                                 </li>
                               </ul>
                             </div>
@@ -555,12 +557,10 @@ type SavedFilterState = {
                           <ng-container *ngIf="analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0">
                             <p class="osdia-idle-desc">
                               <strong>Equipe penalizada por ausência de Tempo Padrão:</strong>
-                              {{ analysis.summary.countTempoPadraoVazio }} ordem(ns) sem tempo padrão cadastrado. O sistema calcula a eficiência como <em>Tempo Padrão / TR</em>, portanto ordens vazias contam como zero, prejudicando o resultado.
-                            </p>
-                            <p class="osdia-idle-sim" *ngIf="analysis.simulatedEficiencia !== undefined && analysis.simulatedEficiencia !== null">
-                              🔮 <strong>Simulação:</strong> se as {{ analysis.summary.countTempoPadraoVazio }} ordens vazias usassem o TR médio global ({{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min), a eficiência estimada seria
-                              <strong class="sim-value">{{ analysis.simulatedEficiencia | number:'1.1-1' }}%</strong>
-                              vs. atual <strong>{{ analysis.eficienciaValue }}%</strong>.
+                              {{ analysis.summary.countTempoPadraoVazio }} ordem(ns) sem tempo padrão cadastrado. O sistema calcula a eficiência como <em>Tempo Padrão / TR</em>, portanto ordens vazias contam como zero, prejudicando o resultado.<ng-container *ngIf="analysis.simulatedEficiencia !== undefined && analysis.simulatedEficiencia !== null">
+                              <br><strong>Simulação:</strong> se usassem o TR médio global ({{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min), a eficiência estimada seria
+                              <strong>{{ analysis.simulatedEficiencia | number:'1.1-1' }}%</strong>
+                              vs. atual <strong>{{ analysis.eficienciaValue }}%</strong>.</ng-container>
                             </p>
                             <div class="osdia-ev-list">
                               <div class="osdia-ev-item" *ngFor="let ev of analysis.tempoPadraoVazioOrders">
@@ -2466,6 +2466,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const labels: Record<string, string> = {
       deslocamento_curto: 'Desloc. Curto',
       tr_excede_hd: 'TR>20%HD',
+      tr_muito_baixo: 'TR Baixo',
       tempo_padrao_vazio: 'T.Padrão Vazio',
     };
     return labels[flag] ?? flag;

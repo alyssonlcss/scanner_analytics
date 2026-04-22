@@ -185,7 +185,7 @@ interface EficienciaOrderEvidence {
   hd_total_min: number;
   hd_pct_tr: number;
   tempo_padrao_min?: number;
-  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio'>;
+  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
 }
 
 interface EficienciaTeamAnalysis {
@@ -198,7 +198,7 @@ interface EficienciaTeamAnalysis {
   globalAvgDeslocamentoMin: number;
   globalAvgExecucaoMin: number;
   analysisType: 'top_performer' | 'underperformer';
-  flags: Array<'masked_efficiency' | 'short_displacement'>;
+  flags: Array<'short_displacement'>;
   flaggedOrders: EficienciaOrderEvidence[];
   tempoPadraoVazioOrders: EficienciaOrderEvidence[];
   simulatedEficiencia?: number;
@@ -1744,27 +1744,10 @@ export class PostDownloadReportService {
         totalOrders: teamRows.length,
       });
 
-      // 5. Determine flags based on analysis type and thresholds
-      const flags: EficienciaTeamAnalysis['flags'] = [];
-      const flaggedOrders: EficienciaOrderEvidence[] = [];
-
-      // Thresholds for order-level flags (same for both types)
+      // 5. Thresholds
       const shortDisplacementThreshold = globalAvgDeslocamento > 0 ? globalAvgDeslocamento * 0.25 : 0;
-
-      // Team-level flags
-      if (analysisType === 'top_performer') {
-        const efficiencyThreshold = eficienciaKpi.average * 1.5;
-        if (eficienciaValue >= efficiencyThreshold) {
-          flags.push('masked_efficiency');
-        }
-        if (shortDisplacementThreshold > 0 && avgDeslocamentoMin > 0 && avgDeslocamentoMin <= shortDisplacementThreshold) {
-          flags.push('short_displacement');
-        }
-      } else {
-        if (shortDisplacementThreshold > 0 && avgDeslocamentoMin > 0 && avgDeslocamentoMin <= shortDisplacementThreshold) {
-          flags.push('short_displacement');
-        }
-      }
+      const lowTrThreshold = globalAvgExecucao > 0 ? globalAvgExecucao * 0.20 : 0;
+      const TR_HD_THRESHOLD = 0.20;
 
       // Simulation: what would efficiency be if missing tempo_padrão were replaced with global avg TR?
       const tempoPadraoVazioOrders: EficienciaOrderEvidence[] = [];
@@ -1788,8 +1771,8 @@ export class PostDownloadReportService {
         ? round2((simSumTp / simSumTr) * 100)
         : undefined;
 
-      // Collect flagged orders (always, for all analyzed teams)
-      const TR_HD_THRESHOLD = 0.20;
+      // Collect flagged orders first (order-level flags)
+      const flaggedOrders: EficienciaOrderEvidence[] = [];
       if (nrOrdemCol) {
         for (const row of teamRows) {
           const tlMin = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
@@ -1799,14 +1782,29 @@ export class PostDownloadReportService {
           const hdPctTr = hdMin > 0 && trMin !== null && Number.isFinite(trMin) ? round2((trMin / hdMin) * 100) : 0;
           const orderFlags: EficienciaOrderEvidence['flags'] = [];
 
-          if (shortDisplacementThreshold > 0 && tlMin !== null && Number.isFinite(tlMin) && tlMin > 0 && tlMin <= shortDisplacementThreshold) {
+          // TR muito baixo: TR < 20% do tempo_padrão OU TR < 20% da média global de TR
+          const trIsValid = trMin !== null && Number.isFinite(trMin) && trMin > 0;
+          const trMuitoBaixo = trIsValid && (
+            (tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 && trMin! < tpMin * 0.20) &&
+            (lowTrThreshold > 0 && trMin! < lowTrThreshold)
+          );
+          if (trMuitoBaixo) {
+            orderFlags.push('tr_muito_baixo');
+          }
+
+          // deslocamento_curto: somente quando TR muito baixo E TL curto
+          if (trMuitoBaixo && shortDisplacementThreshold > 0 && tlMin !== null && Number.isFinite(tlMin) && tlMin > 0 && tlMin <= shortDisplacementThreshold) {
             orderFlags.push('deslocamento_curto');
           }
-          const trExcedeHd = hdMin > 0 && trMin !== null && Number.isFinite(trMin) && trMin > hdMin * TR_HD_THRESHOLD;
-          const trExcedeTempoPadrao = tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 &&
-            trMin !== null && Number.isFinite(trMin) && trMin > tpMin * 2.0;
-          if (trExcedeHd || trExcedeTempoPadrao) {
-            orderFlags.push('tr_excede_hd');
+
+          // TR excede HD ou TR excede 200% do tempo_padrão — apenas para equipes abaixo da média
+          if (analysisType === 'underperformer') {
+            const trExcedeHd = hdMin > 0 && trMin !== null && Number.isFinite(trMin) && trMin > hdMin * TR_HD_THRESHOLD;
+            const trExcedeTempoPadrao = tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 &&
+              trMin !== null && Number.isFinite(trMin) && trMin > tpMin * 2.0;
+            if (trExcedeHd || trExcedeTempoPadrao) {
+              orderFlags.push('tr_excede_hd');
+            }
           }
 
           if (orderFlags.length > 0) {
@@ -1848,6 +1846,13 @@ export class PostDownloadReportService {
             });
           }
         }
+      }
+
+      // Team-level flags — computed after order loop
+      const flags: EficienciaTeamAnalysis['flags'] = [];
+      const countDeslocamentoCurtoCalc = flaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length;
+      if (countDeslocamentoCurtoCalc > 0) {
+        flags.push('short_displacement');
       }
 
       // Always include all top 3 and bottom 3 teams
@@ -1982,10 +1987,6 @@ export class PostDownloadReportService {
           lines.push('');
           
           // Flags/alerts
-          if (analysis.flags.includes('masked_efficiency')) {
-            lines.push('⚠️ **Alerta:** Eficiência possivelmente mascarada por erro de apontamento');
-            lines.push('');
-          }
           if (analysis.flags.includes('short_displacement')) {
             const threshold = round2(analysis.globalAvgDeslocamentoMin * 0.25);
             lines.push(`⚠️ **Deslocamento muito curto:** ${fmt(analysis.avgDeslocamentoMin)} min (≤ ${fmt(threshold)} min, 25% da média geral)`);
@@ -2022,6 +2023,7 @@ export class PostDownloadReportService {
               const flagLabels = ev.flags.map((f) => {
                 if (f === 'deslocamento_curto') return 'Desloc. Curto';
                 if (f === 'tr_excede_hd') return 'TR>20% HD';
+                if (f === 'tr_muito_baixo') return 'TR Muito Baixo';
                 if (f === 'tempo_padrao_vazio') return 'T.Padrão Vazio';
                 return f;
               }).join(', ');
