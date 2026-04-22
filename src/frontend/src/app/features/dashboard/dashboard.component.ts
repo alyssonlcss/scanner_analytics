@@ -474,7 +474,7 @@ type SavedFilterState = {
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of sortedEficienciaAnalysis(kpi.evidenceAnalysis)" [hidden]="analysis.flaggedOrders.length === 0 && (!analysis.tempoPadraoVazioOrders || analysis.tempoPadraoVazioOrders.length === 0)">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of sortedEficienciaAnalysis(kpi.evidenceAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge"
@@ -2452,14 +2452,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected sortedEficienciaAnalysis(list: EficienciaTeamAnalysis[]): EficienciaTeamAnalysis[] {
-    return [...list].sort((a, b) => {
-      if (a.analysisType !== b.analysisType) {
-        return a.analysisType === 'top_performer' ? -1 : 1;
-      }
-      return a.analysisType === 'top_performer'
-        ? b.eficienciaValue - a.eficienciaValue
-        : a.eficienciaValue - b.eficienciaValue;
-    });
+    return [...list]
+      .filter((a) => a.flaggedOrders.length > 0 || (a.tempoPadraoVazioOrders && a.tempoPadraoVazioOrders.length > 0))
+      .sort((a, b) => {
+        if (a.analysisType !== b.analysisType) {
+          return a.analysisType === 'top_performer' ? -1 : 1;
+        }
+        return a.analysisType === 'top_performer'
+          ? b.eficienciaValue - a.eficienciaValue
+          : a.eficienciaValue - b.eficienciaValue;
+      });
   }
 
   protected eficienciaFlagLabel(flag: string): string {
