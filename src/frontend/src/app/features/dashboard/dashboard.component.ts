@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
-import { type GeneratedReport, type OsDiaOrderEvidence, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, ScannerApiService } from '../../core/api/scanner-api.service';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
@@ -149,19 +149,17 @@ type SavedFilterState = {
                 <h3>Tipo de Relatório</h3>
               </div>
 
-              <label class="select-shell">
-                <span class="select-caption">Valor ativo</span>
-                <div class="option-list" role="listbox" aria-label="Tipo de Relatório">
-                  <button
-                    type="button"
-                    class="option-item"
-                    *ngFor="let option of reportTypeOptions"
-                    [class.option-item-active]="reportType() === option.value"
-                    (click)="updateReportType(option.value)">
-                    {{ option.label }}
-                  </button>
-                </div>
-              </label>
+              <span class="select-caption">Valor ativo</span>
+              <div class="option-list" role="listbox" aria-label="Tipo de Relatório">
+                <button
+                  type="button"
+                  class="option-item"
+                  *ngFor="let option of reportTypeOptions"
+                  [class.option-item-active]="reportType() === option.value"
+                  (click)="updateReportType(option.value)">
+                  {{ option.label }}
+                </button>
+              </div>
             </article>
 
             <article class="drawer-card drawer-card-period">
@@ -171,7 +169,7 @@ type SavedFilterState = {
 
               <div class="period-shell">
                 <div class="period-selects">
-                  <label class="select-shell" *ngFor="let filter of periodFilters(); trackBy: trackByFilterKey">
+                  <ng-container *ngFor="let filter of periodFilters(); trackBy: trackByFilterKey">
                     <span class="select-caption">{{ filter.title }}</span>
                     <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
                       (mousemove)="dragScrollList(filter.key, $event)">
@@ -188,7 +186,7 @@ type SavedFilterState = {
                       </button>
                     </div>
                     <span class="select-summary">{{ describeSelection(filter) }}</span>
-                  </label>
+                  </ng-container>
                 </div>
 
                 <div class="day-range-shell">
@@ -221,24 +219,22 @@ type SavedFilterState = {
                 <h3>{{ filter.title }}</h3>
               </div>
 
-              <label class="select-shell">
-                <span class="select-caption">Valor ativo</span>
-                <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
-                  (mousemove)="dragScrollList(filter.key, $event)">
-                  <button
-                    type="button"
-                    class="option-item"
-                    *ngFor="let option of filter.options; trackBy: trackByOption"
-                    [class.option-item-active]="isOptionSelected(filter, option)"
-                    [attr.aria-selected]="isOptionSelected(filter, option)"
-                    (mousedown)="beginOptionSelection(filter.key, option, $event)"
-                    (mouseenter)="continueOptionSelection(filter.key, option, $event)"
-                    (mouseup)="endFilterDrag()">
-                    {{ option }}
-                  </button>
-                </div>
-                <span class="select-summary">{{ describeSelection(filter) }}</span>
-              </label>
+              <span class="select-caption">Valor ativo</span>
+              <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
+                (mousemove)="dragScrollList(filter.key, $event)">
+                <button
+                  type="button"
+                  class="option-item"
+                  *ngFor="let option of filter.options; trackBy: trackByOption"
+                  [class.option-item-active]="isOptionSelected(filter, option)"
+                  [attr.aria-selected]="isOptionSelected(filter, option)"
+                  (mousedown)="beginOptionSelection(filter.key, option, $event)"
+                  (mouseenter)="continueOptionSelection(filter.key, option, $event)"
+                  (mouseup)="endFilterDrag()">
+                  {{ option }}
+                </button>
+              </div>
+              <span class="select-summary">{{ describeSelection(filter) }}</span>
             </article>
           </div>
         </aside>
@@ -471,6 +467,141 @@ type SavedFilterState = {
                     </div>
                   </div>
                 </ng-container>
+                <!-- Eficiência drill-down (evidências de incidências) -->
+                <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Top 3 e Piores 3 Equipes
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
+                  </div>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of sortedEficienciaAnalysis(kpi.evidenceAnalysis)">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge"
+                              [class.rpt-osdia-badge--gap]="analysis.analysisType === 'underperformer'"
+                              [class.rpt-osdia-badge--good]="analysis.analysisType === 'top_performer'">
+                          {{ analysis.eficienciaValue }}% efic.
+                        </span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">Média <strong>{{ analysis.averageEficiencia }}%</strong></span>
+                        <span class="rpt-osdia-chip">TL Médio <strong>{{ analysis.avgDeslocamentoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">TR Médio <strong>{{ analysis.avgExecucaoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.avgTempoPadraoMin > 0">T. Padrão Médio <strong>{{ analysis.avgTempoPadraoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countDeslocamentoCurto > 0">
+                          TL Curto: <strong>{{ analysis.summary.countDeslocamentoCurto }}</strong>
+                        </span>
+                      </div>
+                      <!-- Card único de warnings -->
+                      <ng-container *ngIf="analysis.flags.length > 0 || analysis.flaggedOrders.length > 0 || (analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0); else noEficienciaEvidence">
+                        <div class="osdia-idle-notice">
+                          <div class="osdia-idle-header">
+                            <span class="osdia-idle-icon">⚠️</span>
+                            <strong>
+                              {{ analysis.flags.includes('masked_efficiency') ? 'Eficiência possivelmente mascarada por apontamento' : 'Alertas detectados' }}
+                            </strong>
+                          </div>
+
+                          <!-- Flags de equipe -->
+                          <div class="osdia-idle-metrics" *ngIf="analysis.flags.length > 0">
+                            <span class="osdia-idle-chip osdia-idle-chip--hd">TL Global <strong>{{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min</strong></span>
+                            <span class="osdia-idle-chip osdia-idle-chip--prep">TR Global <strong>{{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min</strong></span>
+                            <span class="osdia-idle-chip osdia-idle-chip--idle" *ngIf="analysis.flags.includes('short_displacement')">
+                              TL curto: <strong>{{ analysis.avgDeslocamentoMin | number:'1.1-1' }} min (≤ {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min — 25% global)</strong>
+                            </span>
+                          </div>
+
+                          <!-- Ordens flagadas (TR>HD, Desloc. Curto) -->
+                          <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
+                            <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                              <div class="osdia-ev-header">
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ eficienciaFlagLabel(f) }}</span>
+                              </div>
+                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
+                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
+                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                              </p>
+                              <div class="osdia-ev-timeline">
+                                <span class="osdia-ev-ts-label osdia-ev-ts-first">OS</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Despachada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">A Caminho</span>
+                                <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">No Local</span>
+                                <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                <span class="osdia-ev-ts-sep">→</span>
+                                <span class="osdia-ev-ts-label">Liberada</span>
+                                <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                              </div>
+                              <ul class="osdia-ev-alerts">
+                                <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
+                                  <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
+                                  ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min &mdash; limite: 20% da HD) &mdash; tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
+                                </li>
+                                <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
+                                  <strong>Tempo de Deslocamento (TL) muito curto:</strong> {{ ev.tl_ordem_min }} min
+                                  (limite: &le; {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min &mdash; 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min).
+                                </li>
+                              </ul>
+                            </div>
+                          </div>
+
+                          <!-- Ordens sem Tempo Padrão -->
+                          <ng-container *ngIf="analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0">
+                            <p class="osdia-idle-desc">
+                              <strong>Equipe penalizada por ausência de Tempo Padrão:</strong>
+                              {{ analysis.summary.countTempoPadraoVazio }} ordem(ns) sem tempo padrão cadastrado. O sistema calcula a eficiência como <em>Tempo Padrão / TR</em>, portanto ordens vazias contam como zero, prejudicando o resultado.
+                            </p>
+                            <p class="osdia-idle-sim" *ngIf="analysis.simulatedEficiencia !== undefined && analysis.simulatedEficiencia !== null">
+                              🔮 <strong>Simulação:</strong> se as {{ analysis.summary.countTempoPadraoVazio }} ordens vazias usassem o TR médio global ({{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min), a eficiência estimada seria
+                              <strong class="sim-value">{{ analysis.simulatedEficiencia | number:'1.1-1' }}%</strong>
+                              vs. atual <strong>{{ analysis.eficienciaValue }}%</strong>.
+                            </p>
+                            <div class="osdia-ev-list">
+                              <div class="osdia-ev-item" *ngFor="let ev of analysis.tempoPadraoVazioOrders">
+                                <div class="osdia-ev-header">
+                                  <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                  <span class="rpt-osdia-flag rpt-osdia-flag--vazio">T.Padrão Vazio</span>
+                                </div>
+                                <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
+                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
+                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                </p>
+                                <div class="osdia-ev-timeline">
+                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Despachada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">No Local</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Liberada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                                </div>
+                                <ul class="osdia-ev-alerts">
+                                  <li class="osdia-ev-alert">
+                                    <strong>Tempo de Reparo:</strong> {{ ev.tr_ordem_min }} min — sem tempo padrão cadastrado para cálculo de eficiência.
+                                  </li>
+                                </ul>
+                              </div>
+                            </div>
+                          </ng-container>
+
+                        </div>
+                      </ng-container>
+                      <ng-template #noEficienciaEvidence>
+                        <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
               </section>
             </ng-container>
 
@@ -652,11 +783,11 @@ type SavedFilterState = {
         background: rgba(255,255,255,0.82);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(60,40,30,0.12);
+        border: none;
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         cursor: pointer;
         user-select: none;
-        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        transition: box-shadow 0.15s, background 0.15s;
         white-space: nowrap;
       }
       .rf-chip:hover {
@@ -698,7 +829,7 @@ type SavedFilterState = {
         background: rgba(255,255,255,0.96);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(60,40,30,0.10);
+        border: none;
         border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
         padding: 6px;
@@ -1862,6 +1993,12 @@ type SavedFilterState = {
         border: 1px solid rgba(192, 18, 45, 0.25);
       }
 
+      .rpt-osdia-badge--good {
+        background: rgba(22, 163, 74, 0.1);
+        color: #16a34a;
+        border: 1px solid rgba(22, 163, 74, 0.25);
+      }
+
       .rpt-osdia-card-meta {
         display: flex;
         flex-wrap: wrap;
@@ -2310,6 +2447,26 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       tl_excede_hd:       'TL>20%HD',
       temp_prep_alto:     'TempPrep≥20min',
       sem_os_alto:        'SemOS≥10min',
+    };
+    return labels[flag] ?? flag;
+  }
+
+  protected sortedEficienciaAnalysis(list: EficienciaTeamAnalysis[]): EficienciaTeamAnalysis[] {
+    return [...list].sort((a, b) => {
+      if (a.analysisType !== b.analysisType) {
+        return a.analysisType === 'top_performer' ? -1 : 1;
+      }
+      return a.analysisType === 'top_performer'
+        ? b.eficienciaValue - a.eficienciaValue
+        : a.eficienciaValue - b.eficienciaValue;
+    });
+  }
+
+  protected eficienciaFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      deslocamento_curto: 'Desloc. Curto',
+      tr_excede_hd: 'TR>20%HD',
+      tempo_padrao_vazio: 'T.Padrão Vazio',
     };
     return labels[flag] ?? flag;
   }

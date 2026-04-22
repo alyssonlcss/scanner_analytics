@@ -41,6 +41,7 @@ export interface ReportKpiInsight {
   scores: ReportKpiTeamScore[];
   average: number;
   metaTarget: number;
+  evidenceAnalysis?: EficienciaTeamAnalysis[];
 }
 
 export interface ReportTeamMetric {
@@ -116,6 +117,44 @@ export interface OsDiaTeamAnalysis {
   idleAnalysis?: {
     idleMin: number;
     idlePct: number;
+  };
+}
+
+export interface EficienciaOrderEvidence {
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  tl_ordem_min: number;
+  tr_ordem_min: number;
+  hd_total_min: number;
+  hd_pct_tr: number;
+  tempo_padrao_min?: number;
+  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio'>;
+}
+
+export interface EficienciaTeamAnalysis {
+  team: string;
+  eficienciaValue: number;
+  averageEficiencia: number;
+  avgDeslocamentoMin: number;
+  avgExecucaoMin: number;
+  avgTempoPadraoMin: number;
+  globalAvgDeslocamentoMin: number;
+  globalAvgExecucaoMin: number;
+  analysisType: 'top_performer' | 'underperformer';
+  flags: Array<'masked_efficiency' | 'short_displacement'>;
+  flaggedOrders: EficienciaOrderEvidence[];
+  tempoPadraoVazioOrders: EficienciaOrderEvidence[];
+  simulatedEficiencia?: number;
+  summary: {
+    totalOrders: number;
+    countDeslocamentoCurto: number;
+    countTrExcedeHd: number;
+    countTempoPadraoVazio: number;
   };
 }
 

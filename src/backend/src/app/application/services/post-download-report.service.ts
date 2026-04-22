@@ -50,6 +50,7 @@ interface KpiInsight {
   scores: KpiTeamScore[];
   average: number;
   metaTarget: number;
+  evidenceAnalysis?: EficienciaTeamAnalysis[];
 }
 
 interface DeviationInsight {
@@ -171,6 +172,44 @@ interface OsDiaTeamAnalysis {
   };
 }
 
+interface EficienciaOrderEvidence {
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  tl_ordem_min: number;
+  tr_ordem_min: number;
+  hd_total_min: number;
+  hd_pct_tr: number;
+  tempo_padrao_min?: number;
+  flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio'>;
+}
+
+interface EficienciaTeamAnalysis {
+  team: string;
+  eficienciaValue: number;
+  averageEficiencia: number;
+  avgDeslocamentoMin: number;
+  avgExecucaoMin: number;
+  avgTempoPadraoMin: number;
+  globalAvgDeslocamentoMin: number;
+  globalAvgExecucaoMin: number;
+  analysisType: 'top_performer' | 'underperformer';
+  flags: Array<'masked_efficiency' | 'short_displacement'>;
+  flaggedOrders: EficienciaOrderEvidence[];
+  tempoPadraoVazioOrders: EficienciaOrderEvidence[];
+  simulatedEficiencia?: number;
+  summary: {
+    totalOrders: number;
+    countDeslocamentoCurto: number;
+    countTrExcedeHd: number;
+    countTempoPadraoVazio: number;
+  };
+}
+
 const KPI_DIRECTIONS: Record<string, 'higher-is-better' | 'lower-is-better'> = {
   'OS Dia': 'higher-is-better',
   'Eficiência': 'higher-is-better',
@@ -259,6 +298,21 @@ export class PostDownloadReportService {
     const crossedInsights = this.buildCrossedInsights(teamMetrics, kpis, deviationInsights.teamBreakdown);
     const actionPlan = this.buildActionPlans(teamMetrics, kpis, deviationInsights.teamBreakdown);
     const osDiaAnalysis = this.analyzeOsDia(filtered.deslocamentos, filtered.ranking, kpis);
+
+    // Analyze Eficiencia KPI for evidence of masked efficiency or issues
+    const eficienciaAnalysis = this.analyzeEficiencia(filtered.deslocamentos, filtered.ranking, kpis);
+    console.log('[Generate Report] Eficiencia analysis results:', eficienciaAnalysis.length);
+    // Attach evidence to the Eficiencia KPI insight
+    const eficienciaKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Eficiência'));
+    if (eficienciaKpi && eficienciaAnalysis.length > 0) {
+      console.log('[Generate Report] Attaching evidence to Eficiencia KPI');
+      eficienciaKpi.evidenceAnalysis = eficienciaAnalysis;
+    } else {
+      console.log('[Generate Report] Not attaching evidence:', {
+        foundKpi: !!eficienciaKpi,
+        analysisLength: eficienciaAnalysis.length,
+      });
+    }
 
     const generatedAt = new Date().toISOString();
     const report: GeneratedReport = {
@@ -1552,6 +1606,288 @@ export class PostDownloadReportService {
     }).slice(0, 3);
   }
 
+  private analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): EficienciaTeamAnalysis[] {
+    if (deslocRows.length === 0 || rankingRows.length === 0) {
+      console.log('[Eficiencia Analysis] No deslocamentos or ranking data');
+      return [];
+    }
+
+    // 1. Get Eficiencia KPI insight and determine teams to analyze
+    const eficienciaKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Eficiência'));
+    if (!eficienciaKpi) {
+      console.log('[Eficiencia Analysis] Eficiência KPI not found in kpis:', kpis.map(k => k.kpi));
+      return [];
+    }
+
+    console.log('[Eficiencia Analysis] Found Eficiência KPI:', {
+      average: eficienciaKpi.average,
+      topTeams: eficienciaKpi.topTeams,
+      opportunityTeams: eficienciaKpi.opportunityTeams,
+    });
+
+    const teamsToAnalyze = new Map<string, { value: number; type: 'top_performer' | 'underperformer' }>();
+    
+    // Top 3 teams (check for masked efficiency)
+    for (const t of eficienciaKpi.topTeams) {
+      teamsToAnalyze.set(t.team, { value: t.value, type: 'top_performer' });
+    }
+    
+    // Bottom 3 teams (check for issues)
+    for (const t of eficienciaKpi.opportunityTeams) {
+      teamsToAnalyze.set(t.team, { value: t.value, type: 'underperformer' });
+    }
+
+    console.log('[Eficiencia Analysis] Teams to analyze:', Array.from(teamsToAnalyze.keys()));
+
+    if (teamsToAnalyze.size === 0) {
+      return [];
+    }
+
+    // 2. Resolve deslocamento columns
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol = deslocAcc.resolve(['Equipe']);
+    const aCaminhoCol = deslocAcc.resolve(['A_Caminho', 'A Caminho']);
+    const noLocalCol = deslocAcc.resolve(['No_Local', 'No Local']);
+    const liberadaCol = deslocAcc.resolve(['Liberada']);
+    const nrOrdemCol = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
+    const classeCol = deslocAcc.resolve(['CLASSE', 'Classe']);
+    const causaCol = deslocAcc.resolve(['CAUSA', 'Causa']);
+    const despachadaCol = deslocAcc.resolve(['Despachada']);
+    const tlOrdemCol = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
+    const trOrdemCol = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
+    const tempoPadraoCol = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
+    const hdTotalCol = deslocAcc.resolve(['HD Total', 'HD_Total']);
+
+    if (!teamCol || !aCaminhoCol || !noLocalCol || !liberadaCol) {
+      return [];
+    }
+
+    // 3. Calculate global averages for displacement and execution times
+    const allDisplacementTimes: number[] = [];
+    const allExecutionTimes: number[] = [];
+
+    for (const row of deslocRows) {
+      const tlMin = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
+      const trMin = trOrdemCol ? parseNumber(String(row[trOrdemCol] ?? '')) : null;
+      
+      if (tlMin !== null && Number.isFinite(tlMin) && tlMin > 0) {
+        allDisplacementTimes.push(tlMin);
+      }
+      if (trMin !== null && Number.isFinite(trMin) && trMin > 0) {
+        allExecutionTimes.push(trMin);
+      }
+    }
+
+    const globalAvgDeslocamento = allDisplacementTimes.length > 0
+      ? allDisplacementTimes.reduce((s, v) => s + v, 0) / allDisplacementTimes.length
+      : 0;
+    
+    const globalAvgExecucao = allExecutionTimes.length > 0
+      ? allExecutionTimes.reduce((s, v) => s + v, 0) / allExecutionTimes.length
+      : 0;
+
+    console.log('[Eficiencia Analysis] Global averages:', {
+      displacement: globalAvgDeslocamento,
+      execution: globalAvgExecucao,
+      totalDisplacements: allDisplacementTimes.length,
+      totalExecutions: allExecutionTimes.length,
+    });
+
+    // 4. Analyze each team
+    const result: EficienciaTeamAnalysis[] = [];
+
+    for (const [team, { value: eficienciaValue, type: analysisType }] of teamsToAnalyze.entries()) {
+      // Get all orders for this team — try exact match first, then normalized fallback
+      const teamNorm = normalizeToken(team);
+      let teamRows = deslocRows.filter((row) => String(row[teamCol] ?? '').trim() === team);
+      if (teamRows.length === 0) {
+        teamRows = deslocRows.filter((row) => normalizeToken(String(row[teamCol] ?? '').trim()) === teamNorm);
+      }
+
+      // Calculate team averages
+      const teamDisplacementTimes: number[] = [];
+      const teamExecutionTimes: number[] = [];
+      const teamTempoPadraoTimes: number[] = [];
+
+      for (const row of teamRows) {
+        const tlMin = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
+        const trMin = trOrdemCol ? parseNumber(String(row[trOrdemCol] ?? '')) : null;
+        const tpMin = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+        
+        if (tlMin !== null && Number.isFinite(tlMin) && tlMin > 0) {
+          teamDisplacementTimes.push(tlMin);
+        }
+        if (trMin !== null && Number.isFinite(trMin) && trMin > 0) {
+          teamExecutionTimes.push(trMin);
+        }
+        if (tpMin !== null && Number.isFinite(tpMin) && tpMin > 0) {
+          teamTempoPadraoTimes.push(tpMin);
+        }
+      }
+
+      const avgDeslocamentoMin = teamDisplacementTimes.length > 0
+        ? teamDisplacementTimes.reduce((s, v) => s + v, 0) / teamDisplacementTimes.length
+        : 0;
+      
+      const avgExecucaoMin = teamExecutionTimes.length > 0
+        ? teamExecutionTimes.reduce((s, v) => s + v, 0) / teamExecutionTimes.length
+        : 0;
+
+      const avgTempoPadraoMin = teamTempoPadraoTimes.length > 0
+        ? teamTempoPadraoTimes.reduce((s, v) => s + v, 0) / teamTempoPadraoTimes.length
+        : 0;
+
+      console.log(`[Eficiencia Analysis] Team ${team} (${analysisType}):`, {
+        eficienciaValue,
+        avgDeslocamentoMin,
+        avgExecucaoMin,
+        totalOrders: teamRows.length,
+      });
+
+      // 5. Determine flags based on analysis type and thresholds
+      const flags: EficienciaTeamAnalysis['flags'] = [];
+      const flaggedOrders: EficienciaOrderEvidence[] = [];
+
+      // Thresholds for order-level flags (same for both types)
+      const shortDisplacementThreshold = globalAvgDeslocamento > 0 ? globalAvgDeslocamento * 0.25 : 0;
+
+      // Team-level flags
+      if (analysisType === 'top_performer') {
+        const efficiencyThreshold = eficienciaKpi.average * 1.5;
+        if (eficienciaValue >= efficiencyThreshold) {
+          flags.push('masked_efficiency');
+        }
+        if (shortDisplacementThreshold > 0 && avgDeslocamentoMin > 0 && avgDeslocamentoMin <= shortDisplacementThreshold) {
+          flags.push('short_displacement');
+        }
+      } else {
+        if (shortDisplacementThreshold > 0 && avgDeslocamentoMin > 0 && avgDeslocamentoMin <= shortDisplacementThreshold) {
+          flags.push('short_displacement');
+        }
+      }
+
+      // Simulation: what would efficiency be if missing tempo_padrão were replaced with global avg TR?
+      const tempoPadraoVazioOrders: EficienciaOrderEvidence[] = [];
+      let simSumTp = 0;
+      let simSumTr = 0;
+      let hasAnyVazio = false;
+      for (const row of teamRows) {
+        const trRaw = trOrdemCol ? parseNumber(String(row[trOrdemCol] ?? '')) : null;
+        const tpRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+        if (trRaw !== null && Number.isFinite(trRaw) && trRaw > 0) {
+          simSumTr += trRaw;
+          if (tpRaw !== null && Number.isFinite(tpRaw) && tpRaw > 0) {
+            simSumTp += tpRaw;
+          } else {
+            simSumTp += globalAvgExecucao;
+            hasAnyVazio = true;
+          }
+        }
+      }
+      const simulatedEficiencia = hasAnyVazio && simSumTr > 0
+        ? round2((simSumTp / simSumTr) * 100)
+        : undefined;
+
+      // Collect flagged orders (always, for all analyzed teams)
+      const TR_HD_THRESHOLD = 0.20;
+      if (nrOrdemCol) {
+        for (const row of teamRows) {
+          const tlMin = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
+          const trMin = trOrdemCol ? parseNumber(String(row[trOrdemCol] ?? '')) : null;
+          const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          const tpMin = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+          const hdPctTr = hdMin > 0 && trMin !== null && Number.isFinite(trMin) ? round2((trMin / hdMin) * 100) : 0;
+          const orderFlags: EficienciaOrderEvidence['flags'] = [];
+
+          if (shortDisplacementThreshold > 0 && tlMin !== null && Number.isFinite(tlMin) && tlMin > 0 && tlMin <= shortDisplacementThreshold) {
+            orderFlags.push('deslocamento_curto');
+          }
+          const trExcedeHd = hdMin > 0 && trMin !== null && Number.isFinite(trMin) && trMin > hdMin * TR_HD_THRESHOLD;
+          const trExcedeTempoPadrao = tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 &&
+            trMin !== null && Number.isFinite(trMin) && trMin > tpMin * 2.0;
+          if (trExcedeHd || trExcedeTempoPadrao) {
+            orderFlags.push('tr_excede_hd');
+          }
+
+          if (orderFlags.length > 0) {
+            flaggedOrders.push({
+              nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
+              classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
+              causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+              despachada: despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+              a_caminho: String(row[aCaminhoCol] ?? '').trim(),
+              no_local: String(row[noLocalCol] ?? '').trim(),
+              liberada: String(row[liberadaCol] ?? '').trim(),
+              tl_ordem_min: tlMin !== null && Number.isFinite(tlMin) ? round2(tlMin) : 0,
+              tr_ordem_min: trMin !== null && Number.isFinite(trMin) ? round2(trMin) : 0,
+              hd_total_min: round2(hdMin),
+              hd_pct_tr: hdPctTr,
+              tempo_padrao_min: tpMin !== null && Number.isFinite(tpMin) ? round2(tpMin) : undefined,
+              flags: orderFlags,
+            });
+          }
+
+          // Vazio: order has TR but no tempo_padrão
+          const isTpVazio = (tpMin === null || !Number.isFinite(tpMin) || tpMin <= 0) &&
+            trMin !== null && Number.isFinite(trMin) && trMin > 0;
+          if (isTpVazio) {
+            tempoPadraoVazioOrders.push({
+              nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
+              classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
+              causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+              despachada: despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+              a_caminho: String(row[aCaminhoCol] ?? '').trim(),
+              no_local: String(row[noLocalCol] ?? '').trim(),
+              liberada: String(row[liberadaCol] ?? '').trim(),
+              tl_ordem_min: tlMin !== null && Number.isFinite(tlMin) ? round2(tlMin) : 0,
+              tr_ordem_min: trMin !== null && Number.isFinite(trMin) ? round2(trMin) : 0,
+              hd_total_min: round2(hdMin),
+              hd_pct_tr: hdPctTr,
+              tempo_padrao_min: undefined,
+              flags: ['tempo_padrao_vazio'],
+            });
+          }
+        }
+      }
+
+      // Always include all top 3 and bottom 3 teams
+      result.push({
+        team,
+        eficienciaValue: round2(eficienciaValue),
+        averageEficiencia: round2(eficienciaKpi.average),
+        avgDeslocamentoMin: round2(avgDeslocamentoMin),
+        avgExecucaoMin: round2(avgExecucaoMin),
+        avgTempoPadraoMin: round2(avgTempoPadraoMin),
+        globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
+        globalAvgExecucaoMin: round2(globalAvgExecucao),
+        analysisType,
+        flags,
+        flaggedOrders: flaggedOrders.slice(0, 10),
+        tempoPadraoVazioOrders: tempoPadraoVazioOrders.slice(0, 15),
+        simulatedEficiencia,
+        summary: {
+          totalOrders: teamRows.length,
+          countDeslocamentoCurto: flaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length,
+          countTrExcedeHd: flaggedOrders.filter((o) => o.flags.includes('tr_excede_hd')).length,
+          countTempoPadraoVazio: tempoPadraoVazioOrders.length,
+        },
+      });
+    }
+
+    console.log(`[Eficiencia Analysis] Final result count: ${result.length}`);
+
+    return result.sort((a, b) => {
+      // Sort top performers first, then underperformers
+      if (a.analysisType !== b.analysisType) {
+        return a.analysisType === 'top_performer' ? -1 : 1;
+      }
+      // Within same type, sort by efficiency value (descending for top, ascending for bottom)
+      return a.analysisType === 'top_performer'
+        ? b.eficienciaValue - a.eficienciaValue
+        : a.eficienciaValue - b.eficienciaValue;
+    });
+  }
+
   private buildMarkdownReport(report: GeneratedReport): string {
     const lines: string[] = [];
     const hr = '---';
@@ -1626,6 +1962,82 @@ export class PostDownloadReportService {
         }
       }
       lines.push('');
+
+      // Eficiencia drill-down (evidências de eficiência mascarada e problemas)
+      if (insight.kpi === 'Eficiência' && insight.evidenceAnalysis && insight.evidenceAnalysis.length > 0) {
+        lines.push('#### 🔍 Análise Detalhada — Evidências de Incidências');
+        lines.push('');
+        lines.push('_Fonte: Scanner 4.4 - CE M300_');
+        lines.push('');
+
+        for (const analysis of insight.evidenceAnalysis) {
+          const typeLabel = analysis.analysisType === 'top_performer' ? '🏆 Top Performer' : '⚠ Oportunidade';
+          lines.push(`##### ${typeLabel} — ${analysis.team}`);
+          lines.push('');
+          lines.push(`**Eficiência:** ${fmt(analysis.eficienciaValue)}% | **Média Geral:** ${fmt(analysis.averageEficiencia)}%`);
+          lines.push('');
+          lines.push(`**Tempo Médio de Deslocamento:** ${fmt(analysis.avgDeslocamentoMin)} min (média geral: ${fmt(analysis.globalAvgDeslocamentoMin)} min)`);
+          lines.push('');
+          lines.push(`**Tempo Médio de Execução:** ${fmt(analysis.avgExecucaoMin)} min (média geral: ${fmt(analysis.globalAvgExecucaoMin)} min)`);
+          lines.push('');
+          
+          // Flags/alerts
+          if (analysis.flags.includes('masked_efficiency')) {
+            lines.push('⚠️ **Alerta:** Eficiência possivelmente mascarada por erro de apontamento');
+            lines.push('');
+          }
+          if (analysis.flags.includes('short_displacement')) {
+            const threshold = round2(analysis.globalAvgDeslocamentoMin * 0.25);
+            lines.push(`⚠️ **Deslocamento muito curto:** ${fmt(analysis.avgDeslocamentoMin)} min (≤ ${fmt(threshold)} min, 25% da média geral)`);
+            lines.push('');
+          }
+          // Summary stats
+          lines.push(`**Resumo:** ${analysis.summary.totalOrders} ordens | ${analysis.summary.countDeslocamentoCurto} com deslocamento curto | ${analysis.summary.countTrExcedeHd} com TR>20% HD | ${analysis.summary.countTempoPadraoVazio} sem tempo padrão`);
+          lines.push('');
+
+          // Tempo Padrão Vazio section
+          if (analysis.tempoPadraoVazioOrders.length > 0) {
+            lines.push('**⚠️ Ordens sem Tempo Padrão — Equipe penalizada por ausência de referência:**');
+            lines.push('');
+            if (analysis.simulatedEficiencia !== undefined) {
+              lines.push(`> **Simulação:** caso o tempo padrão dessas ordens fosse o TR médio global (${fmt(analysis.globalAvgExecucaoMin)} min), a eficiência estimada seria **${fmt(analysis.simulatedEficiencia)}%** (vs. atual ${fmt(analysis.eficienciaValue)}%).`);
+              lines.push('');
+            }
+            lines.push('| Nr Ordem | Classe | Causa | Despachada | No Local | Liberada | TR (min) |');
+            lines.push('| :--- | :--- | :--- | :--- | :--- | :--- | ---: |');
+            for (const ev of analysis.tempoPadraoVazioOrders.slice(0, 15)) {
+              lines.push(`| ${ev.nr_ordem} | ${ev.classe} | ${ev.causa} | ${ev.despachada} | ${ev.no_local} | ${ev.liberada} | ${fmt(ev.tr_ordem_min)} |`);
+            }
+            lines.push('');
+          }
+
+          // Evidence table
+          if (analysis.flaggedOrders.length > 0) {
+            lines.push('**Ordens com Desvios:**');
+            lines.push('');
+            lines.push('| Nr Ordem | Classe | Causa | Despachada | No Local | Liberada | TR (min) | HD (min) | % HD | Tempo Padrão | Alertas |');
+            lines.push('| :--- | :--- | :--- | :--- | :--- | :--- | ---: | ---: | ---: | ---: | :--- |');
+            
+            for (const ev of analysis.flaggedOrders.slice(0, 10)) {
+              const flagLabels = ev.flags.map((f) => {
+                if (f === 'deslocamento_curto') return 'Desloc. Curto';
+                if (f === 'tr_excede_hd') return 'TR>20% HD';
+                if (f === 'tempo_padrao_vazio') return 'T.Padrão Vazio';
+                return f;
+              }).join(', ');
+              
+              const tempPadraoCell = ev.tempo_padrao_min !== undefined ? fmt(ev.tempo_padrao_min) : '—';
+              lines.push(
+                `| ${ev.nr_ordem} | ${ev.classe} | ${ev.causa} | ${ev.despachada} | ${ev.no_local} | ${ev.liberada} | ${fmt(ev.tr_ordem_min)} | ${fmt(ev.hd_total_min)} | ${fmt(ev.hd_pct_tr)}% | ${tempPadraoCell} | **${flagLabels}** |`,
+              );
+            }
+            lines.push('');
+          } else {
+            lines.push('_Nenhuma ordem específica flagada._');
+            lines.push('');
+          }
+        }
+      }
     }
     lines.push(hr);
     lines.push('');
