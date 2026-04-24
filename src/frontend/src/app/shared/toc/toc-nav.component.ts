@@ -86,8 +86,8 @@ interface TocEntry {
     /* Dot */
     .ds-toc-dot {
       display: block;
-      width: 8px;
-      height: 8px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: var(--line, rgba(23,26,31,0.25));
       border: 2px solid var(--surface-strong, #fffaf2);
@@ -150,6 +150,13 @@ interface TocEntry {
       margin-left: 1px;
     }
 
+    /* When hovering anywhere in the track, show all tooltips faded */
+    .ds-toc-track:hover .ds-toc-tooltip {
+      opacity: 0.28;
+      transform: translateY(-50%) translateX(0);
+    }
+
+    /* The directly hovered item overrides to full opacity */
     .ds-toc-item:hover .ds-toc-tooltip {
       opacity: 1;
       transform: translateY(-50%) translateX(0);
