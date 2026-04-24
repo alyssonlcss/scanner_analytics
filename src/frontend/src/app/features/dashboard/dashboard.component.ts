@@ -3,6 +3,7 @@ import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, 
 import type { Subscription } from 'rxjs';
 
 import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, ScannerApiService } from '../../core/api/scanner-api.service';
+import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
@@ -77,7 +78,7 @@ type SavedFilterState = {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TocNavComponent],
   template: `
     <main class="shell">
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
@@ -265,9 +266,12 @@ type SavedFilterState = {
               <button class="rpt-export-btn" (click)="exportPdf()">Exportar PDF</button>
             </div>
 
+            <!-- TOC Scroll Spy sidebar -->
+            <app-toc-nav [kpis]="report.kpis" />
+
             <!-- KPI sections with bar charts -->
             <ng-container *ngIf="report.kpis.length > 0">
-              <section class="kpi-section anim-el" *ngFor="let kpi of report.kpis">
+              <section class="kpi-section anim-el" [id]="'kpi-' + i" *ngFor="let kpi of report.kpis; let i = index">
                 <div class="kpi-section-header">
                   <div class="kpi-title-row">
                     <h2 class="kpi-name">{{ kpi.kpi }}</h2>
