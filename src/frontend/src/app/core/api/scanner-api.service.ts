@@ -93,6 +93,7 @@ export interface OsDiaOrderEvidence {
     to?: string;
     interval_discounted?: boolean;
     retorno_base_avg_discounted?: number;
+    desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
@@ -187,6 +188,7 @@ export interface UtilizacaoOrderEvidence {
     to?: string;
     interval_discounted?: boolean;
     retorno_base_avg_discounted?: number;
+    desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto'>;

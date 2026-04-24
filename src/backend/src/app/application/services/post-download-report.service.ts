@@ -146,6 +146,7 @@ interface OsDiaOrderEvidence {
     to?: string;
     interval_discounted?: boolean;
     retorno_base_avg_discounted?: number;
+    desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
@@ -240,6 +241,7 @@ interface UtilizacaoOrderEvidence {
     to?: string;
     interval_discounted?: boolean;
     retorno_base_avg_discounted?: number;
+    desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto'>;
@@ -1326,12 +1328,14 @@ export class PostDownloadReportService {
 
       const tempPrepValues: number[] = [];
       const semOsValues: number[]    = [];
+      const semOsIntervalApplied: boolean[] = [];
       let isInterACaminho = false;
       let isInterOrdem    = false;
 
       // First order: TempPrep from 1º Desloc, SemOS from 1º Despacho (raw spreadsheet value)
       tempPrepValues.push(firstDeslocCol   ? (parseNumber(String(firstRow[firstDeslocCol]   ?? '')) ?? Number.NaN) : Number.NaN);
       semOsValues.push(   firstDespachoCol ? (parseNumber(String(firstRow[firstDespachoCol] ?? '')) ?? Number.NaN) : Number.NaN);
+      semOsIntervalApplied.push(false);
 
       for (let i = 1; i < ordered.length; i++) {
         const current  = ordered[i];
@@ -1365,6 +1369,7 @@ export class PostDownloadReportService {
           isInterOrdem = true;
         }
         semOsValues.push(semOs.value);
+        semOsIntervalApplied.push(semOs.intervalApplied);
       }
 
       // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval and retorno base avg
@@ -1502,11 +1507,17 @@ export class PostDownloadReportService {
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
             });
           } else {
+            const prevDespStr = prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() || undefined : undefined;
+            const prevDespDate = prevDespStr ? parseDateTimeBr(prevDespStr) : null;
+            const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
+            const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
             semOsDetails.push({
               type: 'entre_ordens',
               min:  round2(semOsMin),
-              from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+              from: prevLibStr,
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+              interval_discounted: semOsIntervalApplied[i] || undefined,
+              desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
             });
           }
         }
@@ -1567,6 +1578,8 @@ export class PostDownloadReportService {
         };
 
         const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
+        const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
+        const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
         if (existingEvidence) {
           const details = existingEvidence.sem_os_details ?? [];
           details.push(fimDetail);
@@ -1574,6 +1587,11 @@ export class PostDownloadReportService {
           existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
           if (!existingEvidence.flags.includes('sem_os_alto')) {
             existingEvidence.flags.push('sem_os_alto');
+          }
+          // Show interval chip if discounted from fim_jornada window
+          if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
+            existingEvidence.inicio_intervalo = fimInicioIntervalo;
+            existingEvidence.fim_intervalo    = fimFimIntervalo;
           }
         } else {
           // Last order had no flags — create evidence entry with full info
@@ -1595,8 +1613,8 @@ export class PostDownloadReportService {
             a_caminho:         String(row[caminhoCol] ?? '').trim(),
             no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
-            inicio_intervalo:  '',
-            fim_intervalo:     '',
+            inicio_intervalo:  fimInicioIntervalo,
+            fim_intervalo:     fimFimIntervalo,
             prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
             prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
             prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
@@ -2038,11 +2056,13 @@ export class PostDownloadReportService {
 
       const tempPrepValues: number[] = [];
       const semOsValues: number[]    = [];
+      const semOsIntervalApplied: boolean[] = [];
       let isInterACaminho = false;
       let isInterOrdem    = false;
 
       tempPrepValues.push(firstDeslocCol   ? (parseNumber(String(firstRow[firstDeslocCol]   ?? '')) ?? Number.NaN) : Number.NaN);
       semOsValues.push(   firstDespachoCol ? (parseNumber(String(firstRow[firstDespachoCol] ?? '')) ?? Number.NaN) : Number.NaN);
+      semOsIntervalApplied.push(false);
 
       for (let i = 1; i < ordered.length; i++) {
         const current  = ordered[i];
@@ -2072,6 +2092,7 @@ export class PostDownloadReportService {
         });
         if (semOs.intervalApplied) isInterOrdem = true;
         semOsValues.push(semOs.value);
+        semOsIntervalApplied.push(semOs.intervalApplied);
       }
 
       // SemOrdem: gap between last Liberada and Log Off Corrigido
@@ -2211,11 +2232,17 @@ export class PostDownloadReportService {
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
             });
           } else {
+            const prevDespStr = prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() || undefined : undefined;
+            const prevDespDate = prevDespStr ? parseDateTimeBr(prevDespStr) : null;
+            const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
+            const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
             semOsDetails.push({
               type: 'entre_ordens',
               min:  round2(semOsMin),
-              from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+              from: prevLibStr,
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+              interval_discounted: semOsIntervalApplied[i] || undefined,
+              desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
             });
           }
         }
@@ -2276,12 +2303,19 @@ export class PostDownloadReportService {
         };
 
         const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
+        const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
+        const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
         if (existingEvidence) {
           const details = existingEvidence.sem_os_details ?? [];
           details.push(fimDetail);
           existingEvidence.sem_os_details = details;
           existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
           if (!existingEvidence.flags.includes('sem_os_alto')) existingEvidence.flags.push('sem_os_alto');
+          // Show interval chip if discounted from fim_jornada window
+          if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
+            existingEvidence.inicio_intervalo = fimInicioIntervalo;
+            existingEvidence.fim_intervalo    = fimFimIntervalo;
+          }
         } else {
           const i = ordered.length - 1;
           const row = lastRow;
@@ -2300,8 +2334,8 @@ export class PostDownloadReportService {
             a_caminho:         String(row[caminhoCol] ?? '').trim(),
             no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
-            inicio_intervalo:  '',
-            fim_intervalo:     '',
+            inicio_intervalo:  fimInicioIntervalo,
+            fim_intervalo:     fimFimIntervalo,
             prev_liberada:     prevRow && liberadaCol    ? String(prevRow[liberadaCol]    ?? '').trim() : undefined,
             prev_nr_ordem:     prevRow && nrOrdemCol     ? String(prevRow[nrOrdemCol]     ?? '').trim() : undefined,
             prev_despachada:   prevRow && despachadaCol  ? String(prevRow[despachadaCol]  ?? '').trim() : undefined,
