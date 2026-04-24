@@ -449,7 +449,7 @@ type SavedFilterState = {
                                   <strong>Tempo de Deslocamento alto:</strong> {{ ev.tl_ordem_min }} min ({{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min) — limite sugerido: 20% da HD.
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 15 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 25 min</ng-container>.
+                                  <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 10 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 10 min</ng-container>.
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
                                   <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min — limite: 10 min.
@@ -476,8 +476,7 @@ type SavedFilterState = {
                   </div>
                 </ng-container>
                 <!-- Eficiência drill-down (evidências de incidências) -->
-                <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">
-                  <div class="kpi-osdia-drill-head">
+                <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">                  <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — Top 3 e Piores 3 Equipes
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
@@ -605,6 +604,153 @@ type SavedFilterState = {
                         </div>
                       </ng-container>
                       <ng-template #noEficienciaEvidence>
+                        <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
+                <!-- Utilização drill-down (3 piores) -->
+                <ng-container *ngIf="kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis && report.specialAnalysis.utilizacaoAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — 3 Piores
+                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                  </div>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.utilizacaoAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }}%</span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}%</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
+                          TempPrep≥20min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                        </span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
+                          SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
+                        </span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.jornadasAbaixoMeta > 0">
+                          Jornadas &lt; meta: <strong>{{ analysis.jornadasAbaixoMeta }}/{{ analysis.totalJornadas }}</strong>
+                        </span>
+                      </div>
+                      <!-- Card único de warnings: ociosidade + ordens flagadas -->
+                      <ng-container *ngIf="analysis.idleAnalysis || analysis.flaggedOrders.length > 0; else noUtilizacaoEvidence">
+                        <div class="osdia-idle-notice">
+                          <!-- Ociosidade -->
+                          <ng-container *ngIf="analysis.idleAnalysis">
+                            <div class="osdia-idle-header">
+                              <span class="osdia-idle-icon">⚠️</span>
+                              <strong>Ociosidade elevada — {{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}% da jornada sem trabalho registrado</strong>
+                            </div>
+                            <div class="osdia-idle-metrics">
+                              <span class="osdia-idle-chip osdia-idle-chip--hd">HD Total <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 15%</strong></span>
+                            </div>
+                          </ng-container>
+                          <!-- Ordens flagadas -->
+                          <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
+                            <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                              <!-- Header: ordem + alertas -->
+                              <div class="osdia-ev-header">
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
+                              </div>
+                              <!-- Causa -->
+                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
+                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                              </p>
+                              <!-- Linha do tempo -->
+                              <ng-container *ngIf="ev.prev_liberada; else primeiraOsUtilBlock">
+                                <!-- OS Anterior -->
+                                <div class="osdia-ev-timeline">
+                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior ({{ ev.prev_nr_ordem || '—' }})</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Desp. Anterior</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.prev_despachada || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Lib. Anterior</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
+                                </div>
+                                <!-- OS Atual -->
+                                <div class="osdia-ev-timeline">
+                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Despachada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">A Caminho</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">No Local</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Liberada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                                </div>
+                              </ng-container>
+                              <ng-template #primeiraOsUtilBlock>
+                                <div class="osdia-ev-timeline">
+                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Início Calendário</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">-</span>
+                                  <span class="osdia-ev-ts-label">Log In</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.log_in || '—' }}</span>
+                                </div>
+                                <div class="osdia-ev-timeline">
+                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Despachada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">A Caminho</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">No Local</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                                  <span class="osdia-ev-ts-sep">→</span>
+                                  <span class="osdia-ev-ts-label">Liberada</span>
+                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                                </div>
+                              </ng-template>
+                              <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
+                              <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
+                                <span class="osdia-ev-int-icon">⏸</span>
+                                <span class="osdia-ev-int-label">Intervalo:</span>
+                                <span class="osdia-ev-int-val">{{ ev.inicio_intervalo }}</span>
+                                <span class="osdia-ev-int-sep">→</span>
+                                <span class="osdia-ev-int-val">{{ ev.fim_intervalo || '—' }}</span>
+                              </div>
+                              <!-- Alertas em prosa -->
+                              <ul class="osdia-ev-alerts">
+                                <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
+                                  <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 10 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 10 min</ng-container>.
+                                </li>
+                                <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
+                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min — limite: 10 min.
+                                  <ol class="osdia-sem-os-list">
+                                    <li *ngFor="let d of ev.sem_os_details">
+                                      <ng-container [ngSwitch]="d.type">
+                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                        <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '—' }}) e Log Off Corrigido ({{ d.to || '—' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_avg_discounted"> — média retorno base ({{ d.retorno_base_avg_discounted }} min) descontada</ng-container>.</ng-container>
+                                        <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '—' }}) até Início Intervalo ({{ d.to || '—' }}).</ng-container>
+                                      </ng-container>
+                                    </li>
+                                  </ol>
+                                </li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </ng-container>
+                      <ng-template #noUtilizacaoEvidence>
                         <p class="rpt-no-data">Nenhuma ordem com alertas nos dados filtrados.</p>
                       </ng-template>
                     </div>

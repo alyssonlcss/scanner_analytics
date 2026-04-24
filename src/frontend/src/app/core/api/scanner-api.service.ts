@@ -158,6 +158,62 @@ export interface EficienciaTeamAnalysis {
   };
 }
 
+export interface UtilizacaoOrderEvidence {
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  inicio_intervalo: string;
+  fim_intervalo: string;
+  prev_liberada?: string;
+  prev_nr_ordem?: string;
+  prev_despachada?: string;
+  inicio_calendario?: string;
+  log_in?: string;
+  tr_ordem_min: number;
+  tl_ordem_min: number;
+  hd_total_min: number;
+  hd_pct_tr: number;
+  hd_pct_tl: number;
+  tempo_padrao_min?: number;
+  temp_prep_os_min?: number;
+  sem_os_details?: Array<{
+    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    min: number;
+    from?: string;
+    to?: string;
+    interval_discounted?: boolean;
+    retorno_base_avg_discounted?: number;
+  }>;
+  sem_os_total_min?: number;
+  flags: Array<'temp_prep_alto' | 'sem_os_alto'>;
+}
+
+export interface UtilizacaoTeamAnalysis {
+  team: string;
+  utilizacaoValue: number;
+  metaTarget: number;
+  gap: number;
+  hdTotalMin: number;
+  tempPrepTotalMin: number;
+  semOrdemTotalMin: number;
+  totalOrders: number;
+  totalJornadas: number;
+  jornadasAbaixoMeta: number;
+  flaggedOrders: UtilizacaoOrderEvidence[];
+  summary: {
+    countTempPrepAlto: number;
+    countSemOsAlto: number;
+  };
+  idleAnalysis?: {
+    idleMin: number;
+    idlePct: number;
+  };
+}
+
 export interface GeneratedReport {
   generatedAt: string;
   filtersApplied: {
@@ -182,6 +238,7 @@ export interface GeneratedReport {
     crossedInsights: ReportCrossedInsight[];
     actionPlan: ReportActionPlan[];
     osDiaAnalysis: OsDiaTeamAnalysis[];
+    utilizacaoAnalysis: UtilizacaoTeamAnalysis[];
   };
   outputFiles: {
     jsonPath: string;
