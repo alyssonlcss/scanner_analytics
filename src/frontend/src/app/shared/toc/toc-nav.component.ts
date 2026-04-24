@@ -79,7 +79,7 @@ interface TocEntry {
       background: transparent;
       border: none;
       cursor: pointer;
-      padding: 6px 0;
+      padding: 14px 0;
       z-index: 1;
     }
 
