@@ -1021,31 +1021,6 @@ type SavedFilterState = {
                 </div>
               </div>
             </section>
-            <!-- TempPrep / SemOs -->
-            <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.tempPrepAndSemOs.length > 0">
-              <h2 class="rpt-section-title">⏱ TempPrep/Dia e SemOrdem/Dia <span class="rpt-section-note">(média diária em minutos)</span></h2>
-              <div class="rpt-table-wrap">
-                <table class="rpt-table">
-                  <thead>
-                    <tr>
-                      <th>Equipe</th>
-                      <th class="rpt-td-num">Dias</th>
-                      <th class="rpt-td-num">TempPrep/Dia (min)</th>
-                      <th class="rpt-td-num">SemOrdem/Dia (min)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr *ngFor="let tm of report.specialAnalysis.tempPrepAndSemOs">
-                      <td>{{ tm.team }}</td>
-                      <td class="rpt-td-num">{{ tm.records }}</td>
-                      <td class="rpt-td-num">{{ tm.tempPrepJornada }}</td>
-                      <td class="rpt-td-num" [class.rpt-td-high]="tm.semOrdemJornada > 30">{{ tm.semOrdemJornada }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
             <!-- Análise Cruzada -->
             <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.crossedInsights.length > 0">
               <h2 class="rpt-section-title">🔀 Análise Cruzada</h2>

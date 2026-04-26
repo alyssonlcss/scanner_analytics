@@ -2857,6 +2857,8 @@ export class PostDownloadReportService {
 
     if (!teamCol) return [];
 
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
+
     // Global average TME IMP
     const allTmeValues: number[] = [];
     for (const row of deslocRows) {
@@ -2956,7 +2958,7 @@ export class PostDownloadReportService {
         avgTmeImpMin: round2(teamAvgTme),
         globalAvgTmeImpMin: round2(globalAvgTme),
         totalOrders: teamRows.length,
-        flaggedOrders: flaggedOrders.slice(0, 10),
+        flaggedOrders: distinctDates > 7 ? flaggedOrders.slice(0, 10) : flaggedOrders,
         summary: { countTmeMuitoAlto, countSemDeslocamento, countSemExecucao },
       });
     }
@@ -2986,6 +2988,8 @@ export class PostDownloadReportService {
     const primeiroLoginCol   = deslocAcc.resolve(['1º Login', '1o Login']);
 
     if (!teamCol) return [];
+
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
 
     // Global: collect distinct jornada (team+date) first login values
     const globalLoginValues: number[] = [];
@@ -3074,7 +3078,7 @@ export class PostDownloadReportService {
         globalAvgLoginMin: round2(globalAvgLogin),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: flaggedDays.slice(0, 10),
+        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
         summary: { countLoginTardio, countLoginMuitoTardio },
       });
     }
@@ -3106,6 +3110,8 @@ export class PostDownloadReportService {
     const nrOrdemCol          = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
 
     if (!teamCol) return [];
+
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
 
     // Threshold: first dispatch is considered "tardio" if > 10 min after inicio_calendario
     const DESPACHO_TARDIO_MIN = 10;
@@ -3244,7 +3250,7 @@ export class PostDownloadReportService {
         globalAvgDeslocMin: round2(globalAvgDesloc),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: flaggedDays.slice(0, 10),
+        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
         summary: { countDeslocLento, countDeslocMuitoLento, countSemDeslocRegistrado, countDespachioTardio },
       });
     }
@@ -3273,6 +3279,8 @@ export class PostDownloadReportService {
     const logOffCorCol     = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
 
     if (!teamCol) return [];
+
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
 
     // Global average
     const globalRetornoValues: number[] = [];
@@ -3355,7 +3363,7 @@ export class PostDownloadReportService {
         globalAvgRetornoMin: round2(globalAvgRetorno),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: flaggedDays.slice(0, 10),
+        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
         summary: { countRetornoAlto, countRetornoMuitoAlto },
       });
     }
