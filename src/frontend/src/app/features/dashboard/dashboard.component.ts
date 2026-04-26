@@ -72,6 +72,7 @@ type SavedFilterState = {
   filters: Record<FilterKey, string[]>;
   dayRange: { min: number; max: number };
   reportType: ReportTypeValue;
+  reportFilters?: Record<ReportFilterKey, string[]>;
   savedAt?: string;
 };
 
@@ -2420,11 +2421,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.dragSelectionState = null;
     this.dragScrollTimer = null;
   };
-  private readonly boundKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'F5') {
-      event.preventDefault();
-      this.zone.run(() => this.regenerateReport());
-    }
+  private readonly boundKeyDown = (_event: KeyboardEvent) => {
+    // F5 reloads the page normally, which triggers submit() via ngOnInit
   };
   private readonly boundCloseDropdown = (event: MouseEvent) => {
     if (this.openDropdownKey() !== null) {
@@ -2467,10 +2465,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   public ngOnInit(): void {
     const saved = this.loadFromStorage();
+    // Restore extraction filters (ano, mes, etc.) only for context — not used on F5
     const overrides = saved ? new Map(Object.entries(saved.filters) as [FilterKey, string[]][]) : undefined;
     const builtFilters = this.buildSelectFilters(overrides);
     this.selectFilters.set(builtFilters);
-    this.reportFilterStates.set(this.buildReportFilterStates());
+
+    // Restore report filters (Base, Tipo Equipe, Equipe) from storage
+    const baseReportFilters = this.buildReportFilterStates();
+    if (saved?.reportFilters) {
+      const restored = baseReportFilters.map((f) => {
+        const savedVal = saved.reportFilters![f.key];
+        return savedVal ? { ...f, value: savedVal } : f;
+      });
+      this.reportFilterStates.set(this.cascadeReportFilters(restored));
+    } else {
+      this.reportFilterStates.set(baseReportFilters);
+    }
+
     if (saved) {
       this.reportType.set(saved.reportType);
       if (saved.dayRange) {
@@ -2485,6 +2496,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     window.addEventListener('mousemove', this.boundWindowMouseMove, { passive: true });
     window.addEventListener('keydown', this.boundKeyDown);
     window.addEventListener('click', this.boundCloseDropdown, true);
+
+    // Auto-regenerate report on page load (including F5 reload) using backend-cached data
+    setTimeout(() => this.regenerateReport(), 0);
   }
 
   public ngOnDestroy(): void {
@@ -3379,10 +3393,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     for (const f of this.selectFilters()) {
       filters[f.key] = f.value;
     }
+    const reportFilters = {} as Record<ReportFilterKey, string[]>;
+    for (const f of this.reportFilterStates()) {
+      reportFilters[f.key] = f.value;
+    }
     const state: SavedFilterState = {
       filters,
       dayRange: this.resolvedDayRange(),
       reportType: this.reportType(),
+      reportFilters,
       savedAt: new Date().toISOString().slice(0, 10),
     };
     try {
