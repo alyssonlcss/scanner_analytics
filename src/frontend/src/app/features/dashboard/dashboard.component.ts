@@ -445,24 +445,22 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
-                                  ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min — limite: 20% da HD)
-                                  — tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
+                                  <strong>Tempo de Reparo alto:</strong> esta OS consumiu {{ ev.tr_ordem_min }} min — {{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Tempo previsto no M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado' }}</strong>. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.
                                 </li>
                                 <li *ngIf="ev.flags.includes('tl_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Deslocamento alto:</strong> {{ ev.tl_ordem_min }} min ({{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min) — limite sugerido: 20% da HD.
+                                  <strong>Tempo de Deslocamento alto:</strong> o técnico passou {{ ev.tl_ordem_min }} min em deslocamento nesta OS — {{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 10 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 10 min</ng-container>.
+                                  <strong>TempPrep/OS elevado:</strong> o técnico levou {{ ev.temp_prep_os_min }} min entre <ng-container *ngIf="ev.prev_liberada">a liberação da OS anterior e o registro de saída nesta OS</ng-container><ng-container *ngIf="!ev.prev_liberada">o início da jornada e o registro de saída da primeira OS</ng-container> — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min — limite: 10 min.
+                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details">
                                       <ng-container [ngSwitch]="d.type">
-                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até o primeiro despacho ({{ d.to || '—' }}).</ng-container>
                                         <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '\u2014' }})<ng-container *ngIf="d.desp_anterior"> · Desp. Anterior ({{ d.desp_anterior }})</ng-container> até Despachada ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo descontado</ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off Corrigido ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
+                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
                                         <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '\u2014' }}) até Início Intervalo ({{ d.to || '\u2014' }}).</ng-container>
                                       </ng-container>
                                     </li>
@@ -553,19 +551,16 @@ type SavedFilterState = {
                               </div>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo muito baixo:</strong> {{ ev.tr_ordem_min }} min
-                                  (abaixo de 20% do tempo padrão<ng-container *ngIf="ev.tempo_padrao_min !== undefined"> de {{ ev.tempo_padrao_min }} min</ng-container> e da média global de {{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min).
+                                  <strong>Tempo de Reparo muito baixo:</strong> esta OS foi encerrada com apenas {{ ev.tr_ordem_min }} min de atendimento — menos de 20% do tempo previsto<ng-container *ngIf="ev.tempo_padrao_min !== undefined"> de {{ ev.tempo_padrao_min }} min</ng-container> e da média geral de {{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min. Pode indicar OS encerrada sem atendimento completo ou lançamento incorreto no sistema.
                                 </li>
                                 <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
-                                  <strong>Deslocamento (TL) muito curto:</strong> {{ ev.tl_ordem_min }} min
-                                  (&le; {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min &mdash; 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min).
+                                  <strong>Deslocamento (TL) muito curto:</strong> o tempo de deslocamento desta OS foi de apenas {{ ev.tl_ordem_min }} min — inferior a 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.
                                 </li>
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
-                                  ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min &mdash; limite: 20% da HD) &mdash; tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
+                                  <strong>Tempo de Reparo alto:</strong> esta OS consumiu {{ ev.tr_ordem_min }} min — {{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Tempo previsto no M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado' }}</strong>. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.
                                 </li>
                                 <li *ngIf="ev.flags.includes('tempo_padrao_vazio')" class="osdia-ev-alert">
-                                  <strong>Tempo Padrão ausente:</strong> TR {{ ev.tr_ordem_min }} min — sem tempo padrão cadastrado, eficiência calculada como zero para esta OS.
+                                  <strong>Tempo Padrão ausente:</strong> esta OS foi atendida em {{ ev.tr_ordem_min }} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.
                                 </li>
                               </ul>
                             </div>
@@ -713,16 +708,16 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> {{ ev.temp_prep_os_min }} min aguardando confirmação de "A Caminho" após <ng-container *ngIf="ev.prev_liberada">Despacho/Lib. Anterior — limite: 10 min</ng-container><ng-container *ngIf="!ev.prev_liberada">Início do Calendário (1ª OS da jornada) — limite: 10 min</ng-container>.
+                                  <strong>TempPrep/OS elevado:</strong> o técnico levou {{ ev.temp_prep_os_min }} min entre <ng-container *ngIf="ev.prev_liberada">a liberação da OS anterior e o registro de saída nesta OS</ng-container><ng-container *ngIf="!ev.prev_liberada">o início da jornada e o registro de saída da primeira OS</ng-container> — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min — limite: 10 min.
+                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details">
                                       <ng-container [ngSwitch]="d.type">
-                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até Despachada ({{ d.to || '—' }}).</ng-container>
+                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até o primeiro despacho ({{ d.to || '—' }}).</ng-container>
                                         <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '\u2014' }})<ng-container *ngIf="d.desp_anterior"> · Desp. Anterior ({{ d.desp_anterior }})</ng-container> até Despachada ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo descontado</ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off Corrigido ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
+                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
                                         <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '\u2014' }}) até Início Intervalo ({{ d.to || '\u2014' }}).</ng-container>
                                       </ng-container>
                                     </li>
@@ -745,7 +740,7 @@ type SavedFilterState = {
                     🔍 Análise Detalhada — Ordens com TME IMP Elevado
                     <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
                   </div>
-                  <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. Um TME IMP alto indica tempo ocioso entre o despacho e a chegada ao local sem execução produtiva.</p>
+                  <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. O TME IMP mede o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva — quanto maior esse tempo, mais prejudica a pontuação da equipe.</p>
                   <div class="rpt-osdia-grid">
                     <div class="rpt-osdia-card" *ngFor="let analysis of kpi.tmeImpAnalysis">
                       <div class="rpt-osdia-card-head">
@@ -798,13 +793,13 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
-                              <strong>TME IMP elevado:</strong> {{ ev.tme_imp_min | number:'1.1-1' }} min de tempo improdutivo nesta OS — média da equipe: {{ ev.team_avg_tme_min | number:'1.1-1' }} min, média global: {{ ev.global_avg_tme_min | number:'1.1-1' }} min. Ordens com TME IMP alto indicam tempo entre despacho e início da execução sem justificativa produtiva.
+                              <strong>TME IMP elevado:</strong> esta OS acumulou {{ ev.tme_imp_min | number:'1.1-1' }} min de tempo improdutivo — acima da média da equipe ({{ ev.team_avg_tme_min | number:'1.1-1' }} min) e da média geral ({{ ev.global_avg_tme_min | number:'1.1-1' }} min). Esse é o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva registrada. Quanto maior esse tempo, mais prejudica a pontuação da equipe.
                             </li>
                             <li *ngIf="ev.flags.includes('sem_deslocamento')" class="osdia-ev-alert">
-                              <strong>Sem registro de deslocamento:</strong> a OS tem TL Ordem ({{ ev.tl_ordem_min | number:'1.1-1' }} min) mas não há horário de "A Caminho" registrado, sugerindo deslocamento não lançado no sistema — o que mascara o tempo real improdutivo.
+                              <strong>Sem registro de deslocamento:</strong> a OS tem {{ ev.tl_ordem_min | number:'1.1-1' }} min de deslocamento, mas não há horário de saída lançado no sistema. O técnico se deslocou mas não atualizou o aplicativo, impedindo o cálculo correto do tempo improdutivo.
                             </li>
                             <li *ngIf="ev.flags.includes('sem_execucao')" class="osdia-ev-alert">
-                              <strong>Sem TR Ordem:</strong> a OS não registrou tempo de execução (TR=0) mas tem tempo improdutivo — possível OS encerrada sem atendimento ou lançamento incorreto.
+                              <strong>Sem TR Ordem:</strong> esta OS não tem registro de execução, mas acumulou tempo improdutivo. Pode indicar uma OS encerrada sem atendimento real ou lançamento incorreto no sistema.
                             </li>
                           </ul>
                         </div>
@@ -854,10 +849,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login muito tardio:</strong> {{ ev.primeiro_login_min | number:'1.1-1' }} min — mais de 2× a meta ({{ analysis.metaTarget }} min). Este atraso severo comprime toda a janela de trabalho da equipe no dia.
+                              <strong>Login muito tardio:</strong> o técnico levou {{ ev.primeiro_login_min | number:'1.1-1' }} min para entrar no sistema — mais do que o dobro da meta de {{ analysis.metaTarget }} min. Um atraso tão grande atrasa o primeiro despacho e reduz bastante o tempo disponível para atendimento no dia.
                             </li>
                             <li *ngIf="ev.flags.includes('login_tardio') && !ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login tardio:</strong> {{ ev.primeiro_login_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_login_min | number:'1.1-1' }} min). Cada minuto de atraso no login atrasa o primeiro despacho e reduz o tempo disponível para OS.
+                              <strong>Login tardio:</strong> o técnico levou {{ ev.primeiro_login_min | number:'1.1-1' }} min para entrar no sistema — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_login_min | number:'1.1-1' }} min). Quanto mais tarde o técnico acessa o sistema, mais tarde recebe o primeiro despacho e menos chamados consegue atender no dia.
                             </li>
                           </ul>
                         </div>
@@ -920,24 +915,22 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
-                              <strong>Despacho tardio:</strong> o primeiro despacho ocorreu
-                              <strong>{{ ev.despacho_apos_inicio_min | number:'1.1-1' }} min</strong> após o Início Calendário
-                              (threshold: 10 min)
+                              <strong>Despacho tardio:</strong> a equipe recebeu a primeira OS com <strong>{{ ev.despacho_apos_inicio_min | number:'1.1-1' }} min</strong> de atraso em relação ao início da jornada — acima do limite de 10 min.
                               <ng-container *ngIf="ev.login_atraso_min > 0">
-                                — sendo <strong>{{ ev.login_atraso_min | number:'1.1-1' }} min</strong> de atraso no login
-                                (Início Cal. {{ ev.inicio_calendario }} → Log In {{ ev.log_in_corrigido }})
-                                e o restante (<strong>{{ (ev.despacho_apos_inicio_min - ev.login_atraso_min) | number:'1.1-1' }} min</strong>) de espera após o login até o primeiro despacho.
+                                Desse total, <strong>{{ ev.login_atraso_min | number:'1.1-1' }} min</strong> foram de atraso no acesso ao sistema
+                                (início da jornada {{ ev.inicio_calendario }} → acesso {{ ev.log_in_corrigido }})
+                                e os demais <strong>{{ (ev.despacho_apos_inicio_min - ev.login_atraso_min) | number:'1.1-1' }} min</strong> de espera entre o acesso e o primeiro despacho.
                               </ng-container>
-                              A equipe ficou em espera antes de receber a primeira OS, reduzindo o tempo produtivo do dia.
+                              Esse atraso reduz o tempo disponível para atendimentos no dia.
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento muito lento:</strong> {{ ev.primeiro_desloc_min | number:'1.1-1' }} min — mais de 1,5× a meta ({{ analysis.metaTarget }} min). A equipe demorou excessivamente para sair após o despacho, reduzindo o tempo efetivo de campo no dia.
+                              <strong>Deslocamento muito lento:</strong> a equipe levou {{ ev.primeiro_desloc_min | number:'1.1-1' }} min para registrar saída após o primeiro despacho — mais de 1,5 vez a meta de {{ analysis.metaTarget }} min. Uma demora tão grande indica que o técnico ficou parado por muito tempo antes de se deslocar para o primeiro atendimento do dia.
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento lento:</strong> {{ ev.primeiro_desloc_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_desloc_min | number:'1.1-1' }} min).
+                              <strong>Deslocamento lento:</strong> a equipe levou {{ ev.primeiro_desloc_min | number:'1.1-1' }} min para registrar saída após o primeiro despacho — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_desloc_min | number:'1.1-1' }} min). Sair tarde para o primeiro atendimento reduz o aproveitamento da jornada.
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
-                              <strong>Sem deslocamento registrado:</strong> há registro de despacho mas não de "A Caminho" — pode indicar lançamento fora do sistema ou deslocamento não registrado, impossibilitando o cálculo real do 1º Desloc.
+                              <strong>Sem deslocamento registrado:</strong> há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.
                             </li>
                           </ul>
                         </div>
@@ -987,10 +980,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno muito alto:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — mais de 1,5× a meta ({{ analysis.metaTarget }} min). Indica deslocamento muito longo de volta à base, região de atuação distante, ou permanência no campo sem OS após a última liberada.
+                              <strong>Retorno muito alto:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — mais de 1,5 vez a meta de {{ analysis.metaTarget }} min. Pode indicar trajeto muito longo até a base, região de atuação distante, ou permanência no campo sem atendimento após a última OS. Retornos longos são descontados no cálculo de Utilização, prejudicando a nota da equipe.
                             </li>
                             <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno acima da meta:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_retorno_min | number:'1.1-1' }} min, média global: {{ ev.global_avg_retorno_min | number:'1.1-1' }} min). Este tempo é descontado no cálculo de Utilização, portanto impacta diretamente na nota.
+                              <strong>Retorno acima da meta:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_retorno_min | number:'1.1-1' }} min, média geral: {{ ev.global_avg_retorno_min | number:'1.1-1' }} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.
                             </li>
                           </ul>
                         </div>
