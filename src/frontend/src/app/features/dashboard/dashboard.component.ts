@@ -625,7 +625,7 @@ type SavedFilterState = {
                               <span class="osdia-idle-chip osdia-idle-chip--hd">HD Médio/dia <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem Médio/dia <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
-                              <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 15%</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
                             </div>
                           </ng-container>
                           <!-- Ordens flagadas -->
