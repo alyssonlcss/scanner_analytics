@@ -318,11 +318,12 @@ type SavedFilterState = {
                   </div>
                 </div>
                 <!-- OS/Dia drill-down (3 piores) -->
-                <ng-container *ngIf="kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0">
+                <ng-container *ngIf="kpi.kpi === 'OS Dia'">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — 3 Piores
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
+                  <ng-container *ngIf="report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0; else noOsDiaAnalysis">
                   <div class="rpt-osdia-grid">
                     <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.osDiaAnalysis">
                       <div class="rpt-osdia-card-head">
@@ -474,6 +475,10 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                  </ng-container>
+                  <ng-template #noOsDiaAnalysis>
+                    <p class="rpt-no-data">Nenhuma equipe abaixo da meta de OS/Dia para os filtros selecionados.</p>
+                  </ng-template>
                 </ng-container>
                 <!-- Eficiência drill-down (evidências de incidências) -->
                 <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">                  <div class="kpi-osdia-drill-head">

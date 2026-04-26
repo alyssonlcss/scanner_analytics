@@ -246,23 +246,10 @@ export async function createServer() {
   });
 
   server.get('/api/scanner/reports/teams', async (_request, reply) => {
-    const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
-    const potentialFiles = resolveDownloadedFiles(dataDirectory, downloadTargets);
-    const downloadedFiles: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
-
-    for (const file of potentialFiles) {
-      try {
-        await access(file.filePath);
-        downloadedFiles.push(file);
-      } catch { /* skip missing */ }
-    }
-
-    if (downloadedFiles.length === 0) {
-      const entries = await readdir(dataDirectory).catch(() => [] as string[]);
-      for (const entry of entries.filter((e) => e.toLowerCase().endsWith('.csv'))) {
-        downloadedFiles.push({ analysisTab: 'unknown', tableTitle: entry.replace(/\.csv$/i, ''), fileName: entry, filePath: join(dataDirectory, entry) });
-      }
-    }
+    const { dataDirectory, downloadedFiles } = await resolveReportFiles(
+      environment.spotfire.outputDirectory,
+      downloadTargets,
+    );
 
     const teams = await postDownloadReport.listTeams({ dataDirectory, downloadedFiles });
     return reply.send({ teams });
@@ -270,32 +257,10 @@ export async function createServer() {
 
   server.post('/api/scanner/reports/generate', async (request, reply) => {
     const payload = reportGenerationSchema.parse(request.body);
-    const dataDirectory = resolve(process.cwd(), environment.spotfire.outputDirectory);
-    const potentialFiles = resolveDownloadedFiles(dataDirectory, downloadTargets);
-    const downloadedFiles: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
-
-    for (const file of potentialFiles) {
-      try {
-        await access(file.filePath);
-        downloadedFiles.push(file);
-      } catch {
-        // ignore missing files and keep only existing downloaded tables
-      }
-    }
-
-    if (downloadedFiles.length === 0) {
-      const entries = await readdir(dataDirectory).catch(() => [] as string[]);
-      const csvEntries = entries.filter((entry) => entry.toLowerCase().endsWith('.csv'));
-
-      for (const entry of csvEntries) {
-        downloadedFiles.push({
-          analysisTab: 'unknown',
-          tableTitle: entry.replace(/\.csv$/i, ''),
-          fileName: entry,
-          filePath: join(dataDirectory, entry),
-        });
-      }
-    }
+    const { dataDirectory, downloadedFiles } = await resolveReportFiles(
+      environment.spotfire.outputDirectory,
+      downloadTargets,
+    );
 
     if (downloadedFiles.length === 0) {
       return reply.code(404).send({
@@ -459,4 +424,76 @@ function resolveDownloadedFiles(
   }
 
   return resolved;
+}
+
+function resolveDataDirectoryCandidates(configuredOutputDirectory: string): string[] {
+  const candidates = [
+    resolve(process.cwd(), configuredOutputDirectory),
+    resolve(process.cwd(), 'src/data'),
+    resolve(process.cwd(), 'data'),
+    resolve(process.cwd(), '../data'),
+    resolve(process.cwd(), '../../data'),
+  ];
+
+  return Array.from(new Set(candidates));
+}
+
+async function resolveReportFiles(
+  configuredOutputDirectory: string,
+  downloadTargets: ReadonlyArray<{ analysisTab: string; tableTitle: string; fileAlias?: string }>,
+): Promise<{
+  dataDirectory: string;
+  downloadedFiles: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }>;
+}> {
+  const candidates = resolveDataDirectoryCandidates(configuredOutputDirectory);
+
+  for (const dataDirectory of candidates) {
+    const potentialFiles = resolveDownloadedFiles(dataDirectory, downloadTargets);
+    const downloadedFiles = await filterExistingDownloadedFiles(potentialFiles);
+
+    if (downloadedFiles.length > 0) {
+      return { dataDirectory, downloadedFiles };
+    }
+
+    const fallbackCsvFiles = await resolveAnyCsvFiles(dataDirectory);
+    if (fallbackCsvFiles.length > 0) {
+      return { dataDirectory, downloadedFiles: fallbackCsvFiles };
+    }
+  }
+
+  return {
+    dataDirectory: candidates[0],
+    downloadedFiles: [],
+  };
+}
+
+async function filterExistingDownloadedFiles(
+  files: ReadonlyArray<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }>,
+): Promise<Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }>> {
+  const resolved: Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }> = [];
+
+  for (const file of files) {
+    try {
+      await access(file.filePath);
+      resolved.push(file);
+    } catch {
+      // ignore missing files and keep only existing downloaded tables
+    }
+  }
+
+  return resolved;
+}
+
+async function resolveAnyCsvFiles(
+  dataDirectory: string,
+): Promise<Array<{ analysisTab: string; tableTitle: string; fileName: string; filePath: string }>> {
+  const entries = await readdir(dataDirectory).catch(() => [] as string[]);
+  const csvEntries = entries.filter((entry) => entry.toLowerCase().endsWith('.csv'));
+
+  return csvEntries.map((entry) => ({
+    analysisTab: 'unknown',
+    tableTitle: entry.replace(/\.csv$/i, ''),
+    fileName: entry,
+    filePath: join(dataDirectory, entry),
+  }));
 }

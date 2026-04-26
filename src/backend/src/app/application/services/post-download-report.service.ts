@@ -934,12 +934,28 @@ export class PostDownloadReportService {
         continue;
       }
 
-      const values: KpiRankItem[] = rows
-        .map((row) => ({
-          team: String(row[teamCol] ?? '').trim(),
-          value: parseNumber(String(row[kpiCol] ?? '')) ?? Number.NaN,
+      const teamTotals = new Map<string, { sum: number; count: number }>();
+
+      for (const row of rows) {
+        const team = String(row[teamCol] ?? '').trim();
+        const value = parseNumber(String(row[kpiCol] ?? ''));
+
+        if (!team || value === null || !Number.isFinite(value)) {
+          continue;
+        }
+
+        const current = teamTotals.get(team) ?? { sum: 0, count: 0 };
+        current.sum += value;
+        current.count += 1;
+        teamTotals.set(team, current);
+      }
+
+      const values: KpiRankItem[] = Array.from(teamTotals.entries())
+        .map(([team, totals]) => ({
+          team,
+          value: totals.sum / Math.max(totals.count, 1),
         }))
-        .filter((item) => item.team.length > 0 && Number.isFinite(item.value));
+        .filter((item) => Number.isFinite(item.value));
 
       if (values.length === 0) {
         continue;
@@ -1644,6 +1660,7 @@ export class PostDownloadReportService {
       }
 
       const flaggedOrders = teamEvidences.get(team) ?? [];
+      const prioritizedFlaggedOrders = this.selectTopOsDiaEvidences(flaggedOrders);
       const hdEntry       = teamHdTotals.get(team);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
@@ -1666,7 +1683,7 @@ export class PostDownloadReportService {
         tempPrepTotalMin: tempPrepTotal,
         semOrdemTotalMin: semOrdemTotal,
         totalOrders,
-        flaggedOrders,
+        flaggedOrders: prioritizedFlaggedOrders,
         summary: {
           countTrExceeds:    flaggedOrders.filter((e) => e.flags.includes('tr_excede_hd')).length,
           countTlExceeds:    flaggedOrders.filter((e) => e.flags.includes('tl_excede_hd')).length,
@@ -1685,6 +1702,68 @@ export class PostDownloadReportService {
       const bAlerts = b.summary.countTrExceeds + b.summary.countTlExceeds + b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
       return bAlerts - aAlerts;
     }).slice(0, 3);
+  }
+
+  private selectTopOsDiaEvidences(
+    evidences: OsDiaOrderEvidence[],
+    maxPerFlag = 2,
+  ): OsDiaOrderEvidence[] {
+    if (evidences.length === 0) {
+      return [];
+    }
+
+    const selected = new Map<string, OsDiaOrderEvidence>();
+    const flagPriority: OsDiaOrderEvidence['flags'] = [
+      'tr_excede_hd',
+      'tl_excede_hd',
+      'temp_prep_alto',
+      'sem_os_alto',
+    ];
+
+    for (const flag of flagPriority) {
+      const topByFlag = evidences
+        .filter((evidence) => evidence.flags.includes(flag))
+        .sort((left, right) => this.scoreOsDiaEvidenceForFlag(right, flag) - this.scoreOsDiaEvidenceForFlag(left, flag))
+        .slice(0, maxPerFlag);
+
+      for (const evidence of topByFlag) {
+        const key = `${evidence.nr_ordem}|${evidence.despachada}|${evidence.a_caminho}`;
+        if (!selected.has(key)) {
+          selected.set(key, evidence);
+        }
+      }
+    }
+
+    return Array.from(selected.values())
+      .sort((left, right) => this.scoreOsDiaEvidence(right) - this.scoreOsDiaEvidence(left))
+      .slice(0, maxPerFlag * flagPriority.length);
+  }
+
+  private scoreOsDiaEvidenceForFlag(
+    evidence: OsDiaOrderEvidence,
+    flag: OsDiaOrderEvidence['flags'][number],
+  ): number {
+    switch (flag) {
+      case 'tr_excede_hd':
+        return evidence.hd_pct_tr;
+      case 'tl_excede_hd':
+        return evidence.hd_pct_tl;
+      case 'temp_prep_alto':
+        return evidence.temp_prep_os_min ?? 0;
+      case 'sem_os_alto':
+        return evidence.sem_os_total_min ?? 0;
+      default:
+        return 0;
+    }
+  }
+
+  private scoreOsDiaEvidence(evidence: OsDiaOrderEvidence): number {
+    return (
+      evidence.hd_pct_tr +
+      evidence.hd_pct_tl +
+      (evidence.temp_prep_os_min ?? 0) +
+      (evidence.sem_os_total_min ?? 0)
+    );
   }
 
   private analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): EficienciaTeamAnalysis[] {
