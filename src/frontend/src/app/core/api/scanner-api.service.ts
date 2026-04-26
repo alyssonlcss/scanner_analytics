@@ -126,6 +126,7 @@ export interface OsDiaTeamAnalysis {
   idleAnalysis?: {
     idleMin: number;
     idlePct: number;
+    horasExtras?: number;
   };
 }
 
@@ -224,6 +225,7 @@ export interface UtilizacaoTeamAnalysis {
   idleAnalysis?: {
     idleMin: number;
     idlePct: number;
+    horasExtras?: number;
   };
 }
 

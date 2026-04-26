@@ -363,6 +363,7 @@ type SavedFilterState = {
                               <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem Médio/dia <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
                             </div>
                           </ng-container>
                           <!-- Ordens flagadas -->
@@ -626,6 +627,7 @@ type SavedFilterState = {
                               <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem Médio/dia <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
                             </div>
                           </ng-container>
                           <!-- Ordens flagadas -->
@@ -2253,6 +2255,11 @@ type SavedFilterState = {
       .osdia-idle-chip--idle {
         background: rgba(234, 179, 8, 0.15);
         color: #92400e;
+      }
+
+      .osdia-idle-chip--he {
+        background: rgba(168, 85, 247, 0.12);
+        color: #6b21a8;
       }
 
       /* ── Plano de Ação ── */

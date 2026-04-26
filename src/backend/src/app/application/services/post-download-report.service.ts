@@ -183,6 +183,7 @@ interface OsDiaTeamAnalysis {
   idleAnalysis?: {
     idleMin: number;
     idlePct: number;
+    horasExtras: number;
   };
 }
 
@@ -281,6 +282,7 @@ interface UtilizacaoTeamAnalysis {
   idleAnalysis?: {
     idleMin: number;
     idlePct: number;
+    horasExtras: number;
   };
 }
 
@@ -1468,6 +1470,7 @@ export class PostDownloadReportService {
     const logInCorrigidoCol    = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
     const logOffCorrigidoCol2  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
     const retornoBaseCol       = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
+    const horasExtrasCol       = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) {
       return [];
@@ -1495,6 +1498,7 @@ export class PostDownloadReportService {
     const teamSemOrdemSum = new Map<string, number>();
     const teamDayCount = new Map<string, number>();
     const teamDailyIdles = new Map<string, number[]>();
+    const teamHorasExtrasSum = new Map<string, number>();
 
     for (const { team, rows: groupRows } of grouped.values()) {
       teamDayCount.set(team, (teamDayCount.get(team) ?? 0) + 1);
@@ -1630,6 +1634,14 @@ export class PostDownloadReportService {
 
       // Accumulate total order count for this team
       teamTotalOrders.set(team, (teamTotalOrders.get(team) ?? 0) + ordered.length);
+
+      // Accumulate Horas Extras (per-jornada value — same for all OS in the group)
+      if (horasExtrasCol) {
+        const heVal = parseNumber(String(firstRow[horasExtrasCol] ?? ''));
+        if (heVal !== null && Number.isFinite(heVal) && heVal > 0) {
+          teamHorasExtrasSum.set(team, (teamHorasExtrasSum.get(team) ?? 0) + heVal);
+        }
+      }
 
       // Build evidence for flagged orders
       const evidences = teamEvidences.get(team) ?? [];
@@ -1866,7 +1878,7 @@ export class PostDownloadReportService {
         : 0;
       const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
         avgHdTotal > 0 && idlePct >= 10
-          ? { idleMin, idlePct }
+          ? { idleMin, idlePct, horasExtras: round2((teamHorasExtrasSum.get(team) ?? 0) / dayCount) }
           : undefined;
 
       result.push({
@@ -2400,6 +2412,7 @@ export class PostDownloadReportService {
     const logInCorrigidoCol   = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
     const logOffCorrigidoCol  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
     const retornoBaseCol      = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
+    const horasExtrasCol      = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) return [];
 
@@ -2424,6 +2437,7 @@ export class PostDownloadReportService {
     const teamSemOrdemSum = new Map<string, number>();
     const teamDayCount = new Map<string, number>();
     const teamDailyIdles = new Map<string, number[]>();
+    const teamHorasExtrasSum = new Map<string, number>();
     // For jornada-level tracking (jornadasAbaixoMeta count)
     const teamJornadas = new Map<string, Array<{ htTotalMin: number; hdTotalMin: number }>>();
 
@@ -2580,6 +2594,14 @@ export class PostDownloadReportService {
       }
 
       teamTotalOrders.set(team, (teamTotalOrders.get(team) ?? 0) + ordered.length);
+
+      // Accumulate Horas Extras (per-jornada value — same for all OS in the group)
+      if (horasExtrasCol) {
+        const heVal = parseNumber(String(firstRow[horasExtrasCol] ?? ''));
+        if (heVal !== null && Number.isFinite(heVal) && heVal > 0) {
+          teamHorasExtrasSum.set(team, (teamHorasExtrasSum.get(team) ?? 0) + heVal);
+        }
+      }
 
       // Build per-order evidence (exact same logic as analyzeOsDia)
       const evidences = teamEvidences.get(team) ?? [];
@@ -2789,7 +2811,7 @@ export class PostDownloadReportService {
         : 0;
       const idleAnalysis: UtilizacaoTeamAnalysis['idleAnalysis'] =
         avgHdTotal > 0 && idlePct >= IDLE_THRESHOLD_PCT
-          ? { idleMin, idlePct }
+          ? { idleMin, idlePct, horasExtras: round2((teamHorasExtrasSum.get(team) ?? 0) / dayCount) }
           : undefined;
 
       const allJornadas = teamJornadas.get(team) ?? [];
