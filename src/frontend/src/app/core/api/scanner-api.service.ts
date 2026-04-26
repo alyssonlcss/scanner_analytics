@@ -42,6 +42,10 @@ export interface ReportKpiInsight {
   average: number;
   metaTarget: number;
   evidenceAnalysis?: EficienciaTeamAnalysis[];
+  tmeImpAnalysis?: TmeImpTeamAnalysis[];
+  primeiroLoginAnalysis?: PrimeiroLoginTeamAnalysis[];
+  primeiroDeslocAnalysis?: PrimeiroDeslocTeamAnalysis[];
+  retornoBaseAnalysis?: RetornoBaseTeamAnalysis[];
 }
 
 export interface ReportTeamMetric {
@@ -223,6 +227,126 @@ export interface UtilizacaoTeamAnalysis {
   };
 }
 
+export interface TmeImpOrderEvidence {
+  date_ref: string;
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  prev_liberada: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  tr_ordem_min: number;
+  tl_ordem_min: number;
+  tme_imp_min: number;
+  team_avg_tme_min: number;
+  global_avg_tme_min: number;
+  flags: Array<'tme_muito_alto' | 'sem_deslocamento' | 'sem_execucao'>;
+}
+
+export interface TmeImpTeamAnalysis {
+  team: string;
+  tmeImpValue: number;
+  metaTarget: number;
+  gap: number;
+  avgTmeImpMin: number;
+  globalAvgTmeImpMin: number;
+  totalOrders: number;
+  flaggedOrders: TmeImpOrderEvidence[];
+  summary: {
+    countTmeMuitoAlto: number;
+    countSemDeslocamento: number;
+    countSemExecucao: number;
+  };
+}
+
+export interface PrimeiroLoginDayEvidence {
+  date_ref: string;
+  inicio_calendario: string;
+  log_in_corrigido: string;
+  primeiro_login_min: number;
+  team_avg_login_min: number;
+  global_avg_login_min: number;
+  flags: Array<'login_tardio' | 'login_muito_tardio'>;
+}
+
+export interface PrimeiroLoginTeamAnalysis {
+  team: string;
+  primeiroLoginValue: number;
+  metaTarget: number;
+  gap: number;
+  avgLoginMin: number;
+  globalAvgLoginMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: PrimeiroLoginDayEvidence[];
+  summary: {
+    countLoginTardio: number;
+    countLoginMuitoTardio: number;
+  };
+}
+
+export interface PrimeiroDeslocDayEvidence {
+  date_ref: string;
+  nr_ordem: string;
+  hora_primeiro_despacho: string;
+  hora_primeiro_deslocamento: string;
+  inicio_calendario: string;
+  log_in_corrigido: string;
+  primeiro_desloc_min: number;
+  despacho_apos_inicio_min: number;
+  login_atraso_min: number;
+  team_avg_desloc_min: number;
+  global_avg_desloc_min: number;
+  is_primeira_os_jornada: boolean;
+  flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
+}
+
+export interface PrimeiroDeslocTeamAnalysis {
+  team: string;
+  primeiroDeslocValue: number;
+  metaTarget: number;
+  gap: number;
+  avgDeslocMin: number;
+  globalAvgDeslocMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: PrimeiroDeslocDayEvidence[];
+  summary: {
+    countDeslocLento: number;
+    countDeslocMuitoLento: number;
+    countSemDeslocRegistrado: number;
+    countDespachioTardio: number;
+  };
+}
+
+export interface RetornoBaseDayEvidence {
+  date_ref: string;
+  retorno_base_min: number;
+  team_avg_retorno_min: number;
+  global_avg_retorno_min: number;
+  hora_ultima_ordem: string;
+  log_off_corrigido: string;
+  flags: Array<'retorno_alto' | 'retorno_muito_alto'>;
+}
+
+export interface RetornoBaseTeamAnalysis {
+  team: string;
+  retornoBaseValue: number;
+  metaTarget: number;
+  gap: number;
+  avgRetornoMin: number;
+  globalAvgRetornoMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: RetornoBaseDayEvidence[];
+  summary: {
+    countRetornoAlto: number;
+    countRetornoMuitoAlto: number;
+  };
+}
+
 export interface GeneratedReport {
   generatedAt: string;
   filtersApplied: {
@@ -248,6 +372,10 @@ export interface GeneratedReport {
     actionPlan: ReportActionPlan[];
     osDiaAnalysis: OsDiaTeamAnalysis[];
     utilizacaoAnalysis: UtilizacaoTeamAnalysis[];
+    tmeImpAnalysis: TmeImpTeamAnalysis[];
+    primeiroLoginAnalysis: PrimeiroLoginTeamAnalysis[];
+    primeiroDeslocAnalysis: PrimeiroDeslocTeamAnalysis[];
+    retornoBaseAnalysis: RetornoBaseTeamAnalysis[];
   };
   outputFiles: {
     jsonPath: string;

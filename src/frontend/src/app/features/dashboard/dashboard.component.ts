@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
-import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpTeamAnalysis, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocTeamAnalysis, type RetornoBaseTeamAnalysis, ScannerApiService } from '../../core/api/scanner-api.service';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
@@ -318,10 +318,10 @@ type SavedFilterState = {
                     <span class="kpi-cr-val kpi-cr-val--opp">{{ t.value }}</span>
                   </div>
                 </div>
-                <!-- OS/Dia drill-down (3 piores) -->
+                <!-- OS/Dia drill-down (3 abaixo do padrão) -->
                 <ng-container *ngIf="kpi.kpi === 'OS Dia'">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — 3 Piores
+                    🔍 Análise Detalhada — 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <ng-container *ngIf="report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0; else noOsDiaAnalysis">
@@ -485,7 +485,7 @@ type SavedFilterState = {
                 </ng-container>
                 <!-- Eficiência drill-down (evidências de incidências) -->
                 <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">                  <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Top 3 e Piores 3 Equipes
+                    🔍 Análise Detalhada — Top 3 e 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
@@ -590,10 +590,10 @@ type SavedFilterState = {
                     </div>
                   </div>
                 </ng-container>
-                <!-- Utilização drill-down (3 piores) -->
+                <!-- Utilização drill-down (3 abaixo do padrão) -->
                 <ng-container *ngIf="kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis && report.specialAnalysis.utilizacaoAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — 3 Piores
+                    🔍 Análise Detalhada — 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
                   </div>
                   <div class="rpt-osdia-grid">
@@ -739,6 +739,268 @@ type SavedFilterState = {
                     </div>
                   </div>
                 </ng-container>
+                <!-- TME IMP drill-down -->
+                <ng-container *ngIf="kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis && kpi.tmeImpAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Ordens com TME IMP Elevado
+                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                  </div>
+                  <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. Um TME IMP alto indica tempo ocioso entre o despacho e a chegada ao local sem execução produtiva.</p>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.tmeImpAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">
+                          {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
+                        </span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">TME IMP <strong>{{ analysis.tmeImpValue | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média equipe <strong>{{ analysis.avgTmeImpMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média global <strong>{{ analysis.globalAvgTmeImpMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Total OS <strong>{{ analysis.totalOrders }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTmeMuitoAlto > 0">TME≥1.5×avg: <strong>{{ analysis.summary.countTmeMuitoAlto }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemDeslocamento > 0">Sem desloc.: <strong>{{ analysis.summary.countSemDeslocamento }}</strong></span>
+                      </div>
+                      <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0; else noTmeImpEvidence">
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                          <div class="osdia-ev-header">
+                            <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                            <span class="rpt-osdia-flag rpt-osdia-flag--date" *ngIf="ev.date_ref">{{ ev.date_ref }}</span>
+                            <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ tmeImpFlagLabel(f) }}</span>
+                          </div>
+                          <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
+                            <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                            <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                            <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                          </p>
+                          <div class="osdia-ev-timeline" *ngIf="ev.prev_liberada">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Lib. Anterior</span>
+                            <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
+                          </div>
+                          <div class="osdia-ev-timeline">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Despachada</span>
+                            <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">A Caminho</span>
+                            <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">No Local</span>
+                            <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Liberada</span>
+                            <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
+                          </div>
+                          <ul class="osdia-ev-alerts">
+                            <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
+                              <strong>TME IMP elevado:</strong> {{ ev.tme_imp_min | number:'1.1-1' }} min de tempo improdutivo nesta OS — média da equipe: {{ ev.team_avg_tme_min | number:'1.1-1' }} min, média global: {{ ev.global_avg_tme_min | number:'1.1-1' }} min. Ordens com TME IMP alto indicam tempo entre despacho e início da execução sem justificativa produtiva.
+                            </li>
+                            <li *ngIf="ev.flags.includes('sem_deslocamento')" class="osdia-ev-alert">
+                              <strong>Sem registro de deslocamento:</strong> a OS tem TL Ordem ({{ ev.tl_ordem_min | number:'1.1-1' }} min) mas não há horário de "A Caminho" registrado, sugerindo deslocamento não lançado no sistema — o que mascara o tempo real improdutivo.
+                            </li>
+                            <li *ngIf="ev.flags.includes('sem_execucao')" class="osdia-ev-alert">
+                              <strong>Sem TR Ordem:</strong> a OS não registrou tempo de execução (TR=0) mas tem tempo improdutivo — possível OS encerrada sem atendimento ou lançamento incorreto.
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                      <ng-template #noTmeImpEvidence>
+                        <p class="rpt-no-data">Nenhuma ordem com TME IMP elevado nos dados filtrados.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
+                <!-- 1º Login drill-down -->
+                <ng-container *ngIf="kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis && kpi.primeiroLoginAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com 1º Login Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                  </div>
+                  <p class="rpt-section-desc">Dias em que o primeiro login corrigido superou a meta de 8 min. Atrasos no login atrasam o primeiro despacho, comprimem a jornada e reduzem o número de OS possíveis.</p>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.primeiroLoginAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">
+                          {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
+                        </span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">1º Login <strong>{{ analysis.primeiroLoginValue | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média equipe <strong>{{ analysis.avgLoginMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média global <strong>{{ analysis.globalAvgLoginMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Dias com atraso <strong>{{ analysis.diasAcimaMetaCount }}/{{ analysis.totalDays }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countLoginMuitoTardio > 0">Login&gt;16min: <strong>{{ analysis.summary.countLoginMuitoTardio }}</strong></span>
+                      </div>
+                      <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noLoginEvidence">
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <div class="osdia-ev-header">
+                            <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
+                            <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ loginFlagLabel(f) }}</span>
+                          </div>
+                          <div class="osdia-ev-timeline">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Início Calendário</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Log In Corrigido</span>
+                            <span class="osdia-ev-ts-val">{{ ev.log_in_corrigido || '—' }}</span>
+                          </div>
+                          <ul class="osdia-ev-alerts">
+                            <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
+                              <strong>Login muito tardio:</strong> {{ ev.primeiro_login_min | number:'1.1-1' }} min — mais de 2× a meta ({{ analysis.metaTarget }} min). Este atraso severo comprime toda a janela de trabalho da equipe no dia.
+                            </li>
+                            <li *ngIf="ev.flags.includes('login_tardio') && !ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
+                              <strong>Login tardio:</strong> {{ ev.primeiro_login_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_login_min | number:'1.1-1' }} min). Cada minuto de atraso no login atrasa o primeiro despacho e reduz o tempo disponível para OS.
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                      <ng-template #noLoginEvidence>
+                        <p class="rpt-no-data">Nenhum dia com 1º Login acima da meta.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
+                <!-- 1º Desloc. drill-down -->
+                <ng-container *ngIf="kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis && kpi.primeiroDeslocAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com 1º Desloc. Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                  </div>
+                  <p class="rpt-section-desc">Dias em que o tempo entre o primeiro despacho e o primeiro "A Caminho" superou a meta de 25 min. Um 1º Desloc. alto indica que a equipe demora a sair em campo após o primeiro despacho.</p>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.primeiroDeslocAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">
+                          {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
+                        </span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">1º Desloc. <strong>{{ analysis.primeiroDeslocValue | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média equipe <strong>{{ analysis.avgDeslocMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média global <strong>{{ analysis.globalAvgDeslocMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Dias c/ atraso <strong>{{ analysis.diasAcimaMetaCount }}/{{ analysis.totalDays }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countDeslocMuitoLento > 0">Desloc.&gt;37min: <strong>{{ analysis.summary.countDeslocMuitoLento }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemDeslocRegistrado > 0">Sem registro: <strong>{{ analysis.summary.countSemDeslocRegistrado }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countDespachioTardio > 0">Despacho tardio: <strong>{{ analysis.summary.countDespachioTardio }}</strong></span>
+                      </div>
+                      <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noDeslocEvidence">
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <div class="osdia-ev-header">
+                            <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}{{ ev.nr_ordem ? ' · OS ' + ev.nr_ordem : '' }}</span>
+                            <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="ev.is_primeira_os_jornada" title="Primeira OS da jornada">1ª OS</span>
+                            <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ deslocFlagLabel(f) }}</span>
+                          </div>
+                          <div class="osdia-ev-timeline">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Início Calendário</span>
+                            <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">-</span>
+                            <span class="osdia-ev-ts-label">Log In</span>
+                            <span class="osdia-ev-ts-val">{{ ev.log_in_corrigido || '—' }}</span>
+                          </div>
+                          <div class="osdia-ev-timeline">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Despachada</span>
+                            <span class="osdia-ev-ts-val">{{ ev.hora_primeiro_despacho || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">A Caminho</span>
+                            <span class="osdia-ev-ts-val">{{ ev.hora_primeiro_deslocamento || '—' }}</span>
+                          </div>
+                          <ul class="osdia-ev-alerts">
+                            <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
+                              <strong>Despacho tardio:</strong> o primeiro despacho ocorreu
+                              <strong>{{ ev.despacho_apos_inicio_min | number:'1.1-1' }} min</strong> após o Início Calendário
+                              (threshold: 10 min)
+                              <ng-container *ngIf="ev.login_atraso_min > 0">
+                                — sendo <strong>{{ ev.login_atraso_min | number:'1.1-1' }} min</strong> de atraso no login
+                                (Início Cal. {{ ev.inicio_calendario }} → Log In {{ ev.log_in_corrigido }})
+                                e o restante (<strong>{{ (ev.despacho_apos_inicio_min - ev.login_atraso_min) | number:'1.1-1' }} min</strong>) de espera após o login até o primeiro despacho.
+                              </ng-container>
+                              A equipe ficou em espera antes de receber a primeira OS, reduzindo o tempo produtivo do dia.
+                            </li>
+                            <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
+                              <strong>Deslocamento muito lento:</strong> {{ ev.primeiro_desloc_min | number:'1.1-1' }} min — mais de 1,5× a meta ({{ analysis.metaTarget }} min). A equipe demorou excessivamente para sair após o despacho, reduzindo o tempo efetivo de campo no dia.
+                            </li>
+                            <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
+                              <strong>Deslocamento lento:</strong> {{ ev.primeiro_desloc_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_desloc_min | number:'1.1-1' }} min).
+                            </li>
+                            <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
+                              <strong>Sem deslocamento registrado:</strong> há registro de despacho mas não de "A Caminho" — pode indicar lançamento fora do sistema ou deslocamento não registrado, impossibilitando o cálculo real do 1º Desloc.
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                      <ng-template #noDeslocEvidence>
+                        <p class="rpt-no-data">Nenhum dia com 1º Desloc. acima da meta.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
+                <!-- Retorno Base drill-down -->
+                <ng-container *ngIf="kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis && kpi.retornoBaseAnalysis.length > 0">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com Retorno Base Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                  </div>
+                  <p class="rpt-section-desc">Dias em que o retorno à base superou a meta de 40 min. Este tempo é descontado no cálculo de Utilização, impactando diretamente a nota da equipe.</p>
+                  <div class="rpt-osdia-grid">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.retornoBaseAnalysis">
+                      <div class="rpt-osdia-card-head">
+                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-badge rpt-osdia-badge--gap">
+                          {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
+                        </span>
+                      </div>
+                      <div class="rpt-osdia-card-meta">
+                        <span class="rpt-osdia-chip">Retorno Base <strong>{{ analysis.retornoBaseValue | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média equipe <strong>{{ analysis.avgRetornoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Média global <strong>{{ analysis.globalAvgRetornoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">Dias c/ atraso <strong>{{ analysis.diasAcimaMetaCount }}/{{ analysis.totalDays }}</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.summary.countRetornoMuitoAlto > 0">Retorno&gt;60min: <strong>{{ analysis.summary.countRetornoMuitoAlto }}</strong></span>
+                      </div>
+                      <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noRetornoEvidence">
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <div class="osdia-ev-header">
+                            <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
+                            <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ retornoFlagLabel(f) }}</span>
+                          </div>
+                          <div class="osdia-ev-timeline">
+                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Última OS Liberada</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-val">{{ ev.hora_ultima_ordem || '—' }}</span>
+                            <span class="osdia-ev-ts-sep">→</span>
+                            <span class="osdia-ev-ts-label">Log Off Corrigido</span>
+                            <span class="osdia-ev-ts-val">{{ ev.log_off_corrigido || '—' }}</span>
+                          </div>
+                          <ul class="osdia-ev-alerts">
+                            <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
+                              <strong>Retorno muito alto:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — mais de 1,5× a meta ({{ analysis.metaTarget }} min). Indica deslocamento muito longo de volta à base, região de atuação distante, ou permanência no campo sem OS após a última liberada.
+                            </li>
+                            <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
+                              <strong>Retorno acima da meta:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média equipe: {{ ev.team_avg_retorno_min | number:'1.1-1' }} min, média global: {{ ev.global_avg_retorno_min | number:'1.1-1' }} min). Este tempo é descontado no cálculo de Utilização, portanto impacta diretamente na nota.
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                      <ng-template #noRetornoEvidence>
+                        <p class="rpt-no-data">Nenhum dia com Retorno Base acima da meta.</p>
+                      </ng-template>
+                    </div>
+                  </div>
+                </ng-container>
               </section>
             </ng-container>
 
@@ -766,7 +1028,6 @@ type SavedFilterState = {
                 </div>
               </div>
             </section>
-
             <!-- TempPrep / SemOs -->
             <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.tempPrepAndSemOs.length > 0">
               <h2 class="rpt-section-title">⏱ TempPrep/Dia e SemOrdem/Dia <span class="rpt-section-note">(média diária em minutos)</span></h2>
@@ -2130,6 +2391,16 @@ type SavedFilterState = {
         border: 1px solid rgba(192, 18, 45, 0.25);
       }
 
+      .rpt-osdia-badge--first {
+        background: rgba(37, 99, 235, 0.1);
+        color: #1d4ed8;
+        border: 1px solid rgba(37, 99, 235, 0.3);
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+
       .rpt-osdia-badge--good {
         background: rgba(22, 163, 74, 0.1);
         color: #16a34a;
@@ -2633,6 +2904,41 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       tr_excede_hd: 'TR>20%HD',
       tr_muito_baixo: 'TR Baixo',
       tempo_padrao_vazio: 'T.Padrão Vazio',
+    };
+    return labels[flag] ?? flag;
+  }
+
+  protected tmeImpFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      tme_muito_alto:    'TME≥1.5×avg',
+      sem_deslocamento:  'Sem A Caminho',
+      sem_execucao:      'TR=0',
+    };
+    return labels[flag] ?? flag;
+  }
+
+  protected loginFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      login_tardio:       'Login Tardio',
+      login_muito_tardio: 'Login Muito Tardio',
+    };
+    return labels[flag] ?? flag;
+  }
+
+  protected deslocFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      desloc_lento:           'Desloc. Lento',
+      desloc_muito_lento:     'Desloc. Muito Lento',
+      sem_desloc_registrado:  'Sem Registro',
+      despacho_tardio:        'Despacho Tardio',
+    };
+    return labels[flag] ?? flag;
+  }
+
+  protected retornoFlagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      retorno_alto:       'Retorno Alto',
+      retorno_muito_alto: 'Retorno Muito Alto',
     };
     return labels[flag] ?? flag;
   }

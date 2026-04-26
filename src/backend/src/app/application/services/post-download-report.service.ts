@@ -51,6 +51,10 @@ interface KpiInsight {
   average: number;
   metaTarget: number;
   evidenceAnalysis?: EficienciaTeamAnalysis[];
+  tmeImpAnalysis?: TmeImpTeamAnalysis[];
+  primeiroLoginAnalysis?: PrimeiroLoginTeamAnalysis[];
+  primeiroDeslocAnalysis?: PrimeiroDeslocTeamAnalysis[];
+  retornoBaseAnalysis?: RetornoBaseTeamAnalysis[];
 }
 
 interface DeviationInsight {
@@ -100,6 +104,10 @@ export interface GeneratedReport {
     actionPlan: TeamActionPlan[];
     osDiaAnalysis: OsDiaTeamAnalysis[];
     utilizacaoAnalysis: UtilizacaoTeamAnalysis[];
+    tmeImpAnalysis: TmeImpTeamAnalysis[];
+    primeiroLoginAnalysis: PrimeiroLoginTeamAnalysis[];
+    primeiroDeslocAnalysis: PrimeiroDeslocTeamAnalysis[];
+    retornoBaseAnalysis: RetornoBaseTeamAnalysis[];
   };
   outputFiles: {
     jsonPath: string;
@@ -276,6 +284,130 @@ interface UtilizacaoTeamAnalysis {
   };
 }
 
+// ─── TME IMP ───────────────────────────────────────────────────────────────
+interface TmeImpOrderEvidence {
+  date_ref: string;
+  nr_ordem: string;
+  classe: string;
+  causa: string;
+  prev_liberada: string;
+  despachada: string;
+  a_caminho: string;
+  no_local: string;
+  liberada: string;
+  tr_ordem_min: number;
+  tl_ordem_min: number;
+  tme_imp_min: number;   // TR Ordem Imp SS (tempo improdutivo da ordem)
+  team_avg_tme_min: number;
+  global_avg_tme_min: number;
+  flags: Array<'tme_muito_alto' | 'sem_deslocamento' | 'sem_execucao'>;
+}
+
+interface TmeImpTeamAnalysis {
+  team: string;
+  tmeImpValue: number;    // KPI médio da equipe (do ranking)
+  metaTarget: number;
+  gap: number;
+  avgTmeImpMin: number;   // média calculada pelas ordens
+  globalAvgTmeImpMin: number;
+  totalOrders: number;
+  flaggedOrders: TmeImpOrderEvidence[];
+  summary: {
+    countTmeMuitoAlto: number;
+    countSemDeslocamento: number;
+    countSemExecucao: number;
+  };
+}
+
+// ─── 1º Login ──────────────────────────────────────────────────────────────
+interface PrimeiroLoginDayEvidence {
+  date_ref: string;
+  inicio_calendario: string;
+  log_in_corrigido: string;
+  primeiro_login_min: number;   // 1º Login Corrigido (min)
+  team_avg_login_min: number;
+  global_avg_login_min: number;
+  flags: Array<'login_tardio' | 'login_muito_tardio'>;
+}
+
+interface PrimeiroLoginTeamAnalysis {
+  team: string;
+  primeiroLoginValue: number;   // KPI médio (do ranking)
+  metaTarget: number;
+  gap: number;
+  avgLoginMin: number;
+  globalAvgLoginMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: PrimeiroLoginDayEvidence[];
+  summary: {
+    countLoginTardio: number;
+    countLoginMuitoTardio: number;
+  };
+}
+
+// ─── 1º Desloc. ────────────────────────────────────────────────────────────
+interface PrimeiroDeslocDayEvidence {
+  date_ref: string;
+  nr_ordem: string;
+  hora_primeiro_despacho: string;
+  hora_primeiro_deslocamento: string;
+  inicio_calendario: string;
+  log_in_corrigido: string;
+  primeiro_desloc_min: number;
+  despacho_apos_inicio_min: number; // minutes from inicio_calendario to first dispatch
+  login_atraso_min: number;         // minutes from inicio_calendario to login (0 if no delay)
+  team_avg_desloc_min: number;
+  global_avg_desloc_min: number;
+  is_primeira_os_jornada: boolean;
+  flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
+}
+
+interface PrimeiroDeslocTeamAnalysis {
+  team: string;
+  primeiroDeslocValue: number;   // KPI médio (do ranking)
+  metaTarget: number;
+  gap: number;
+  avgDeslocMin: number;
+  globalAvgDeslocMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: PrimeiroDeslocDayEvidence[];
+  summary: {
+    countDeslocLento: number;
+    countDeslocMuitoLento: number;
+    countSemDeslocRegistrado: number;
+    countDespachioTardio: number;
+  };
+}
+
+// ─── Retorno Base ──────────────────────────────────────────────────────────
+interface RetornoBaseDayEvidence {
+  date_ref: string;
+  retorno_base_min: number;
+  team_avg_retorno_min: number;
+  global_avg_retorno_min: number;
+  hora_ultima_ordem: string;
+  log_off_corrigido: string;
+  flags: Array<'retorno_alto' | 'retorno_muito_alto'>;
+}
+
+interface RetornoBaseTeamAnalysis {
+  team: string;
+  retornoBaseValue: number;   // KPI médio (do ranking)
+  metaTarget: number;
+  gap: number;
+  avgRetornoMin: number;
+  globalAvgRetornoMin: number;
+  totalDays: number;
+  diasAcimaMetaCount: number;
+  flaggedDays: RetornoBaseDayEvidence[];
+  summary: {
+    countRetornoAlto: number;
+    countRetornoMuitoAlto: number;
+  };
+}
+
 const KPI_DIRECTIONS: Record<string, 'higher-is-better' | 'lower-is-better'> = {
   'OS Dia': 'higher-is-better',
   'Eficiência': 'higher-is-better',
@@ -384,6 +516,22 @@ export class PostDownloadReportService {
     const utilizacaoAnalysis = this.analyzeUtilizacao(filtered.deslocamentos, kpis);
     console.log('[Generate Report] Utilização analysis results:', utilizacaoAnalysis.length);
 
+    // Analyze remaining KPIs
+    const tmeImpAnalysis      = this.analyzeTmeImp(filtered.deslocamentos, filtered.ranking, kpis);
+    const primeiroLoginAnalysis = this.analyzePrimeiroLogin(filtered.deslocamentos, kpis);
+    const primeiroDeslocAnalysis = this.analyzePrimeiroDesloc(filtered.deslocamentos, kpis);
+    const retornoBaseAnalysis  = this.analyzeRetornoBase(filtered.deslocamentos, kpis);
+
+    // Attach to KPI insights
+    const tmeKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('TME IMP'));
+    if (tmeKpi && tmeImpAnalysis.length > 0) tmeKpi.tmeImpAnalysis = tmeImpAnalysis;
+    const loginKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Login'));
+    if (loginKpi && primeiroLoginAnalysis.length > 0) loginKpi.primeiroLoginAnalysis = primeiroLoginAnalysis;
+    const deslocKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Desloc.'));
+    if (deslocKpi && primeiroDeslocAnalysis.length > 0) deslocKpi.primeiroDeslocAnalysis = primeiroDeslocAnalysis;
+    const retornoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'));
+    if (retornoKpi && retornoBaseAnalysis.length > 0) retornoKpi.retornoBaseAnalysis = retornoBaseAnalysis;
+
     const generatedAt = new Date().toISOString();
     const report: GeneratedReport = {
       generatedAt,
@@ -407,6 +555,10 @@ export class PostDownloadReportService {
         actionPlan,
         osDiaAnalysis,
         utilizacaoAnalysis,
+        tmeImpAnalysis,
+        primeiroLoginAnalysis,
+        primeiroDeslocAnalysis,
+        retornoBaseAnalysis,
       },
       outputFiles: {
         jsonPath: join(params.dataDirectory, this.environment.report.outputFileName),
@@ -2673,6 +2825,542 @@ export class PostDownloadReportService {
       const bAlerts = b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
       return bAlerts - aAlerts;
     }).slice(0, 3);
+  }
+
+  // ─── TME IMP Analyzer ─────────────────────────────────────────────────────
+  private analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): TmeImpTeamAnalysis[] {
+    if (deslocRows.length === 0 || rankingRows.length === 0) return [];
+
+    const TME_IMP_META = 20;
+
+    const tmeKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('TME IMP'));
+    if (!tmeKpi) return [];
+
+    // Teams to analyze: bottom 3 worst only
+    const teamsToAnalyze = new Map<string, { value: number; type: 'underperformer' }>();
+    for (const t of tmeKpi.opportunityTeams) teamsToAnalyze.set(t.team, { value: t.value, type: 'underperformer' });
+    if (teamsToAnalyze.size === 0) return [];
+
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol      = deslocAcc.resolve(['Equipe']);
+    const dateCol      = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const nrOrdemCol   = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
+    const classeCol    = deslocAcc.resolve(['CLASSE', 'Classe']);
+    const causaCol     = deslocAcc.resolve(['CAUSA', 'Causa']);
+    const despachadaCol = deslocAcc.resolve(['Despachada']);
+    const aCaminhoCol  = deslocAcc.resolve(['A_Caminho', 'A Caminho']);
+    const noLocalCol   = deslocAcc.resolve(['No_Local', 'No Local']);
+    const liberadaCol  = deslocAcc.resolve(['Liberada']);
+    const trOrdemCol   = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
+    const tlOrdemCol   = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
+    const tmeImpCol    = deslocAcc.resolve(['TR Ordem Imp SS', 'TR Ordem Imp SS equipe']);
+
+    if (!teamCol) return [];
+
+    // Global average TME IMP
+    const allTmeValues: number[] = [];
+    for (const row of deslocRows) {
+      const v = tmeImpCol ? parseNumber(String(row[tmeImpCol] ?? '')) : null;
+      if (v !== null && Number.isFinite(v) && v > 0) allTmeValues.push(v);
+    }
+    const globalAvgTme = allTmeValues.length > 0 ? allTmeValues.reduce((s, x) => s + x, 0) / allTmeValues.length : 0;
+
+    const result: TmeImpTeamAnalysis[] = [];
+
+    for (const [team, { value: tmeImpValue }] of teamsToAnalyze.entries()) {
+      const teamNorm = normalizeToken(team);
+      let teamRows = deslocRows.filter((r) => String(r[teamCol] ?? '').trim() === team);
+      if (teamRows.length === 0) {
+        teamRows = deslocRows.filter((r) => normalizeToken(String(r[teamCol] ?? '').trim()) === teamNorm);
+      }
+      if (teamRows.length === 0) continue;
+
+      const teamTmeValues: number[] = [];
+      for (const row of teamRows) {
+        const v = tmeImpCol ? parseNumber(String(row[tmeImpCol] ?? '')) : null;
+        if (v !== null && Number.isFinite(v) && v > 0) teamTmeValues.push(v);
+      }
+      const teamAvgTme = teamTmeValues.length > 0 ? teamTmeValues.reduce((s, x) => s + x, 0) / teamTmeValues.length : 0;
+
+      // Sort team rows by despachada time to find prev_liberada per order
+      const sortedTeamRows = [...teamRows].sort((a, b) => {
+        const da = despachadaCol ? parseDateTimeBr(String(a[despachadaCol] ?? '')) : null;
+        const db = despachadaCol ? parseDateTimeBr(String(b[despachadaCol] ?? '')) : null;
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.getTime() - db.getTime();
+      });
+      // Build a map: nr_ordem -> prev_liberada
+      const prevLiberadaMap = new Map<string, string>();
+      for (let i = 1; i < sortedTeamRows.length; i++) {
+        const curr = sortedTeamRows[i];
+        const prev = sortedTeamRows[i - 1];
+        const currNr = nrOrdemCol ? String(curr[nrOrdemCol] ?? '').trim() : '';
+        const prevLib = liberadaCol ? String(prev[liberadaCol] ?? '').trim() : '';
+        if (currNr) prevLiberadaMap.set(currNr, prevLib);
+      }
+
+      // Flag threshold: orders where TME IMP > team average * 1.5 OR > meta * 1.5
+      const flagThreshold = Math.max(teamAvgTme * 1.5, TME_IMP_META * 1.5, 20);
+
+      const flaggedOrders: TmeImpOrderEvidence[] = [];
+      let countTmeMuitoAlto = 0;
+      let countSemDeslocamento = 0;
+      let countSemExecucao = 0;
+
+      for (const row of teamRows) {
+        const tmeMin = tmeImpCol ? parseNumber(String(row[tmeImpCol] ?? '')) : null;
+        const tlMin  = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
+        const trMin  = trOrdemCol ? parseNumber(String(row[trOrdemCol] ?? '')) : null;
+        const aCaminho = aCaminhoCol ? String(row[aCaminhoCol] ?? '').trim() : '';
+        const trValid = trMin !== null && Number.isFinite(trMin) && trMin > 0;
+        const tlValid = tlMin !== null && Number.isFinite(tlMin) && tlMin > 0;
+        const tmeValid = tmeMin !== null && Number.isFinite(tmeMin) && tmeMin > 0;
+
+        const flags: TmeImpOrderEvidence['flags'] = [];
+        if (tmeValid && tmeMin >= flagThreshold) { flags.push('tme_muito_alto'); countTmeMuitoAlto++; }
+        if (!aCaminho && tlValid)                { flags.push('sem_deslocamento'); countSemDeslocamento++; }
+        if (!trValid && tmeValid)                { flags.push('sem_execucao'); countSemExecucao++; }
+
+        if (flags.length === 0) continue;
+
+        const nrOrdem = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
+        flaggedOrders.push({
+          date_ref:          dateCol       ? String(row[dateCol] ?? '').trim()       : '',
+          nr_ordem:          nrOrdem,
+          classe:            classeCol     ? String(row[classeCol] ?? '').trim()     : '',
+          causa:             causaCol      ? String(row[causaCol] ?? '').trim()      : '',
+          prev_liberada:     prevLiberadaMap.get(nrOrdem) ?? '',
+          despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+          a_caminho:         aCaminho,
+          no_local:          noLocalCol    ? String(row[noLocalCol] ?? '').trim()    : '',
+          liberada:          liberadaCol   ? String(row[liberadaCol] ?? '').trim()   : '',
+          tr_ordem_min:      trValid ? round2(trMin!) : 0,
+          tl_ordem_min:      tlValid ? round2(tlMin!) : 0,
+          tme_imp_min:       tmeValid ? round2(tmeMin!) : 0,
+          team_avg_tme_min:  round2(teamAvgTme),
+          global_avg_tme_min: round2(globalAvgTme),
+          flags,
+        });
+      }
+
+      // Sort: highest TME IMP first
+      flaggedOrders.sort((a, b) => b.tme_imp_min - a.tme_imp_min);
+
+      result.push({
+        team,
+        tmeImpValue,
+        metaTarget: TME_IMP_META,
+        gap: round2(tmeImpValue - TME_IMP_META),
+        avgTmeImpMin: round2(teamAvgTme),
+        globalAvgTmeImpMin: round2(globalAvgTme),
+        totalOrders: teamRows.length,
+        flaggedOrders: flaggedOrders.slice(0, 10),
+        summary: { countTmeMuitoAlto, countSemDeslocamento, countSemExecucao },
+      });
+    }
+
+    return result.sort((a, b) => b.tmeImpValue - a.tmeImpValue);
+  }
+
+  // ─── 1º Login Analyzer ────────────────────────────────────────────────────
+  private analyzePrimeiroLogin(deslocRows: CsvRow[], kpis: KpiInsight[]): PrimeiroLoginTeamAnalysis[] {
+    if (deslocRows.length === 0) return [];
+
+    const LOGIN_META = 8;
+
+    const loginKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Login'));
+    if (!loginKpi) return [];
+
+    const teamsToAnalyze = new Map<string, { value: number }>();
+    for (const t of loginKpi.opportunityTeams) teamsToAnalyze.set(t.team, { value: t.value });
+    if (teamsToAnalyze.size === 0) return [];
+
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol            = deslocAcc.resolve(['Equipe']);
+    const dateCol            = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const inicioCalCol       = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
+    const logInCorrigidoCol  = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
+    const primeiroLoginCorCol = deslocAcc.resolve(['1º Login Corrigido', '1o Login Corrigido']);
+    const primeiroLoginCol   = deslocAcc.resolve(['1º Login', '1o Login']);
+
+    if (!teamCol) return [];
+
+    // Global: collect distinct jornada (team+date) first login values
+    const globalLoginValues: number[] = [];
+    const seenGlobal = new Set<string>();
+    for (const row of deslocRows) {
+      const team = teamCol ? String(row[teamCol] ?? '').trim() : '';
+      const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+      const key = `${team}|${date}`;
+      if (seenGlobal.has(key)) continue;
+      seenGlobal.add(key);
+      const loginMin = primeiroLoginCorCol
+        ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
+        : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+      if (loginMin !== null && Number.isFinite(loginMin) && loginMin >= 0) globalLoginValues.push(loginMin);
+    }
+    const globalAvgLogin = globalLoginValues.length > 0
+      ? globalLoginValues.reduce((s, x) => s + x, 0) / globalLoginValues.length : 0;
+
+    const result: PrimeiroLoginTeamAnalysis[] = [];
+
+    for (const [team, { value: loginValue }] of teamsToAnalyze.entries()) {
+      const teamNorm = normalizeToken(team);
+      let teamRows = deslocRows.filter((r) => String(r[teamCol] ?? '').trim() === team);
+      if (teamRows.length === 0) {
+        teamRows = deslocRows.filter((r) => normalizeToken(String(r[teamCol] ?? '').trim()) === teamNorm);
+      }
+      if (teamRows.length === 0) continue;
+
+      // Deduplicate by date (one row per day for jornada-level metrics)
+      const seenDates = new Set<string>();
+      const jornadaRows: CsvRow[] = [];
+      for (const row of teamRows) {
+        const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+        if (!seenDates.has(date)) { seenDates.add(date); jornadaRows.push(row); }
+      }
+
+      const teamLoginValues: number[] = [];
+      for (const row of jornadaRows) {
+        const v = primeiroLoginCorCol
+          ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
+          : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+        if (v !== null && Number.isFinite(v) && v >= 0) teamLoginValues.push(v);
+      }
+      const teamAvgLogin = teamLoginValues.length > 0
+        ? teamLoginValues.reduce((s, x) => s + x, 0) / teamLoginValues.length : 0;
+
+      const diasAcimaMetaCount = teamLoginValues.filter((v) => v > LOGIN_META).length;
+
+      const flaggedDays: PrimeiroLoginDayEvidence[] = [];
+      let countLoginTardio = 0;
+      let countLoginMuitoTardio = 0;
+
+      for (const row of jornadaRows) {
+        const loginMin = primeiroLoginCorCol
+          ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
+          : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+        if (loginMin === null || !Number.isFinite(loginMin)) continue;
+
+        const flags: PrimeiroLoginDayEvidence['flags'] = [];
+        // login_muito_tardio: > meta * 2 (acima de 16 min)
+        // login_tardio: > meta (acima de 8 min)
+        if (loginMin > LOGIN_META * 2) { flags.push('login_muito_tardio'); countLoginMuitoTardio++; }
+        else if (loginMin > LOGIN_META) { flags.push('login_tardio'); countLoginTardio++; }
+
+        if (flags.length === 0) continue;
+
+        flaggedDays.push({
+          date_ref: dateCol ? String(row[dateCol] ?? '').trim() : '',
+          inicio_calendario: inicioCalCol ? String(row[inicioCalCol] ?? '').trim() : '',
+          log_in_corrigido:  logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() : '',
+          primeiro_login_min: round2(loginMin),
+          team_avg_login_min: round2(teamAvgLogin),
+          global_avg_login_min: round2(globalAvgLogin),
+          flags,
+        });
+      }
+
+      flaggedDays.sort((a, b) => b.primeiro_login_min - a.primeiro_login_min);
+
+      result.push({
+        team,
+        primeiroLoginValue: loginValue,
+        metaTarget: LOGIN_META,
+        gap: round2(loginValue - LOGIN_META),
+        avgLoginMin: round2(teamAvgLogin),
+        globalAvgLoginMin: round2(globalAvgLogin),
+        totalDays: jornadaRows.length,
+        diasAcimaMetaCount,
+        flaggedDays: flaggedDays.slice(0, 10),
+        summary: { countLoginTardio, countLoginMuitoTardio },
+      });
+    }
+
+    return result.sort((a, b) => b.primeiroLoginValue - a.primeiroLoginValue);
+  }
+
+  // ─── 1º Desloc. Analyzer ──────────────────────────────────────────────────
+  private analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]): PrimeiroDeslocTeamAnalysis[] {
+    if (deslocRows.length === 0) return [];
+
+    const DESLOC_META = 25;
+
+    const deslocKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Desloc.'));
+    if (!deslocKpi) return [];
+
+    const teamsToAnalyze = new Map<string, { value: number }>();
+    for (const t of deslocKpi.opportunityTeams) teamsToAnalyze.set(t.team, { value: t.value });
+    if (teamsToAnalyze.size === 0) return [];
+
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol             = deslocAcc.resolve(['Equipe']);
+    const dateCol             = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const primeiroDeslocCol   = deslocAcc.resolve(['1º Desloc', '1o Desloc']);
+    const horaPrimDeslocCol   = deslocAcc.resolve(['Hora 1º Deslocamento', 'Hora 1o Deslocamento']);
+    const horaPrimDespachoCol = deslocAcc.resolve(['Hora 1º Despacho', 'Hora 1o Despacho']);
+    const inicioCalCol        = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
+    const logInCorrigidoCol   = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
+    const nrOrdemCol          = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
+
+    if (!teamCol) return [];
+
+    // Threshold: first dispatch is considered "tardio" if > 10 min after inicio_calendario
+    const DESPACHO_TARDIO_MIN = 10;
+
+    // Global average
+    const globalDeslocValues: number[] = [];
+    const seenGlobal = new Set<string>();
+    for (const row of deslocRows) {
+      const team = teamCol ? String(row[teamCol] ?? '').trim() : '';
+      const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+      const key = `${team}|${date}`;
+      if (seenGlobal.has(key)) continue;
+      seenGlobal.add(key);
+      const v = primeiroDeslocCol ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
+      if (v !== null && Number.isFinite(v) && v >= 0) globalDeslocValues.push(v);
+    }
+    const globalAvgDesloc = globalDeslocValues.length > 0
+      ? globalDeslocValues.reduce((s, x) => s + x, 0) / globalDeslocValues.length : 0;
+
+    const result: PrimeiroDeslocTeamAnalysis[] = [];
+
+    for (const [team, { value: deslocValue }] of teamsToAnalyze.entries()) {
+      const teamNorm = normalizeToken(team);
+      let teamRows = deslocRows.filter((r) => String(r[teamCol] ?? '').trim() === team);
+      if (teamRows.length === 0) {
+        teamRows = deslocRows.filter((r) => normalizeToken(String(r[teamCol] ?? '').trim()) === teamNorm);
+      }
+      if (teamRows.length === 0) continue;
+
+      // Deduplicate by date
+      const seenDates = new Set<string>();
+      const jornadaRows: CsvRow[] = [];
+      for (const row of teamRows) {
+        const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+        if (!seenDates.has(date)) { seenDates.add(date); jornadaRows.push(row); }
+      }
+
+      const teamDeslocValues: number[] = [];
+      for (const row of jornadaRows) {
+        const v = primeiroDeslocCol ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
+        if (v !== null && Number.isFinite(v) && v >= 0) teamDeslocValues.push(v);
+      }
+      const teamAvgDesloc = teamDeslocValues.length > 0
+        ? teamDeslocValues.reduce((s, x) => s + x, 0) / teamDeslocValues.length : 0;
+
+      const diasAcimaMetaCount = teamDeslocValues.filter((v) => v > DESLOC_META).length;
+
+      const flaggedDays: PrimeiroDeslocDayEvidence[] = [];
+      let countDeslocLento = 0;
+      let countDeslocMuitoLento = 0;
+      let countSemDeslocRegistrado = 0;
+      let countDespachioTardio = 0;
+
+      for (const row of jornadaRows) {
+        const deslocMin    = primeiroDeslocCol   ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
+        const horaDesloc   = horaPrimDeslocCol   ? String(row[horaPrimDeslocCol] ?? '').trim() : '';
+        const horaDespacho = horaPrimDespachoCol ? String(row[horaPrimDespachoCol] ?? '').trim() : '';
+        const inicioCal    = inicioCalCol        ? String(row[inicioCalCol] ?? '').trim() : '';
+        const logInCor     = logInCorrigidoCol   ? String(row[logInCorrigidoCol] ?? '').trim() : '';
+        const dateRef      = dateCol ? String(row[dateCol] ?? '').trim() : '';
+
+        // Compute despacho_apos_inicio_min: time from inicio_calendario to first dispatch
+        // Also compute login_atraso_min: delay between inicio_calendario and actual login
+        let despachoAposInicioMin = 0;
+        let loginAtrasoMin = 0;
+        const makeDate = (t: string) => {
+          if (t.includes('/')) return parseDateTimeBr(t);
+          const base = dateRef ? `${dateRef} ${t}` : `01/01/2000 ${t}`;
+          return parseDateTimeBr(base);
+        };
+        if (inicioCal && horaDespacho) {
+          const inicioDate  = makeDate(inicioCal);
+          const dispDate    = makeDate(horaDespacho);
+          if (inicioDate && dispDate) {
+            const diff = minutesBetween(dispDate, inicioDate);
+            if (Number.isFinite(diff) && diff >= 0) despachoAposInicioMin = round2(diff);
+          }
+        }
+        if (inicioCal && logInCor) {
+          const inicioDate = makeDate(inicioCal);
+          const loginDate  = makeDate(logInCor);
+          if (inicioDate && loginDate) {
+            const diff = minutesBetween(loginDate, inicioDate);
+            if (Number.isFinite(diff) && diff > 0) loginAtrasoMin = round2(diff);
+          }
+        }
+
+        const flags: PrimeiroDeslocDayEvidence['flags'] = [];
+
+        if (deslocMin === null || !Number.isFinite(deslocMin) || deslocMin < 0) {
+          if (horaDespacho && !horaDesloc) {
+            flags.push('sem_desloc_registrado');
+            countSemDeslocRegistrado++;
+          }
+        } else {
+          // desloc_muito_lento: > meta * 1.5 (> 37.5 min)
+          // desloc_lento: > meta (> 25 min)
+          if (deslocMin > DESLOC_META * 1.5) { flags.push('desloc_muito_lento'); countDeslocMuitoLento++; }
+          else if (deslocMin > DESLOC_META)  { flags.push('desloc_lento');        countDeslocLento++; }
+        }
+
+        // despacho_tardio: first dispatch > DESPACHO_TARDIO_MIN after inicio_calendario
+        // Only flagged as supplemental — requires a primary desloc flag to be present
+        if (despachoAposInicioMin > DESPACHO_TARDIO_MIN && flags.length > 0) {
+          flags.push('despacho_tardio');
+          countDespachioTardio++;
+        }
+
+        if (flags.length === 0) continue;
+
+        flaggedDays.push({
+          date_ref:                   dateRef,
+          nr_ordem:                   nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '',
+          hora_primeiro_despacho:     horaDespacho,
+          hora_primeiro_deslocamento: horaDesloc,
+          inicio_calendario:          inicioCal,
+          log_in_corrigido:           logInCor,
+          primeiro_desloc_min:        deslocMin !== null && Number.isFinite(deslocMin) ? round2(deslocMin) : 0,
+          despacho_apos_inicio_min:   despachoAposInicioMin,
+          login_atraso_min:           loginAtrasoMin,
+          team_avg_desloc_min:        round2(teamAvgDesloc),
+          global_avg_desloc_min:      round2(globalAvgDesloc),
+          is_primeira_os_jornada:     true,
+          flags,
+        });
+      }
+
+      flaggedDays.sort((a, b) => b.primeiro_desloc_min - a.primeiro_desloc_min);
+
+      result.push({
+        team,
+        primeiroDeslocValue: deslocValue,
+        metaTarget: DESLOC_META,
+        gap: round2(deslocValue - DESLOC_META),
+        avgDeslocMin: round2(teamAvgDesloc),
+        globalAvgDeslocMin: round2(globalAvgDesloc),
+        totalDays: jornadaRows.length,
+        diasAcimaMetaCount,
+        flaggedDays: flaggedDays.slice(0, 10),
+        summary: { countDeslocLento, countDeslocMuitoLento, countSemDeslocRegistrado, countDespachioTardio },
+      });
+    }
+
+    return result.sort((a, b) => b.primeiroDeslocValue - a.primeiroDeslocValue);
+  }
+
+  // ─── Retorno Base Analyzer ────────────────────────────────────────────────
+  private analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): RetornoBaseTeamAnalysis[] {
+    if (deslocRows.length === 0) return [];
+
+    const RETORNO_META = 40;
+
+    const retornoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'));
+    if (!retornoKpi) return [];
+
+    const teamsToAnalyze = new Map<string, { value: number }>();
+    for (const t of retornoKpi.opportunityTeams) teamsToAnalyze.set(t.team, { value: t.value });
+    if (teamsToAnalyze.size === 0) return [];
+
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol          = deslocAcc.resolve(['Equipe']);
+    const dateCol          = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const retornoBaseCol   = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
+    const horaUltimaCol    = deslocAcc.resolve(['Hora Ultima Ordem', 'Hora Última Ordem']);
+    const logOffCorCol     = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+
+    if (!teamCol) return [];
+
+    // Global average
+    const globalRetornoValues: number[] = [];
+    const seenGlobal = new Set<string>();
+    for (const row of deslocRows) {
+      const team = teamCol ? String(row[teamCol] ?? '').trim() : '';
+      const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+      const key = `${team}|${date}`;
+      if (seenGlobal.has(key)) continue;
+      seenGlobal.add(key);
+      const v = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
+      if (v !== null && Number.isFinite(v) && v > 0) globalRetornoValues.push(v);
+    }
+    const globalAvgRetorno = globalRetornoValues.length > 0
+      ? globalRetornoValues.reduce((s, x) => s + x, 0) / globalRetornoValues.length : 0;
+
+    const result: RetornoBaseTeamAnalysis[] = [];
+
+    for (const [team, { value: retornoValue }] of teamsToAnalyze.entries()) {
+      const teamNorm = normalizeToken(team);
+      let teamRows = deslocRows.filter((r) => String(r[teamCol] ?? '').trim() === team);
+      if (teamRows.length === 0) {
+        teamRows = deslocRows.filter((r) => normalizeToken(String(r[teamCol] ?? '').trim()) === teamNorm);
+      }
+      if (teamRows.length === 0) continue;
+
+      // Deduplicate by date
+      const seenDates = new Set<string>();
+      const jornadaRows: CsvRow[] = [];
+      for (const row of teamRows) {
+        const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
+        if (!seenDates.has(date)) { seenDates.add(date); jornadaRows.push(row); }
+      }
+
+      const teamRetornoValues: number[] = [];
+      for (const row of jornadaRows) {
+        const v = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
+        if (v !== null && Number.isFinite(v) && v > 0) teamRetornoValues.push(v);
+      }
+      const teamAvgRetorno = teamRetornoValues.length > 0
+        ? teamRetornoValues.reduce((s, x) => s + x, 0) / teamRetornoValues.length : 0;
+
+      const diasAcimaMetaCount = teamRetornoValues.filter((v) => v > RETORNO_META).length;
+
+      const flaggedDays: RetornoBaseDayEvidence[] = [];
+      let countRetornoAlto = 0;
+      let countRetornoMuitoAlto = 0;
+
+      for (const row of jornadaRows) {
+        const retornoMin = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
+        if (retornoMin === null || !Number.isFinite(retornoMin) || retornoMin <= 0) continue;
+
+        const flags: RetornoBaseDayEvidence['flags'] = [];
+        // retorno_muito_alto: > meta * 1.5 (> 60 min)
+        // retorno_alto: > meta (> 40 min)
+        if (retornoMin > RETORNO_META * 1.5) { flags.push('retorno_muito_alto'); countRetornoMuitoAlto++; }
+        else if (retornoMin > RETORNO_META) { flags.push('retorno_alto'); countRetornoAlto++; }
+
+        if (flags.length === 0) continue;
+
+        flaggedDays.push({
+          date_ref: dateCol ? String(row[dateCol] ?? '').trim() : '',
+          retorno_base_min: round2(retornoMin),
+          team_avg_retorno_min: round2(teamAvgRetorno),
+          global_avg_retorno_min: round2(globalAvgRetorno),
+          hora_ultima_ordem: horaUltimaCol ? String(row[horaUltimaCol] ?? '').trim() : '',
+          log_off_corrigido: logOffCorCol  ? String(row[logOffCorCol] ?? '').trim()  : '',
+          flags,
+        });
+      }
+
+      flaggedDays.sort((a, b) => b.retorno_base_min - a.retorno_base_min);
+
+      result.push({
+        team,
+        retornoBaseValue: retornoValue,
+        metaTarget: RETORNO_META,
+        gap: round2(retornoValue - RETORNO_META),
+        avgRetornoMin: round2(teamAvgRetorno),
+        globalAvgRetornoMin: round2(globalAvgRetorno),
+        totalDays: jornadaRows.length,
+        diasAcimaMetaCount,
+        flaggedDays: flaggedDays.slice(0, 10),
+        summary: { countRetornoAlto, countRetornoMuitoAlto },
+      });
+    }
+
+    return result.sort((a, b) => b.retornoBaseValue - a.retornoBaseValue);
   }
 
   private buildMarkdownReport(report: GeneratedReport): string {
