@@ -108,6 +108,9 @@ export interface OsDiaTeamAnalysis {
   tempPrepTotalMin: number;
   semOrdemTotalMin: number;
   totalOrders: number;
+  totalJornadas: number;
+  idleDays: number;
+  idleAvgMin: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
     countTrExceeds: number;
@@ -204,6 +207,8 @@ export interface UtilizacaoTeamAnalysis {
   semOrdemTotalMin: number;
   totalOrders: number;
   totalJornadas: number;
+  idleDays: number;
+  idleAvgMin: number;
   jornadasAbaixoMeta: number;
   flaggedOrders: UtilizacaoOrderEvidence[];
   summary: {

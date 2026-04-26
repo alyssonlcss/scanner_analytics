@@ -161,6 +161,9 @@ interface OsDiaTeamAnalysis {
   tempPrepTotalMin: number;
   semOrdemTotalMin: number;
   totalOrders: number;
+  totalJornadas: number;
+  idleDays: number;
+  idleAvgMin: number;
   flaggedOrders: OsDiaOrderEvidence[];
   summary: {
     countTrExceeds: number;
@@ -257,6 +260,8 @@ interface UtilizacaoTeamAnalysis {
   semOrdemTotalMin: number;
   totalOrders: number;
   totalJornadas: number;
+  idleDays: number;
+  idleAvgMin: number;
   jornadasAbaixoMeta: number;
   flaggedOrders: UtilizacaoOrderEvidence[];
   summary: {
@@ -574,6 +579,7 @@ export class PostDownloadReportService {
     const fimIntervaloCol = accessor.resolve(['Fim Intervalo']);
     const inicioCalendarioAggCol = accessor.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logOffCorrigidoCol = accessor.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+    const retornoBaseCol = accessor.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol || !firstDeslocCol || !firstDespachoCol) {
       return [];
@@ -685,9 +691,13 @@ export class PostDownloadReportService {
             gapMin -= discount;
             intervalDiscounted = true;
           }
-          // Subtract average retorno base
-          if (retornoBaseAvgMin > 0) {
-            gapMin -= retornoBaseAvgMin;
+          // Subtract Retorno a Base: use row value if present, otherwise fall back to average
+          const retornoBaseRow = retornoBaseCol ? parseNumber(String(lastRow[retornoBaseCol] ?? '')) : null;
+          const retornoBaseDiscount = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
+            ? retornoBaseRow
+            : retornoBaseAvgMin;
+          if (retornoBaseDiscount > 0) {
+            gapMin -= retornoBaseDiscount;
           }
           if (gapMin > 0) {
             semOsValues.push(gapMin);
@@ -1303,6 +1313,7 @@ export class PostDownloadReportService {
     const inicioCalendarioCol  = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logInCorrigidoCol    = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
     const logOffCorrigidoCol2  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+    const retornoBaseCol       = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) {
       return [];
@@ -1328,8 +1339,11 @@ export class PostDownloadReportService {
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
     const teamSemOrdemSum = new Map<string, number>();
+    const teamDayCount = new Map<string, number>();
+    const teamDailyIdles = new Map<string, number[]>();
 
     for (const { team, rows: groupRows } of grouped.values()) {
+      teamDayCount.set(team, (teamDayCount.get(team) ?? 0) + 1);
       // sort by A_Caminho ascending (same logic as calculateTempPrepSemOs)
       const ordered = [...groupRows].sort((a, b) => {
         const left  = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -1408,9 +1422,13 @@ export class PostDownloadReportService {
             if (intDuration > 60) gapMin += (intDuration - 60); // excess over 60 is penalized
             semOsFimIntervalDiscounted = true;
           }
-          // Subtract average retorno base
-          if (retornoBaseAvg > 0) {
-            gapMin -= retornoBaseAvg;
+          // Subtract Retorno a Base: use row value if present, otherwise fall back to average
+          const retornoBaseRow = retornoBaseCol ? parseNumber(String(lastRow[retornoBaseCol] ?? '')) : null;
+          const retornoBaseDiscount = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
+            ? retornoBaseRow
+            : retornoBaseAvg;
+          if (retornoBaseDiscount > 0) {
+            gapMin -= retornoBaseDiscount;
           }
           if (gapMin > 0) {
             semOsFimJornadaMin = gapMin;
@@ -1442,6 +1460,14 @@ export class PostDownloadReportService {
         if (Number.isFinite(v) && v > 0) {
           teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
         }
+      }
+      const dayIdleTotal =
+        tempPrepValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0) +
+        semOsValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0);
+      if (dayIdleTotal > 0) {
+        const arr = teamDailyIdles.get(team) ?? [];
+        arr.push(dayIdleTotal);
+        teamDailyIdles.set(team, arr);
       }
 
       // Accumulate total order count for this team
@@ -1663,7 +1689,7 @@ export class PostDownloadReportService {
       const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const prioritizedFlaggedOrders = distinctDates > 7 ? this.selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders;
       const hdEntry       = teamHdTotals.get(team);
-      const dayCount      = hdEntry ? hdEntry.count : 1;
+      const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
       const tempPrepTotal = round2((teamTempPrepSum.get(team) ?? 0) / dayCount);
@@ -1671,6 +1697,14 @@ export class PostDownloadReportService {
 
       const idleMin = round2(tempPrepTotal + semOrdemTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
+      const allDailyIdles = teamDailyIdles.get(team) ?? [];
+      const totalIdleSum  = allDailyIdles.reduce((a, b) => a + b, 0);
+      const simpleAvgIdle = dayCount > 0 ? totalIdleSum / dayCount : 0;
+      const aboveAvgIdles = allDailyIdles.filter((v) => v >= simpleAvgIdle);
+      const idleDays    = aboveAvgIdles.length;
+      const idleAvgMin  = idleDays > 0
+        ? round2(aboveAvgIdles.reduce((a, b) => a + b, 0) / idleDays)
+        : 0;
       const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
         avgHdTotal > 0 && idlePct >= 10
           ? { idleMin, idlePct }
@@ -1685,6 +1719,9 @@ export class PostDownloadReportService {
         tempPrepTotalMin: tempPrepTotal,
         semOrdemTotalMin: semOrdemTotal,
         totalOrders,
+        totalJornadas: dayCount,
+        idleDays,
+        idleAvgMin,
         flaggedOrders: prioritizedFlaggedOrders,
         summary: {
           countTrExceeds:    flaggedOrders.filter((e) => e.flags.includes('tr_excede_hd')).length,
@@ -2203,6 +2240,7 @@ export class PostDownloadReportService {
     const inicioCalendarioCol = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logInCorrigidoCol   = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
     const logOffCorrigidoCol  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+    const retornoBaseCol      = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) return [];
 
@@ -2225,10 +2263,13 @@ export class PostDownloadReportService {
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
     const teamSemOrdemSum = new Map<string, number>();
+    const teamDayCount = new Map<string, number>();
+    const teamDailyIdles = new Map<string, number[]>();
     // For jornada-level tracking (jornadasAbaixoMeta count)
     const teamJornadas = new Map<string, Array<{ htTotalMin: number; hdTotalMin: number }>>();
 
     for (const { team, date: _date, rows: groupRows } of grouped.values()) {
+      teamDayCount.set(team, (teamDayCount.get(team) ?? 0) + 1);
       // Sort by A_Caminho ascending
       const ordered = [...groupRows].sort((a, b) => {
         const left  = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -2302,7 +2343,12 @@ export class PostDownloadReportService {
             if (intDuration > 60) gapMin += (intDuration - 60); // excess over 60 is penalized
             semOsFimIntervalDiscounted = true;
           }
-          if (retornoBaseAvg > 0) gapMin -= retornoBaseAvg;
+          // Subtract Retorno a Base: use row value if present, otherwise fall back to average
+          const retornoBaseRow = retornoBaseCol ? parseNumber(String(lastRow[retornoBaseCol] ?? '')) : null;
+          const retornoBaseDiscount = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
+            ? retornoBaseRow
+            : retornoBaseAvg;
+          if (retornoBaseDiscount > 0) gapMin -= retornoBaseDiscount;
           if (gapMin > 0) {
             semOsFimJornadaMin = gapMin;
             semOsValues.push(gapMin);
@@ -2358,6 +2404,14 @@ export class PostDownloadReportService {
       }
       for (const v of semOsValues) {
         if (Number.isFinite(v) && v > 0) teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
+      }
+      const dayIdleTotal =
+        tempPrepValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0) +
+        semOsValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0);
+      if (dayIdleTotal > 0) {
+        const arr = teamDailyIdles.get(team) ?? [];
+        arr.push(dayIdleTotal);
+        teamDailyIdles.set(team, arr);
       }
 
       teamTotalOrders.set(team, (teamTotalOrders.get(team) ?? 0) + ordered.length);
@@ -2551,7 +2605,7 @@ export class PostDownloadReportService {
 
       const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const hdEntry       = teamHdTotals.get(team);
-      const dayCount      = hdEntry ? hdEntry.count : 1;
+      const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
       const tempPrepTotal = round2((teamTempPrepSum.get(team) ?? 0) / dayCount);
@@ -2559,6 +2613,14 @@ export class PostDownloadReportService {
 
       const idleMin = round2(tempPrepTotal + semOrdemTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
+      const allDailyIdles = teamDailyIdles.get(team) ?? [];
+      const totalIdleSum  = allDailyIdles.reduce((a, b) => a + b, 0);
+      const simpleAvgIdle = dayCount > 0 ? totalIdleSum / dayCount : 0;
+      const aboveAvgIdles = allDailyIdles.filter((v) => v >= simpleAvgIdle);
+      const idleDays    = aboveAvgIdles.length;
+      const idleAvgMin  = idleDays > 0
+        ? round2(aboveAvgIdles.reduce((a, b) => a + b, 0) / idleDays)
+        : 0;
       const idleAnalysis: UtilizacaoTeamAnalysis['idleAnalysis'] =
         avgHdTotal > 0 && idlePct >= IDLE_THRESHOLD_PCT
           ? { idleMin, idlePct }
@@ -2579,6 +2641,8 @@ export class PostDownloadReportService {
         semOrdemTotalMin: semOrdemTotal,
         totalOrders,
         totalJornadas:    allJornadas.length,
+        idleDays,
+        idleAvgMin,
         jornadasAbaixoMeta,
         flaggedOrders: distinctDates > 7 ? this.selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders,
         summary: {

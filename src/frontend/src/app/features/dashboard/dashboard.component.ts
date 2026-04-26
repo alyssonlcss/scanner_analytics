@@ -340,11 +340,13 @@ type SavedFilterState = {
                           TL&gt;20% HD: <strong>{{ analysis.summary.countTlExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          TempPrep≥20min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          TempPrep≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
                         </span>
+                        <span class="rpt-osdia-chip">Total OS: <strong>{{ analysis.totalOrders }} em {{ analysis.totalJornadas }} dias</strong></span>
+                        <span class="rpt-osdia-chip">Ocioso: <strong>{{ calcIdleMin(analysis) | number:'1.0-0' }} min — {{ analysis.idleDays }} dias</strong></span>
                       </div>
                       <!-- Card único de warnings: ociosidade + ordens flagadas -->
                       <ng-container *ngIf="analysis.idleAnalysis || analysis.flaggedOrders.length > 0; else noOsDiaEvidence">
@@ -603,7 +605,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
                         <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}%</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          TempPrep≥20min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          TempPrep≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -611,6 +613,8 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip" *ngIf="analysis.jornadasAbaixoMeta > 0">
                           Jornadas &lt; meta: <strong>{{ analysis.jornadasAbaixoMeta }}/{{ analysis.totalJornadas }}</strong>
                         </span>
+                        <span class="rpt-osdia-chip">Total OS: <strong>{{ analysis.totalOrders }} em {{ analysis.totalJornadas }} dias</strong></span>
+                        <span class="rpt-osdia-chip">Ocioso: <strong>{{ calcIdleMin(analysis) | number:'1.0-0' }} min — {{ analysis.idleDays }} dias</strong></span>
                       </div>
                       <!-- Card único de warnings: ociosidade + ordens flagadas -->
                       <ng-container *ngIf="analysis.idleAnalysis || analysis.flaggedOrders.length > 0; else noUtilizacaoEvidence">
@@ -2571,6 +2575,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected objectKeys(obj: Record<string, unknown>): string[] {
     return Object.keys(obj);
+  }
+
+  protected calcIdleMin(analysis: { tempPrepTotalMin: number; semOrdemTotalMin: number }): number {
+    return analysis.tempPrepTotalMin + analysis.semOrdemTotalMin;
+  }
+
+  protected calcIdlePct(analysis: { hdTotalMin: number; tempPrepTotalMin: number; semOrdemTotalMin: number }): number {
+    const idleMin = analysis.tempPrepTotalMin + analysis.semOrdemTotalMin;
+    return analysis.hdTotalMin > 0 ? Math.round((idleMin / analysis.hdTotalMin) * 1000) / 10 : 0;
+  }
+
+  protected countIdleOrders(flaggedOrders: Array<{ flags: string[] }>): number {
+    return flaggedOrders.filter(o => o.flags.includes('temp_prep_alto') || o.flags.includes('sem_os_alto')).length;
   }
 
   protected osDiaFlagLabel(flag: string): string {
