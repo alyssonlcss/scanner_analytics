@@ -50,10 +50,10 @@ htmlcov/
 
 # Temporary files
 *.tmp
-/data
 *.temp
 /temp
-/src/data
+/src/data/*.json
+*.md
 
 # vscode settings.json
 .vscode/settings.json
