@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "npm run edge:debug",
+    "predev": "npm run port:free && npm run edge:debug",
+    "port:free": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/free-port.ps1 -Port 3000",
     "dev": "tsc -p tsconfig.json && node dist/main.js",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
