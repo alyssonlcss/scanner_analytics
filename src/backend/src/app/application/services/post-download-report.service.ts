@@ -1663,10 +1663,11 @@ export class PostDownloadReportService {
       const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const prioritizedFlaggedOrders = distinctDates > 7 ? this.selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders;
       const hdEntry       = teamHdTotals.get(team);
+      const dayCount      = hdEntry ? hdEntry.count : 1;
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
-      const tempPrepTotal = round2(teamTempPrepSum.get(team) ?? 0);
-      const semOrdemTotal = round2(teamSemOrdemSum.get(team) ?? 0);
+      const tempPrepTotal = round2((teamTempPrepSum.get(team) ?? 0) / dayCount);
+      const semOrdemTotal = round2((teamSemOrdemSum.get(team) ?? 0) / dayCount);
 
       const idleMin = round2(tempPrepTotal + semOrdemTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
@@ -2024,8 +2025,9 @@ export class PostDownloadReportService {
           const orderFlags: EficienciaOrderEvidence['flags'] = [];
 
           // TR muito baixo: TR < 20% do tempo_padrão OU TR < 20% da média global de TR
+          // TR muito baixo: evidência de falsa eficiência — apenas para top performers
           const trIsValid = trMin !== null && Number.isFinite(trMin) && trMin > 0;
-          const trMuitoBaixo = trIsValid && (
+          const trMuitoBaixo = analysisType === 'top_performer' && trIsValid && (
             (tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 && trMin! < tpMin * 0.20) &&
             (lowTrThreshold > 0 && trMin! < lowTrThreshold)
           );
@@ -2033,7 +2035,7 @@ export class PostDownloadReportService {
             orderFlags.push('tr_muito_baixo');
           }
 
-          // deslocamento_curto: somente quando TR muito baixo E TL curto
+          // deslocamento_curto: somente quando TR muito baixo E TL curto — apenas para top performers
           if (trMuitoBaixo && shortDisplacementThreshold > 0 && tlMin !== null && Number.isFinite(tlMin) && tlMin > 0 && tlMin <= shortDisplacementThreshold) {
             orderFlags.push('deslocamento_curto');
           }
@@ -2549,10 +2551,11 @@ export class PostDownloadReportService {
 
       const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const hdEntry       = teamHdTotals.get(team);
+      const dayCount      = hdEntry ? hdEntry.count : 1;
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
-      const tempPrepTotal = round2(teamTempPrepSum.get(team) ?? 0);
-      const semOrdemTotal = round2(teamSemOrdemSum.get(team) ?? 0);
+      const tempPrepTotal = round2((teamTempPrepSum.get(team) ?? 0) / dayCount);
+      const semOrdemTotal = round2((teamSemOrdemSum.get(team) ?? 0) / dayCount);
 
       const idleMin = round2(tempPrepTotal + semOrdemTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
