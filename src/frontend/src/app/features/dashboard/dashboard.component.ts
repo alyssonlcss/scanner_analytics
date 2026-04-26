@@ -561,12 +561,15 @@ type SavedFilterState = {
                                   <strong>Tempo de Reparo alto:</strong> {{ ev.tr_ordem_min }} min
                                   ({{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min &mdash; limite: 20% da HD) &mdash; tempo padrão M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'vazio' }}</strong>.
                                 </li>
+                                <li *ngIf="ev.flags.includes('tempo_padrao_vazio')" class="osdia-ev-alert">
+                                  <strong>Tempo Padrão ausente:</strong> TR {{ ev.tr_ordem_min }} min — sem tempo padrão cadastrado, eficiência calculada como zero para esta OS.
+                                </li>
                               </ul>
                             </div>
                           </div>
 
-                          <!-- Ordens sem Tempo Padrão -->
-                          <ng-container *ngIf="analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0">
+                          <!-- Simulação: equipe penalizada por T.Padrão ausente -->
+                          <ng-container *ngIf="analysis.summary.countTempoPadraoVazio > 0">
                             <p class="osdia-idle-desc">
                               <strong>Equipe penalizada por ausência de Tempo Padrão:</strong>
                               {{ analysis.summary.countTempoPadraoVazio }} ordem(ns) sem tempo padrão cadastrado. O sistema calcula a eficiência como <em>Tempo Padrão / TR</em>, portanto ordens vazias contam como zero, prejudicando o resultado.<ng-container *ngIf="analysis.simulatedEficiencia !== undefined && analysis.simulatedEficiencia !== null">
@@ -574,36 +577,6 @@ type SavedFilterState = {
                               <strong>{{ analysis.simulatedEficiencia | number:'1.1-1' }}%</strong>
                               vs. atual <strong>{{ analysis.eficienciaValue }}%</strong>.</ng-container>
                             </p>
-                            <div class="osdia-ev-list">
-                              <div class="osdia-ev-item" *ngFor="let ev of analysis.tempoPadraoVazioOrders">
-                                <div class="osdia-ev-header">
-                                  <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
-                                  <span class="rpt-osdia-flag rpt-osdia-flag--vazio">T.Padrão Vazio</span>
-                                </div>
-                                <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
-                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
-                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
-                                </p>
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Despachada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">No Local</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Liberada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                </div>
-                                <ul class="osdia-ev-alerts">
-                                  <li class="osdia-ev-alert">
-                                    <strong>Tempo de Reparo:</strong> {{ ev.tr_ordem_min }} min — sem tempo padrão cadastrado para cálculo de eficiência.
-                                  </li>
-                                </ul>
-                              </div>
-                            </div>
                           </ng-container>
 
                         </div>

@@ -1652,6 +1652,7 @@ export class PostDownloadReportService {
     }
 
     // 5. Build result
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
     const result: OsDiaTeamAnalysis[] = [];
     for (const [team, osDiaValue] of underPerforming.entries()) {
       // Skip if no deslocamento rows found for this team
@@ -1659,8 +1660,8 @@ export class PostDownloadReportService {
         continue;
       }
 
-      const flaggedOrders = teamEvidences.get(team) ?? [];
-      const prioritizedFlaggedOrders = this.selectTopOsDiaEvidences(flaggedOrders);
+      const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
+      const prioritizedFlaggedOrders = distinctDates > 7 ? this.selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders;
       const hdEntry       = teamHdTotals.get(team);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
@@ -1702,6 +1703,84 @@ export class PostDownloadReportService {
       const bAlerts = b.summary.countTrExceeds + b.summary.countTlExceeds + b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
       return bAlerts - aAlerts;
     }).slice(0, 3);
+  }
+
+  /**
+   * Deduplicates an evidence array by nr_ordem/despachada+a_caminho key,
+   * merging flags and sem_os_details of duplicate entries into one.
+   */
+  private mergeEvidenceFlags<T extends {
+    nr_ordem: string;
+    despachada: string;
+    a_caminho: string;
+    flags: string[];
+    sem_os_details?: Array<{ type: string; min: number; [k: string]: unknown }>;
+    sem_os_total_min?: number;
+  }>(evidences: T[]): T[] {
+    const map = new Map<string, T>();
+    for (const ev of evidences) {
+      const key = ev.nr_ordem || `${ev.despachada}|${ev.a_caminho}`;
+      const existing = map.get(key);
+      if (existing) {
+        for (const flag of ev.flags) {
+          if (!(existing.flags as string[]).includes(flag)) {
+            (existing.flags as string[]).push(flag);
+          }
+        }
+        if (ev.sem_os_details?.length) {
+          existing.sem_os_details = [...(existing.sem_os_details ?? []), ...ev.sem_os_details] as T['sem_os_details'];
+          existing.sem_os_total_min = (existing.sem_os_details ?? []).reduce((s, d) => s + d.min, 0);
+        }
+      } else {
+        map.set(key, { ...ev, flags: [...ev.flags] as T['flags'] });
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  private countDistinctDates(rows: CsvRow[], dateCol: string): number {
+    const dates = new Set<string>();
+    for (const row of rows) {
+      const d = String(row[dateCol] ?? '').trim();
+      if (d) dates.add(d);
+    }
+    return dates.size;
+  }
+
+  private selectTopUtilizacaoEvidences(
+    evidences: UtilizacaoOrderEvidence[],
+    maxPerFlag = 2,
+  ): UtilizacaoOrderEvidence[] {
+    if (evidences.length === 0) return [];
+
+    const selected = new Map<string, UtilizacaoOrderEvidence>();
+    const flagOrder: Array<UtilizacaoOrderEvidence['flags'][number]> = ['temp_prep_alto', 'sem_os_alto'];
+
+    for (const flag of flagOrder) {
+      const topByFlag = evidences
+        .filter((ev) => ev.flags.includes(flag))
+        .sort((a, b) => {
+          const scoreA = flag === 'temp_prep_alto' ? (a.temp_prep_os_min ?? 0) : (a.sem_os_total_min ?? 0);
+          const scoreB = flag === 'temp_prep_alto' ? (b.temp_prep_os_min ?? 0) : (b.sem_os_total_min ?? 0);
+          return scoreB - scoreA;
+        })
+        .slice(0, maxPerFlag);
+
+      for (const ev of topByFlag) {
+        const key = `${ev.nr_ordem}|${ev.despachada}|${ev.a_caminho}`;
+        if (!selected.has(key)) {
+          selected.set(key, ev);
+        }
+      }
+    }
+
+    return Array.from(selected.values())
+      .sort((a, b) => {
+        const scoreA = (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0);
+        const scoreB = (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0);
+        return scoreB - scoreA;
+      })
+      .slice(0, maxPerFlag * flagOrder.length);
   }
 
   private selectTopOsDiaEvidences(
@@ -1817,6 +1896,7 @@ export class PostDownloadReportService {
     const trOrdemCol = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
     const tempoPadraoCol = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
     const hdTotalCol = deslocAcc.resolve(['HD Total', 'HD_Total']);
+    const dateCol = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
 
     if (!teamCol || !aCaminhoCol || !noLocalCol || !liberadaCol) {
       return [];
@@ -1854,6 +1934,7 @@ export class PostDownloadReportService {
     });
 
     // 4. Analyze each team
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
     const result: EficienciaTeamAnalysis[] = [];
 
     for (const [team, { value: eficienciaValue, type: analysisType }] of teamsToAnalyze.entries()) {
@@ -2008,12 +2089,37 @@ export class PostDownloadReportService {
         }
       }
 
+      // Deduplicate both arrays by nr_ordem, merging flags for the same OS
+      const mergedFlaggedOrders = this.mergeEvidenceFlags(flaggedOrders);
+      // Build a lookup map for O(1) key checks
+      const flaggedOrdersMap = new Map(mergedFlaggedOrders.map((o) => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+
+      // Merge tempoPadraoVazioOrders into flaggedOrders:
+      // - if OS already in flaggedOrders → add 'tempo_padrao_vazio' flag
+      // - otherwise → append to flaggedOrders directly (all flags in one place)
+      const tempoPadraoVazioDeduped = this.mergeEvidenceFlags(tempoPadraoVazioOrders);
+      for (const order of tempoPadraoVazioDeduped) {
+        const key = order.nr_ordem || `${order.despachada}|${order.a_caminho}`;
+        const existing = flaggedOrdersMap.get(key);
+        if (existing) {
+          if (!existing.flags.includes('tempo_padrao_vazio')) {
+            existing.flags.push('tempo_padrao_vazio');
+          }
+        } else {
+          mergedFlaggedOrders.push(order);
+          flaggedOrdersMap.set(key, order);
+        }
+      }
+
       // Team-level flags — computed after order loop
       const flags: EficienciaTeamAnalysis['flags'] = [];
-      const countDeslocamentoCurtoCalc = flaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length;
+      const countDeslocamentoCurtoCalc = mergedFlaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length;
       if (countDeslocamentoCurtoCalc > 0) {
         flags.push('short_displacement');
       }
+
+      const countTempoPadraoVazio = mergedFlaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length;
+      const allFlagged = distinctDates > 7 ? mergedFlaggedOrders.slice(0, 10) : mergedFlaggedOrders;
 
       // Always include all top 3 and bottom 3 teams
       result.push({
@@ -2027,14 +2133,14 @@ export class PostDownloadReportService {
         globalAvgExecucaoMin: round2(globalAvgExecucao),
         analysisType,
         flags,
-        flaggedOrders: flaggedOrders.slice(0, 10),
-        tempoPadraoVazioOrders: tempoPadraoVazioOrders.slice(0, 15),
+        flaggedOrders: allFlagged,
+        tempoPadraoVazioOrders: [],
         simulatedEficiencia,
         summary: {
           totalOrders: teamRows.length,
-          countDeslocamentoCurto: flaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length,
-          countTrExcedeHd: flaggedOrders.filter((o) => o.flags.includes('tr_excede_hd')).length,
-          countTempoPadraoVazio: tempoPadraoVazioOrders.length,
+          countDeslocamentoCurto: mergedFlaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length,
+          countTrExcedeHd: mergedFlaggedOrders.filter((o) => o.flags.includes('tr_excede_hd')).length,
+          countTempoPadraoVazio,
         },
       });
     }
@@ -2436,11 +2542,12 @@ export class PostDownloadReportService {
     }
 
     // Build result
+    const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
     const result: UtilizacaoTeamAnalysis[] = [];
     for (const [team, utilizacaoValue] of underPerforming.entries()) {
       if (!Array.from(grouped.values()).some((g) => g.team === team)) continue;
 
-      const flaggedOrders = teamEvidences.get(team) ?? [];
+      const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const hdEntry       = teamHdTotals.get(team);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
@@ -2470,7 +2577,7 @@ export class PostDownloadReportService {
         totalOrders,
         totalJornadas:    allJornadas.length,
         jornadasAbaixoMeta,
-        flaggedOrders,
+        flaggedOrders: distinctDates > 7 ? this.selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders,
         summary: {
           countTempPrepAlto: flaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
           countSemOsAlto:    flaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
