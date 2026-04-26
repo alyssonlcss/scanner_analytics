@@ -92,7 +92,8 @@ export interface OsDiaOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
-    retorno_base_avg_discounted?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
     desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
@@ -190,7 +191,8 @@ export interface UtilizacaoOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
-    retorno_base_avg_discounted?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
     desp_anterior?: string;
   }>;
   sem_os_total_min?: number;

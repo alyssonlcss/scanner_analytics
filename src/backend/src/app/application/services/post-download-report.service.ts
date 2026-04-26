@@ -145,7 +145,8 @@ interface OsDiaOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
-    retorno_base_avg_discounted?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
     desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
@@ -243,7 +244,8 @@ interface UtilizacaoOrderEvidence {
     from?: string;
     to?: string;
     interval_discounted?: boolean;
-    retorno_base_avg_discounted?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
     desp_anterior?: string;
   }>;
   sem_os_total_min?: number;
@@ -1406,6 +1408,8 @@ export class PostDownloadReportService {
       const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
       let semOsFimJornadaMin = Number.NaN;
       let semOsFimIntervalDiscounted = false;
+      let semOsFimRetornoBaseDiscount = 0;
+      let semOsFimRetornoBaseUsedRow = false;
       if (logOffCorrigidoCol2 && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
         const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
@@ -1429,6 +1433,8 @@ export class PostDownloadReportService {
             : retornoBaseAvg;
           if (retornoBaseDiscount > 0) {
             gapMin -= retornoBaseDiscount;
+            semOsFimRetornoBaseDiscount = retornoBaseDiscount;
+            semOsFimRetornoBaseUsedRow = retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0;
           }
           if (gapMin > 0) {
             semOsFimJornadaMin = gapMin;
@@ -1616,7 +1622,8 @@ export class PostDownloadReportService {
           from: liberadaStr || undefined,
           to:   logOffStr || undefined,
           interval_discounted: semOsFimIntervalDiscounted || undefined,
-          retorno_base_avg_discounted: retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
+          retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
+          retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
         };
 
         const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
@@ -2327,6 +2334,8 @@ export class PostDownloadReportService {
       const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
       let semOsFimJornadaMin = Number.NaN;
       let semOsFimIntervalDiscounted = false;
+      let semOsFimRetornoBaseDiscount = 0;
+      let semOsFimRetornoBaseUsedRow = false;
       if (logOffCorrigidoCol && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
         const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
@@ -2348,7 +2357,11 @@ export class PostDownloadReportService {
           const retornoBaseDiscount = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
             ? retornoBaseRow
             : retornoBaseAvg;
-          if (retornoBaseDiscount > 0) gapMin -= retornoBaseDiscount;
+          if (retornoBaseDiscount > 0) {
+            gapMin -= retornoBaseDiscount;
+            semOsFimRetornoBaseDiscount = retornoBaseDiscount;
+            semOsFimRetornoBaseUsedRow = retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0;
+          }
           if (gapMin > 0) {
             semOsFimJornadaMin = gapMin;
             semOsValues.push(gapMin);
@@ -2540,7 +2553,8 @@ export class PostDownloadReportService {
           from: liberadaStr || undefined,
           to:   logOffStr || undefined,
           interval_discounted: semOsFimIntervalDiscounted || undefined,
-          retorno_base_avg_discounted: retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
+          retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
+          retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
         };
 
         const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
