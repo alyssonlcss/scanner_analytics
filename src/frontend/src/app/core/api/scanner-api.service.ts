@@ -566,6 +566,16 @@ export class ScannerApiService {
     return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/generate`, payload);
   }
 
+  /** Gera dados filtrados por base/tipo sem sobrescrever o relatório salvo. */
+  public exportData(payload: {
+    reportFilters: {
+      bases: string[];
+      teamTypes: Array<'propria' | 'parceira'>;
+    };
+  }): Observable<ScannerReportGenerateResult> {
+    return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/export-data`, payload);
+  }
+
   public getTeams(): Observable<{ teams: string[] }> {
     return this.http.get<{ teams: string[] }>(`${this.baseUrl}/scanner/reports/teams`);
   }

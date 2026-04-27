@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
+import { forkJoin } from 'rxjs';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfMake = require('pdfmake/build/pdfmake');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -290,8 +291,16 @@ type SavedFilterState = {
               <!-- Step 1: choose export type -->
               <ng-container *ngIf="exportModalStep() === 'mode'">
                 <p class="export-modal-desc">Escolha o tipo de exportação. Todos os relatórios são gerados como arquivo PDF para download.</p>
-                <div class="export-modal-options">
-                  <button class="export-option-card" (click)="exportWithMode('current')">
+
+                <!-- Loading overlay durante geração via API -->
+                <div class="export-loading-row" *ngIf="exportLoading()">
+                  <span class="export-loading-spinner"></span>
+                  <span>Gerando relatórios... aguarde.</span>
+                </div>
+                <div class="export-error-row" *ngIf="exportError()">{{ exportError() }}</div>
+
+                <div class="export-modal-options" [class.export-modal-options--disabled]="exportLoading()">
+                  <button class="export-option-card" (click)="exportWithMode('current')" [disabled]="exportLoading()">
                     <span class="export-option-icon">📄</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Atual</span>
@@ -299,19 +308,19 @@ type SavedFilterState = {
                     </div>
                     <span class="export-option-arrow">→</span>
                   </button>
-                  <button class="export-option-card" (click)="exportWithMode('proprias')">
+                  <button class="export-option-card" (click)="exportWithMode('proprias')" [disabled]="exportLoading()">
                     <span class="export-option-icon">🏢</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Próprias</span>
-                      <span class="export-option-sub">4 arquivos separados por base — equipes próprias (ITJ, ITK, TRR, ACU).</span>
+                      <span class="export-option-sub">4 arquivos por base com dados completos — equipes próprias (ITJ, ITK, TRR, ACU).</span>
                     </div>
                     <span class="export-option-arrow">→</span>
                   </button>
-                  <button class="export-option-card" (click)="exportWithMode('parceiras')">
+                  <button class="export-option-card" (click)="exportWithMode('parceiras')" [disabled]="exportLoading()">
                     <span class="export-option-icon">🤝</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Parceiras</span>
-                      <span class="export-option-sub">4 arquivos separados por base — equipes parceiras (ITE, IPK, IPT, ACA).</span>
+                      <span class="export-option-sub">4 arquivos por base com dados completos — equipes parceiras (ITE, IPK, IPT, ACA).</span>
                     </div>
                     <span class="export-option-arrow">→</span>
                   </button>
@@ -2105,6 +2114,46 @@ type SavedFilterState = {
         gap: 8px;
       }
 
+      .export-modal-options--disabled {
+        opacity: 0.5;
+        pointer-events: none;
+      }
+
+      .export-loading-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.82rem;
+        color: #2563eb;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+      }
+
+      .export-loading-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2.5px solid #bfdbfe;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      .export-error-row {
+        font-size: 0.8rem;
+        color: #dc2626;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+      }
+
       .export-option-card {
         display: flex;
         align-items: center;
@@ -3336,6 +3385,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly exportModalOpen = signal(false);
   protected readonly exportModalStep = signal<'mode' | 'bases'>('mode');
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
+  protected readonly exportLoading = signal(false);
+  protected readonly exportError = signal('');
   protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
   protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
   protected readonly reportBarHidden = signal(true);
@@ -3536,6 +3587,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected openExportModal(): void {
     this.exportModalStep.set('mode');
+    this.exportError.set('');
+    this.exportLoading.set(false);
     this.exportModalOpen.set(true);
   }
 
@@ -3546,7 +3599,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   /**
    * Step 1: mode selection
    * 'current'             → gera PDF completo
-   * 'proprias'/'parceiras' → baixa os 4 PDFs (um por base) automaticamente
+   * 'proprias'/'parceiras' → chama API para cada base e baixa 4 PDFs
    */
   protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras'): void {
     const report = this.reportData();
@@ -3558,27 +3611,52 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return;
     }
 
+    const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
-    for (const base of this.reportBaseOptions) {
-      const mapping = REPORT_BASE_PREFIX_MAP[base];
-      const prefix = (mode === 'proprias' ? mapping.own : mapping.partner).toUpperCase();
-      const filtered = this.filterReportByTeamPrefix(report, prefix);
-      this.openPdfWindow({ report: filtered, title: base, subtitle: typeLabel });
-    }
+
+    this.exportLoading.set(true);
+    this.exportError.set('');
+
+    const requests = this.reportBaseOptions.map((base) =>
+      this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
+    );
+
+    forkJoin(requests).subscribe({
+      next: (results) => {
+        results.forEach((result, i) => {
+          const base = this.reportBaseOptions[i];
+          this.openPdfWindow({ report: result.generatedReport, title: base, subtitle: typeLabel });
+        });
+        this.exportLoading.set(false);
+      },
+      error: () => {
+        this.exportLoading.set(false);
+        this.exportError.set('Falha ao gerar dados de exportação. Verifique se o backend está disponível.');
+      },
+    });
   }
 
   /**
    * @deprecated use exportWithMode; kept for template compatibility
    */
   protected exportBase(base: string): void {
-    const report = this.reportData();
-    if (!report) return;
     const mode = this.exportModeType();
-    const mapping = REPORT_BASE_PREFIX_MAP[base];
-    const prefix = (mode === 'proprias' ? mapping.own : mapping.partner).toUpperCase();
-    const filtered = this.filterReportByTeamPrefix(report, prefix);
+    const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
-    this.openPdfWindow({ report: filtered, title: base, subtitle: typeLabel });
+
+    this.exportLoading.set(true);
+    this.exportError.set('');
+
+    this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } }).subscribe({
+      next: (result) => {
+        this.exportLoading.set(false);
+        this.openPdfWindow({ report: result.generatedReport, title: base, subtitle: typeLabel });
+      },
+      error: () => {
+        this.exportLoading.set(false);
+        this.exportError.set('Falha ao gerar dados de exportação. Verifique se o backend está disponível.');
+      },
+    });
   }
 
   private filterReportByTeamPrefix(report: GeneratedReport, prefix: string): GeneratedReport {

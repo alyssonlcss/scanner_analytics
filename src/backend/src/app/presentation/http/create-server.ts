@@ -280,6 +280,32 @@ export async function createServer() {
     });
   });
 
+  server.post('/api/scanner/reports/export-data', async (request, reply) => {
+    const payload = reportGenerationSchema.parse(request.body);
+    const { dataDirectory, downloadedFiles } = await resolveReportFiles(
+      environment.spotfire.outputDirectory,
+      downloadTargets,
+    );
+
+    if (downloadedFiles.length === 0) {
+      return reply.code(404).send({
+        message: 'no downloaded files found to generate export data',
+      });
+    }
+
+    const generatedReport = await postDownloadReport.generate({
+      dataDirectory,
+      downloadedFiles,
+      reportFilters: payload.reportFilters,
+      skipSave: true,
+    });
+
+    return reply.send({
+      status: 'completed',
+      generatedReport,
+    });
+  });
+
   server.get('/api/scanner/executions/:jobId/export', async (request, reply) => {
     const params = z.object({ jobId: z.string().uuid() }).parse(request.params);
     const job = await getScannerJob.execute(params.jobId);

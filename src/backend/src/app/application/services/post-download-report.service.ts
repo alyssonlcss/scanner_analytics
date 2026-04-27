@@ -521,6 +521,7 @@ export class PostDownloadReportService {
     dataDirectory: string;
     downloadedFiles: DownloadedFileRef[];
     reportFilters?: ReportFilterInput;
+    skipSave?: boolean;
   }): Promise<GeneratedReport> {
     const displacementFile = this.findFile(params.downloadedFiles, ['tab_completa', 'deslocamentos']);
     const rankingFile = this.findFile(params.downloadedFiles, ['ranking']);
@@ -624,8 +625,10 @@ export class PostDownloadReportService {
       },
     };
 
-    await writeFile(report.outputFiles.jsonPath, JSON.stringify(report, null, 2), 'utf-8');
-    await writeFile(report.outputFiles.markdownPath, this.buildMarkdownReport(report), 'utf-8');
+    if (!params.skipSave) {
+      await writeFile(report.outputFiles.jsonPath, JSON.stringify(report, null, 2), 'utf-8');
+      await writeFile(report.outputFiles.markdownPath, this.buildMarkdownReport(report), 'utf-8');
+    }
 
     return report;
   }
