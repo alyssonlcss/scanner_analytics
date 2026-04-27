@@ -1,6 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfMake = require('pdfmake/build/pdfmake');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfFonts = require('pdfmake/build/vfs_fonts');
+pdfMake.vfs = pdfFonts.pdfMake?.vfs ?? pdfFonts.vfs;
 
 import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpTeamAnalysis, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocTeamAnalysis, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
@@ -264,7 +269,66 @@ type SavedFilterState = {
                   <span class="rpt-total-l">Linhas Ranking</span>
                 </div>
               </div>
-              <button class="rpt-export-btn" (click)="exportPdf()">Exportar PDF</button>
+              <button class="rpt-export-btn" (click)="openExportModal()">Exportar PDF</button>
+            </div>
+
+            <!-- Export Modal -->
+            <div class="export-modal-backdrop" *ngIf="exportModalOpen()" (click)="closeExportModal()"></div>
+            <div class="export-modal" *ngIf="exportModalOpen()" role="dialog" aria-modal="true">
+              <div class="export-modal-header">
+                <div class="export-modal-title-row">
+                  <button *ngIf="exportModalStep() === 'bases'" class="export-modal-back" (click)="exportModalStep.set('mode')" aria-label="Voltar">← Voltar</button>
+                  <h3 class="export-modal-title">
+                    {{ exportModalStep() === 'mode' ? 'Exportar Relatório PDF' : (exportModeType() === 'proprias' ? 'Próprias' : 'Parceiras') + ' — Selecione a Base' }}
+                  </h3>
+                </div>
+                <button class="export-modal-close" (click)="closeExportModal()" aria-label="Fechar">✕</button>
+              </div>
+
+              <!-- Step 1: choose export type -->
+              <ng-container *ngIf="exportModalStep() === 'mode'">
+                <p class="export-modal-desc">Escolha o tipo de exportação. Todos os relatórios são gerados como arquivo PDF para download.</p>
+                <div class="export-modal-options">
+                  <button class="export-option-card" (click)="exportWithMode('current')">
+                    <span class="export-option-icon">📄</span>
+                    <div class="export-option-body">
+                      <span class="export-option-title">Relatório Atual</span>
+                      <span class="export-option-sub">Gera PDF com todos os dados e análises do relatório atual.</span>
+                    </div>
+                    <span class="export-option-arrow">→</span>
+                  </button>
+                  <button class="export-option-card" (click)="exportWithMode('proprias')">
+                    <span class="export-option-icon">🏢</span>
+                    <div class="export-option-body">
+                      <span class="export-option-title">Relatório Próprias</span>
+                      <span class="export-option-sub">4 arquivos separados por base — equipes próprias (ITJ, ITK, TRR, ACU).</span>
+                    </div>
+                    <span class="export-option-arrow">→</span>
+                  </button>
+                  <button class="export-option-card" (click)="exportWithMode('parceiras')">
+                    <span class="export-option-icon">🤝</span>
+                    <div class="export-option-body">
+                      <span class="export-option-title">Relatório Parceiras</span>
+                      <span class="export-option-sub">4 arquivos separados por base — equipes parceiras (ITE, IPK, IPT, ACA).</span>
+                    </div>
+                    <span class="export-option-arrow">→</span>
+                  </button>
+                </div>
+              </ng-container>
+
+              <!-- Step 2: select base -->
+              <ng-container *ngIf="exportModalStep() === 'bases'">
+                <p class="export-modal-desc">Clique em cada base para abrir o PDF correspondente. No diálogo do navegador escolha "Salvar como PDF".</p>
+                <div class="export-base-grid">
+                  <button class="export-base-card" *ngFor="let base of reportBaseOptions" (click)="exportBase(base)">
+                    <div class="export-base-card-top">
+                      <span class="export-base-name">{{ base }}</span>
+                      <span class="export-base-prefix">{{ exportModeType() === 'proprias' ? reportBasePrefixMap[base].own : reportBasePrefixMap[base].partner }}</span>
+                    </div>
+                    <span class="export-base-action">Abrir PDF →</span>
+                  </button>
+                </div>
+              </ng-container>
             </div>
 
             <!-- TOC Scroll Spy sidebar -->
@@ -1953,6 +2017,211 @@ type SavedFilterState = {
         border-color: rgba(230, 57, 80, 0.6);
       }
 
+      /* ── Export Modal ── */
+      .export-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(4px);
+        z-index: 900;
+        animation: fadeIn 150ms ease;
+      }
+
+      .export-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 901;
+        width: min(480px, 92vw);
+        background: #fff;
+        border-radius: 20px;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.2), 0 4px 16px rgba(0,0,0,0.1);
+        padding: 24px;
+        animation: slideUp 200ms ease;
+      }
+
+      @keyframes slideUp {
+        from { opacity: 0; transform: translate(-50%, calc(-50% + 16px)); }
+        to   { opacity: 1; transform: translate(-50%, -50%); }
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+
+      .export-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .export-modal-title {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #1a202c;
+      }
+
+      .export-modal-close {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        border: none;
+        background: #f1f5f9;
+        color: #64748b;
+        font-size: 0.85rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 120ms;
+      }
+
+      .export-modal-close:hover {
+        background: #e2e8f0;
+        color: #1a202c;
+      }
+
+      .export-modal-desc {
+        font-size: 0.78rem;
+        color: #94a3b8;
+        margin-bottom: 18px;
+      }
+
+      .export-modal-options {
+        display: grid;
+        gap: 8px;
+      }
+
+      .export-option-card {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1.5px solid #e2e8f0;
+        background: #fff;
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 160ms, background 160ms, box-shadow 160ms;
+        width: 100%;
+      }
+
+      .export-option-card:hover {
+        border-color: #2563eb;
+        background: #eff6ff;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+      }
+
+      .export-option-icon {
+        font-size: 1.4rem;
+        flex-shrink: 0;
+        width: 36px;
+        text-align: center;
+      }
+
+      .export-option-body {
+        flex: 1;
+        display: grid;
+        gap: 2px;
+      }
+
+      .export-option-title {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: #1a202c;
+      }
+
+      .export-option-sub {
+        font-size: 0.72rem;
+        color: #64748b;
+        line-height: 1.4;
+      }
+
+      .export-option-arrow {
+        font-size: 1rem;
+        color: #cbd5e1;
+        flex-shrink: 0;
+        transition: color 160ms, transform 160ms;
+      }
+
+      .export-option-card:hover .export-option-arrow {
+        color: #2563eb;
+        transform: translateX(3px);
+      }
+
+      .export-modal-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .export-modal-back {
+        background: none;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #64748b;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 140ms, color 140ms;
+      }
+      .export-modal-back:hover { background: #f1f5f9; color: #1a202c; }
+
+      .export-base-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      .export-base-card {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 16px;
+        background: #f8fafc;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: left;
+        transition: background 150ms, border-color 150ms, box-shadow 150ms;
+      }
+      .export-base-card:hover {
+        background: #eff6ff;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+      }
+      .export-base-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 6px;
+      }
+      .export-base-name {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #1a202c;
+      }
+      .export-base-prefix {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #64748b;
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      .export-base-action {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #2563eb;
+      }
+
       /* ── Executive Summary ── */
       .exec-summary {
         display: grid;
@@ -2993,15 +3262,24 @@ type SavedFilterState = {
 
       @media print {
         .filter-drawer, .filter-fab, .report-filter-bar,
-        .rpt-export-btn, .drawer-backdrop { display: none !important; }
+        .rpt-export-btn, .drawer-backdrop,
+        .export-modal-backdrop, .export-modal,
+        app-toc-nav, .toc-nav,
+        .report-loading { display: none !important; }
         .shell {
-          background: #f5f4f0 !important;
+          background: #fff !important;
+          min-height: unset !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .anim-el { opacity: 1 !important; transform: none !important; }
         .kpi-cr-fill { transition: none !important; }
+        .kpi-section { break-inside: avoid; page-break-inside: avoid; }
+        .rpt-section { break-inside: avoid; page-break-inside: avoid; }
+        .exec-summary { break-inside: avoid; page-break-inside: avoid; }
+        .rpt-action-card { break-inside: avoid; page-break-inside: avoid; }
+        .rpt-osdia-grid, .rpt-eficiencia-grid { break-inside: avoid; page-break-inside: avoid; }
       }
     `,
   ],
@@ -3021,6 +3299,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly generatingReport = computed(() => this.progressMessage().toLowerCase().startsWith('gerando relat'));
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
+  protected readonly exportModalOpen = signal(false);
+  protected readonly exportModalStep = signal<'mode' | 'bases'>('mode');
+  protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
+  protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
+  protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
   protected readonly reportBarHidden = signal(true);
   protected readonly reportData = signal<GeneratedReport | null>(null);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
@@ -3214,9 +3497,865 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected exportPdf(): void {
-    window.print();
+    this.openExportModal();
   }
 
+  protected openExportModal(): void {
+    this.exportModalStep.set('mode');
+    this.exportModalOpen.set(true);
+  }
+
+  protected closeExportModal(): void {
+    this.exportModalOpen.set(false);
+  }
+
+  /**
+   * Step 1: mode selection
+   * 'current' → window.print() on live page (captures everything exactly as rendered)
+   * 'proprias'/'parceiras' → show base selection step
+   */
+  protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras'): void {
+    if (mode === 'current') {
+      const report = this.reportData();
+      if (!report) return;
+      this.exportModalOpen.set(false);
+      this.openPdfWindow({ report, title: 'Relatório Completo', subtitle: 'Todas as Equipes' });
+      return;
+    }
+    this.exportModeType.set(mode);
+    this.exportModalStep.set('bases');
+  }
+
+  /**
+   * Step 2: base selected — generate PDF for that single base
+   */
+  protected exportBase(base: string): void {
+    const report = this.reportData();
+    if (!report) return;
+    const mode = this.exportModeType();
+    const mapping = REPORT_BASE_PREFIX_MAP[base];
+    const prefix = (mode === 'proprias' ? mapping.own : mapping.partner).toUpperCase();
+    const filtered = this.filterReportByTeamPrefix(report, prefix);
+    const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
+    this.openPdfWindow({ report: filtered, title: base, subtitle: typeLabel });
+  }
+
+  private filterReportByTeamPrefix(report: GeneratedReport, prefix: string): GeneratedReport {
+    const matches = (team: string): boolean => team.toUpperCase().startsWith(prefix);
+    return {
+      ...report,
+      kpis: report.kpis.map((kpi) => ({
+        ...kpi,
+        topTeams: kpi.topTeams.filter((t) => matches(t.team)),
+        opportunityTeams: kpi.opportunityTeams.filter((t) => matches(t.team)),
+        scores: kpi.scores.filter((s) => matches(s.team)),
+      })),
+      teamScorecard: report.teamScorecard.filter((s) => matches(s.team)),
+      deviations: {
+        mostRecurring: report.deviations.mostRecurring,
+        teamBreakdown: report.deviations.teamBreakdown.filter((t) => matches(t.team)),
+      },
+      specialAnalysis: {
+        ...report.specialAnalysis,
+        osDiaAnalysis: report.specialAnalysis.osDiaAnalysis?.filter((a) => matches(a.team)) ?? [],
+        utilizacaoAnalysis: report.specialAnalysis.utilizacaoAnalysis?.filter((a) => matches(a.team)) ?? [],
+        tmeImpAnalysis: report.specialAnalysis.tmeImpAnalysis?.filter((a) => matches(a.team)) ?? [],
+        primeiroLoginAnalysis: report.specialAnalysis.primeiroLoginAnalysis?.filter((a) => matches(a.team)) ?? [],
+        primeiroDeslocAnalysis: report.specialAnalysis.primeiroDeslocAnalysis?.filter((a) => matches(a.team)) ?? [],
+        retornoBaseAnalysis: report.specialAnalysis.retornoBaseAnalysis?.filter((a) => matches(a.team)) ?? [],
+        tempPrepAndSemOs: report.specialAnalysis.tempPrepAndSemOs?.filter((t) => matches(t.team)) ?? [],
+        actionPlan: report.specialAnalysis.actionPlan.filter((p) => matches(p.team)),
+      },
+    };
+  }
+
+  private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
+    const docDef = this.buildPdfDocDef(section);
+    const safeName = `${section.title} - ${section.subtitle}`.replace(/[^\w\s\-]/g, '').trim();
+    pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
+  }
+
+  private buildPdfDocDef(section: { report: GeneratedReport; title: string; subtitle: string }): any {
+    const { report, title, subtitle } = section;
+
+    const KPI_CFG_PDF: Record<string, { worst: number; best: number; dir: 'h' | 'l'; meta: number }> = {
+      'OS Dia':       { worst: 1.0,  best: 5.5,  dir: 'h', meta: 4.4 },
+      'Eficiência':   { worst: 80,   best: 125,  dir: 'h', meta: 100 },
+      'Utilização':   { worst: 60,   best: 88,   dir: 'h', meta: 85 },
+      'TME IMP':      { worst: 28,   best: 17,   dir: 'l', meta: 20 },
+      '1º Login':     { worst: 12,   best: 7,    dir: 'l', meta: 8 },
+      '1º Desloc.':   { worst: 30,   best: 20,   dir: 'l', meta: 25 },
+      'Retorno Base': { worst: 50,   best: 35,   dir: 'l', meta: 40 },
+    };
+
+    const barPct = (value: number, kpiName: string): number => {
+      const cfg = KPI_CFG_PDF[kpiName];
+      if (!cfg || !Number.isFinite(value)) return 2;
+      const pct = cfg.dir === 'h'
+        ? (value - cfg.worst) / (cfg.best - cfg.worst) * 100
+        : (cfg.worst - value) / (cfg.worst - cfg.best) * 100;
+      return Math.max(2, Math.min(100, pct));
+    };
+
+    const metaLinePct = (kpiName: string): number => {
+      const cfg = KPI_CFG_PDF[kpiName];
+      return cfg ? barPct(cfg.meta, kpiName) : 50;
+    };
+
+    const isAbove = (kpi: { kpi: string; direction: string; metaTarget: number }, value: number): boolean =>
+      kpi.direction === 'higher-is-better' ? value >= kpi.metaTarget : value <= kpi.metaTarget;
+
+    const fmt = (v: number | undefined | null, dec = 1): string =>
+      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : '—';
+
+    const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const es = report.executiveSummary;
+
+    const RED = '#c0122d';
+    const BLUE = '#2563eb';
+    const GRAY = '#64748b';
+    const DARK = '#1e1a17';
+    const MUTED = '#94a3b8';
+    const BG = '#f8f7f4';
+
+    const th = (text: string): any => ({ text, bold: true, fontSize: 7, color: GRAY, fillColor: BG, alignment: 'center' as const, margin: [2, 3, 2, 3] });
+    const td = (text: string, opts: any = {}): any => ({ text, fontSize: 7.5, margin: [2, 3, 2, 3], ...opts });
+
+    // Cover
+    const cover: any[] = [
+      { text: 'Relatório Analítico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
+      { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
+      subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
+      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 28] },
+    ];
+    if (es) {
+      cover.push({
+        columns: [
+          { stack: [{ text: `${es.totalTeams}`, fontSize: 24, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
+          es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 24, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] } : {},
+          { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 24, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
+          { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 24, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
+        ],
+        columnGap: 20,
+      });
+    }
+
+    // Build content array
+    const content: any[] = [
+      ...cover.filter(Boolean),
+      { text: '', pageBreak: 'after' },
+    ];
+
+    // Executive summary
+    if (es) {
+      content.push(
+        { text: 'Resumo Executivo', style: 'sectionHeader', margin: [0, 0, 0, 10] },
+        {
+          columns: [
+            { stack: [{ text: `${es.totalTeams}`, fontSize: 20, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 20, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, color: MUTED }], alignment: 'center' as const } : {},
+            { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 20, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+          ],
+          columnGap: 12,
+          margin: [0, 0, 0, 14],
+        },
+      );
+      if (es.kpiAlerts.length > 0) {
+        content.push({ text: 'KPIs em Alerta', bold: true, fontSize: 8, color: GRAY, margin: [0, 0, 0, 6] });
+        es.kpiAlerts.forEach((a) => {
+          const pct = Math.round((a.teamsBelowMeta / Math.max(es.totalTeams, 1)) * 100);
+          content.push({
+            columns: [
+              { text: a.kpi, bold: true, fontSize: 8, width: 80 },
+              {
+                stack: [{
+                  canvas: [
+                    { type: 'rect', x: 0, y: 4, w: 200, h: 6, r: 3, color: '#f0ede8' },
+                    { type: 'rect', x: 0, y: 4, w: Math.max(4, pct * 2), h: 6, r: 3, color: RED },
+                  ],
+                }],
+                width: 200,
+              },
+              { text: `${a.teamsBelowMeta}/${es.totalTeams}`, bold: true, color: RED, fontSize: 7.5, width: 40, alignment: 'right' as const },
+              { text: `pior: ${a.worst.team} (${a.worst.value})`, fontSize: 7, color: GRAY, width: '*' },
+            ],
+            columnGap: 8,
+            margin: [0, 0, 0, 5],
+          });
+        });
+      }
+      if (es.topActionIssues.length > 0) {
+        content.push({ text: `Recorrências: ${es.topActionIssues.join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
+      }
+    }
+
+    // KPI sections
+    report.kpis.filter((kpi) => kpi.topTeams.length > 0 || kpi.opportunityTeams.length > 0).forEach((kpi) => {
+      const dec = ['OS Dia', 'Eficiência', 'Utilização'].includes(kpi.kpi) ? 1 : 0;
+      const dirUp = kpi.direction === 'higher-is-better';
+      const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
+
+      content.push(
+        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 16, 0, 4], pageBreak: 'before' },
+        {
+          columns: [
+            { text: dirUp ? '↑ Maior é melhor' : '↓ Menor é melhor', fontSize: 7.5, bold: true, color: dirUp ? '#15803d' : RED },
+            { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Média: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: GRAY },
+          ],
+          margin: [0, 0, 0, 10],
+        },
+      );
+
+      const allTeams: Array<{ team: string; value: number; group: string }> = [
+        ...kpi.topTeams.map((t) => ({ ...t, group: 'top' })),
+        { team: 'Média geral', value: kpi.average, group: 'avg' },
+        ...kpi.opportunityTeams.map((t) => ({ ...t, group: 'opp' })),
+      ];
+
+      allTeams.forEach((t) => {
+        const above = t.group === 'avg' ? null : isAbove(kpi, t.value);
+        const pct = barPct(t.value, kpi.kpi);
+        const mlPct = metaLinePct(kpi.kpi);
+        const barColor = t.group === 'avg' ? MUTED : (above ? BLUE : RED);
+        const valColor = t.group === 'avg' ? GRAY : (above ? BLUE : RED);
+        content.push({
+          columns: [
+            { text: t.team, fontSize: 7.5, bold: t.group !== 'avg', width: 120, color: t.group === 'avg' ? GRAY : DARK },
+            {
+              stack: [{
+                canvas: [
+                  { type: 'rect', x: 0, y: 3, w: 280, h: 8, r: 2, color: '#f0ede8' },
+                  { type: 'rect', x: 0, y: 3, w: Math.max(2, pct * 2.8), h: 8, r: 2, color: barColor },
+                  { type: 'line', x1: mlPct * 2.8, y1: 1, x2: mlPct * 2.8, y2: 13, lineWidth: 1.5, lineColor: '#1e1a17' },
+                ],
+              }],
+              width: 280,
+            },
+            { text: `${fmt(t.value, dec)}${suffix}`, fontSize: 7.5, bold: true, color: valColor, width: 40, alignment: 'right' as const },
+          ],
+          columnGap: 8,
+          margin: [0, 0, 0, 3],
+        });
+      });
+
+      // Analysis table per KPI
+      let analysisTable: any = null;
+      if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('OS/Dia'), th('Ordens'), th('Jornadas'), th('Dias ociosos'), th('Ocioso méd.'), th('Temp. Prep.')],
+              ...report.specialAnalysis.osDiaAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(fmt(a.osDiaValue), { color: isAbove(kpi, a.osDiaValue) ? BLUE : RED, bold: true }),
+                td(`${a.totalOrders}`),
+                td(`${a.totalJornadas}`),
+                td(`${a.idleDays}`),
+                td(a.idleDays > 0 ? `${Math.round(a.idleAvgMin)} min` : '—'),
+                td(a.tempPrepTotalMin > 0 ? `${Math.round(a.tempPrepTotalMin)} min` : '—'),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      } else if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('Utilização'), th('Ordens'), th('Jornadas'), th('Abaixo meta'), th('Temp. Prep.'), th('Sem OS')],
+              ...report.specialAnalysis.utilizacaoAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(`${fmt(a.utilizacaoValue, 0)}%`, { color: isAbove(kpi, a.utilizacaoValue) ? BLUE : RED, bold: true }),
+                td(`${a.totalOrders}`),
+                td(`${a.totalJornadas}`),
+                td(`${a.jornadasAbaixoMeta}`),
+                td(`${Math.round(a.tempPrepTotalMin)} min`),
+                td(`${Math.round(a.semOrdemTotalMin)} min`),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      } else if (kpi.kpi === 'TME IMP' && report.specialAnalysis.tmeImpAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('TME IMP'), th('Média TME'), th('Média global'), th('Ordens'), th('TME muito alto')],
+              ...report.specialAnalysis.tmeImpAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(`${fmt(a.tmeImpValue, 0)} min`, { color: isAbove(kpi, a.tmeImpValue) ? BLUE : RED, bold: true }),
+                td(`${fmt(a.avgTmeImpMin, 0)} min`),
+                td(`${fmt(a.globalAvgTmeImpMin, 0)} min`),
+                td(`${a.totalOrders}`),
+                td(`${a.summary.countTmeMuitoAlto}`),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      } else if (kpi.kpi === '1º Login' && report.specialAnalysis.primeiroLoginAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('1º Login'), th('Média login'), th('Dias totais'), th('Acima meta'), th('Login tardio')],
+              ...report.specialAnalysis.primeiroLoginAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(`${fmt(a.primeiroLoginValue, 0)} min`, { color: isAbove(kpi, a.primeiroLoginValue) ? BLUE : RED, bold: true }),
+                td(`${fmt(a.avgLoginMin, 0)} min`),
+                td(`${a.totalDays}`),
+                td(`${a.diasAcimaMetaCount}`),
+                td(`${a.summary.countLoginTardio + a.summary.countLoginMuitoTardio}`),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      } else if (kpi.kpi === '1º Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('1º Desloc.'), th('Média desloc.'), th('Dias totais'), th('Acima meta'), th('Desloc. lento')],
+              ...report.specialAnalysis.primeiroDeslocAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(`${fmt(a.primeiroDeslocValue, 0)} min`, { color: isAbove(kpi, a.primeiroDeslocValue) ? BLUE : RED, bold: true }),
+                td(`${fmt(a.avgDeslocMin, 0)} min`),
+                td(`${a.totalDays}`),
+                td(`${a.diasAcimaMetaCount}`),
+                td(`${a.summary.countDeslocLento + a.summary.countDeslocMuitoLento}`),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      } else if (kpi.kpi === 'Retorno Base' && report.specialAnalysis.retornoBaseAnalysis?.length) {
+        analysisTable = {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('Retorno Base'), th('Média retorno'), th('Dias totais'), th('Acima meta'), th('Retorno alto')],
+              ...report.specialAnalysis.retornoBaseAnalysis.map((a) => [
+                td(a.team, { bold: true, alignment: 'left' as const }),
+                td(`${fmt(a.retornoBaseValue, 0)} min`, { color: isAbove(kpi, a.retornoBaseValue) ? BLUE : RED, bold: true }),
+                td(`${fmt(a.avgRetornoMin, 0)} min`),
+                td(`${a.totalDays}`),
+                td(`${a.diasAcimaMetaCount}`),
+                td(`${a.summary.countRetornoAlto + a.summary.countRetornoMuitoAlto}`),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 0],
+        };
+      }
+      if (analysisTable) content.push(analysisTable);
+
+      // ---- Drill-down cards per KPI ----
+
+      const cardHeader = (team: string, badge: string, badgeRed = true): any => ({
+        columns: [
+          { text: team, bold: true, fontSize: 9, color: DARK, width: '*' },
+          { text: badge, bold: true, fontSize: 8, color: badgeRed ? RED : BLUE, width: 'auto', alignment: 'right' as const },
+        ],
+        margin: [0, 0, 0, 4],
+      });
+
+      const chipRow = (chips: string[]): any => ({
+        text: chips.join('  ·  '),
+        fontSize: 7,
+        color: GRAY,
+        margin: [0, 0, 0, 4],
+      });
+
+      const timelineLine = (labels: string[], vals: (string | undefined | null)[]): any => ({
+        columns: labels.map((lbl, i) => [
+          { text: lbl, fontSize: 6.5, color: MUTED, bold: true },
+          { text: vals[i] || '—', fontSize: 7, color: DARK },
+        ]).flat().reduce((acc: any[], item: any, idx: number) => {
+          if (idx > 0 && idx % 2 === 0) acc.push({ text: '→', fontSize: 7, color: MUTED, width: 10 });
+          acc.push({ stack: [item], width: 'auto' });
+          return acc;
+        }, []),
+        columnGap: 3,
+        margin: [0, 1, 0, 1],
+      });
+
+      const alertItem = (text: string): any => ({
+        text: `• ${text}`,
+        fontSize: 7,
+        color: '#92400e',
+        margin: [0, 1, 0, 1],
+      });
+
+      const cardDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 8, 0, 8] });
+      const orderDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#e2e8f0', dash: { length: 4, space: 3 } }], margin: [0, 6, 0, 6] });
+
+      const drillHead = (text: string): any => ({ text, bold: true, fontSize: 8.5, color: DARK, margin: [0, 14, 0, 6], background: BG });
+
+      // OS Dia drill-down
+      if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — OS Dia'));
+        report.specialAnalysis.osDiaAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `OS/Dia ${fmt(analysis.osDiaValue)}`,
+            `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
+          ];
+          if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
+          if (analysis.summary?.countTrExceeds > 0) chips.push(`TR>20% HD: ${analysis.summary.countTrExceeds}`);
+          if (analysis.summary?.countTlExceeds > 0) chips.push(`TL>20% HD: ${analysis.summary.countTlExceeds}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`TempPrep≥10min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS≥10min: ${analysis.summary.countSemOsAlto}`);
+          content.push(
+            cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue)),
+            chipRow(chips),
+          );
+          if (analysis.idleAnalysis) {
+            content.push({
+              text: `⚠ Ociosidade elevada — ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
+              fontSize: 7.5, bold: true, color: '#92400e', margin: [0, 2, 0, 2],
+            });
+            content.push(chipRow([
+              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+            ]));
+          }
+          if (analysis.flaggedOrders?.length > 0) {
+            analysis.flaggedOrders.forEach((ev: any, evIdx: number, evArr: any[]) => {
+              content.push({
+                columns: [
+                  { text: `OS ${ev.nr_ordem}`, bold: true, fontSize: 7.5, width: 'auto' },
+                  { text: ev.flags?.map((f: string) => this.osDiaFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+                ],
+                margin: [0, 6, 0, 2],
+              });
+              if (ev.classe || ev.causa) {
+                content.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? ' · ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 3] });
+              }
+              if (ev.prev_liberada) {
+                content.push({ text: `OS Anterior (${ev.prev_nr_ordem || '—'})  →  Desp. Anterior: ${ev.prev_despachada || '—'}  →  Lib. Anterior: ${ev.prev_liberada}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+                content.push({ text: `OS Atual  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+              } else {
+                content.push({ text: `Início da jornada  →  Início Calendário: ${ev.inicio_calendario || '—'}  -  Log In: ${ev.log_in || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+                content.push({ text: `1ª OS  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+              }
+              if (ev.inicio_intervalo) {
+                content.push({ text: `⏸ Intervalo: ${ev.inicio_intervalo} → ${ev.fim_intervalo || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+              }
+              const alerts: any[] = [];
+              if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`Tempo de Reparo alto: esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}.`));
+              if (ev.flags?.includes('tl_excede_hd')) alerts.push(alertItem(`Tempo de Deslocamento alto: ${ev.tl_ordem_min} min em deslocamento — ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%.`));
+              if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'lib. anterior e saída desta OS' : 'início da jornada e saída da 1ª OS'} — acima do limite de 10 min.`));
+              if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
+                alerts.push(alertItem(`SemOrdem/OS: ${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min.`));
+                ev.sem_os_details.forEach((d: any) => {
+                  const typeLabel: Record<string, string> = { inicio_jornada: 'Início Jornada', entre_ordens: 'Entre OS', fim_jornada: 'Antes Log Off', intervalo_deslocamento: 'Desl. Intervalo' };
+                  content.push({ text: `  ↳ ${typeLabel[d.type] || d.type}: ${d.min} min (${d.from || '—'} → ${d.to || '—'})`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
+                });
+              }
+              if (alerts.length > 0) content.push(...alerts);
+              if (evIdx < evArr.length - 1) content.push(orderDivider());
+            });
+          }
+          content.push(cardDivider());
+        });
+      }
+
+      // Eficiência drill-down
+      if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)'));
+        kpi.evidenceAnalysis.forEach((analysis: any) => {
+          const isTop = analysis.analysisType === 'top_performer';
+          const chips: string[] = [
+            `Média ${analysis.averageEficiencia}%`,
+            `TL Médio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
+            `TR Médio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
+          ];
+          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. Padrão Médio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
+          if (analysis.summary?.countDeslocamentoCurto > 0) chips.push(`TL Curto: ${analysis.summary.countDeslocamentoCurto}`);
+          content.push(
+            cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop),
+            chipRow(chips),
+          );
+          if (analysis.flags?.length > 0) {
+            content.push(chipRow([
+              `TL Global: ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min`,
+              `TR Global: ${analysis.globalAvgExecucaoMin?.toFixed(1)} min`,
+              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (≤ ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min — 25% global)`] : []),
+            ]));
+          }
+          analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: `OS ${ev.nr_ordem}`, bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.eficienciaFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            if (ev.classe || ev.causa) {
+              content.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? ' · ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 3] });
+            }
+            content.push({ text: `OS  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+            const alerts: any[] = [];
+            if (ev.flags?.includes('tr_muito_baixo')) alerts.push(alertItem(`TR muito baixo: ${ev.tr_ordem_min} min de atendimento — menos de 20% do tempo previsto${ev.tempo_padrao_min !== undefined ? ` de ${ev.tempo_padrao_min} min` : ''} e da média geral de ${analysis.globalAvgExecucaoMin?.toFixed(1)} min.`));
+            if (ev.flags?.includes('deslocamento_curto')) alerts.push(alertItem(`TL muito curto: ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min.`));
+            if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`TR alto: ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%.`));
+            if (ev.flags?.includes('tempo_padrao_vazio')) alerts.push(alertItem(`Tempo Padrão ausente: OS atendida em ${ev.tr_ordem_min} min, mas sem tempo padrão no M300. Eficiência calculada como zero.`));
+            if (alerts.length > 0) content.push(...alerts);
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          if (analysis.summary?.countTempoPadraoVazio > 0) {
+            content.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: '#92400e', margin: [0, 3, 0, 2] });
+          }
+          content.push(cardDivider());
+        });
+      }
+
+      // Utilização drill-down
+      if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)'));
+        report.specialAnalysis.utilizacaoAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `Utilização: ${analysis.utilizacaoValue}%`,
+            `Meta: ${analysis.metaTarget}%`,
+            `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
+          ];
+          if (analysis.jornadasAbaixoMeta > 0) chips.push(`Jornadas < meta: ${analysis.jornadasAbaixoMeta}/${analysis.totalJornadas}`);
+          if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`TempPrep≥10min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS≥10min: ${analysis.summary.countSemOsAlto}`);
+          content.push(
+            cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true),
+            chipRow(chips),
+          );
+          if (analysis.idleAnalysis) {
+            content.push({
+              text: `⚠ Ociosidade elevada — ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
+              fontSize: 7.5, bold: true, color: '#92400e', margin: [0, 2, 0, 2],
+            });
+            content.push(chipRow([
+              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+            ]));
+          }
+          analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: `OS ${ev.nr_ordem}`, bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.osDiaFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            if (ev.classe || ev.causa) {
+              content.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? ' · ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 3] });
+            }
+            if (ev.prev_liberada) {
+              content.push({ text: `OS Anterior (${ev.prev_nr_ordem || '—'})  →  Desp. Anterior: ${ev.prev_despachada || '—'}  →  Lib. Anterior: ${ev.prev_liberada}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+              content.push({ text: `OS Atual  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+            } else {
+              content.push({ text: `Início da jornada  →  Início Calendário: ${ev.inicio_calendario || '—'}  -  Log In: ${ev.log_in || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+              content.push({ text: `1ª OS  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+            }
+            if (ev.inicio_intervalo) {
+              content.push({ text: `⏸ Intervalo: ${ev.inicio_intervalo} → ${ev.fim_intervalo || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+            }
+            const alerts: any[] = [];
+            if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'lib. anterior e saída desta OS' : 'início da jornada e saída da 1ª OS'} — acima do limite de 10 min.`));
+            if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
+              alerts.push(alertItem(`SemOrdem/OS: ${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min.`));
+              ev.sem_os_details.forEach((d: any) => {
+                const typeLabel: Record<string, string> = { inicio_jornada: 'Início Jornada', entre_ordens: 'Entre OS', fim_jornada: 'Antes Log Off', intervalo_deslocamento: 'Desl. Intervalo' };
+                content.push({ text: `  ↳ ${typeLabel[d.type] || d.type}: ${d.min} min (${d.from || '—'} → ${d.to || '—'})`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
+              });
+            }
+            if (alerts.length > 0) content.push(...alerts);
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          content.push(cardDivider());
+        });
+      }
+
+      // TME IMP drill-down
+      if (kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)'));
+        kpi.tmeImpAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
+            `Meta: ${analysis.metaTarget} min`,
+            `Média equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
+            `Total OS: ${analysis.totalOrders}`,
+          ];
+          if (analysis.summary?.countTmeMuitoAlto > 0) chips.push(`TME≥1.5×avg: ${analysis.summary.countTmeMuitoAlto}`);
+          if (analysis.summary?.countSemDeslocamento > 0) chips.push(`Sem desloc.: ${analysis.summary.countSemDeslocamento}`);
+          content.push(
+            cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true),
+            chipRow(chips),
+          );
+          analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: `OS ${ev.nr_ordem}${ev.date_ref ? '  ' + ev.date_ref : ''}`, bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.tmeImpFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            if (ev.classe || ev.causa) {
+              content.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? ' · ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 3] });
+            }
+            if (ev.prev_liberada) {
+              content.push({ text: `OS Anterior  →  Lib. Anterior: ${ev.prev_liberada}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+            }
+            content.push({ text: `OS Atual  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
+            const alerts: any[] = [];
+            if (ev.flags?.includes('tme_muito_alto')) alerts.push(alertItem(`TME IMP elevado: ${ev.tme_imp_min?.toFixed(1)} min — acima da média da equipe (${ev.team_avg_tme_min?.toFixed(1)} min) e da média geral (${ev.global_avg_tme_min?.toFixed(1)} min). Tempo entre No Local e liberação sem execução produtiva.`));
+            if (ev.flags?.includes('sem_deslocamento')) alerts.push(alertItem(`Sem registro de deslocamento: ${ev.tl_ordem_min?.toFixed(1)} min de deslocamento sem horário de saída lançado.`));
+            if (ev.flags?.includes('sem_execucao')) alerts.push(alertItem(`Sem TR Ordem: OS sem registro de execução, mas com tempo improdutivo acumulado.`));
+            if (alerts.length > 0) content.push(...alerts);
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          content.push(cardDivider());
+        });
+      }
+
+      // 1º Login drill-down
+      if (kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)'));
+        kpi.primeiroLoginAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `1º Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
+            `Meta: ${analysis.metaTarget} min`,
+            `Média equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
+            `Dias com atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
+          ];
+          if (analysis.summary?.countLoginMuitoTardio > 0) chips.push(`Login>16min: ${analysis.summary.countLoginMuitoTardio}`);
+          content.push(
+            cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true),
+            chipRow(chips),
+          );
+          analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: ev.date_ref || '—', bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.loginFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            content.push({ text: `Início Calendário: ${ev.inicio_calendario || '—'}  →  Log In Corrigido: ${ev.log_in_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 3] });
+            if (ev.flags?.includes('login_muito_tardio')) content.push(alertItem(`Login muito tardio: ${ev.primeiro_login_min?.toFixed(1)} min — mais do que o dobro da meta de ${analysis.metaTarget} min.`));
+            else if (ev.flags?.includes('login_tardio')) content.push(alertItem(`Login tardio: ${ev.primeiro_login_min?.toFixed(1)} min — acima da meta de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_login_min?.toFixed(1)} min).`));
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          content.push(cardDivider());
+        });
+      }
+
+      // 1º Desloc. drill-down
+      if (kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)'));
+        kpi.primeiroDeslocAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `1º Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
+            `Meta: ${analysis.metaTarget} min`,
+            `Média equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
+            `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
+          ];
+          if (analysis.summary?.countDeslocMuitoLento > 0) chips.push(`Desloc.>37min: ${analysis.summary.countDeslocMuitoLento}`);
+          if (analysis.summary?.countSemDeslocRegistrado > 0) chips.push(`Sem registro: ${analysis.summary.countSemDeslocRegistrado}`);
+          if (analysis.summary?.countDespachioTardio > 0) chips.push(`Despacho tardio: ${analysis.summary.countDespachioTardio}`);
+          content.push(
+            cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true),
+            chipRow(chips),
+          );
+          analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: `${ev.date_ref || '—'}${ev.nr_ordem ? ' · OS ' + ev.nr_ordem : ''}${ev.is_primeira_os_jornada ? ' · 1ª OS' : ''}`, bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.deslocFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            content.push({ text: `Início da jornada  →  Início Calendário: ${ev.inicio_calendario || '—'}  -  Log In: ${ev.log_in_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
+            content.push({ text: `1ª OS  →  Despachada: ${ev.hora_primeiro_despacho || '—'}  →  A Caminho: ${ev.hora_primeiro_deslocamento || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 3] });
+            const alerts: any[] = [];
+            if (ev.flags?.includes('despacho_tardio')) alerts.push(alertItem(`Despacho tardio: ${ev.despacho_apos_inicio_min?.toFixed(1)} min de atraso em relação ao início da jornada — acima do limite de 10 min.${ev.login_atraso_min > 0 ? ` Desse total, ${ev.login_atraso_min?.toFixed(1)} min de atraso no login e ${(ev.despacho_apos_inicio_min - ev.login_atraso_min)?.toFixed(1)} min de espera até o despacho.` : ''}`));
+            if (ev.flags?.includes('desloc_muito_lento')) alerts.push(alertItem(`Deslocamento muito lento: ${ev.primeiro_desloc_min?.toFixed(1)} min para registrar saída após o despacho — mais de 1,5× a meta de ${analysis.metaTarget} min.`));
+            else if (ev.flags?.includes('desloc_lento')) alerts.push(alertItem(`Deslocamento lento: ${ev.primeiro_desloc_min?.toFixed(1)} min após o despacho — acima da meta de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_desloc_min?.toFixed(1)} min).`));
+            if (ev.flags?.includes('sem_desloc_registrado')) alerts.push(alertItem(`Sem deslocamento registrado: há despacho, mas o técnico não atualizou o status de saída.`));
+            if (alerts.length > 0) content.push(...alerts);
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          content.push(cardDivider());
+        });
+      }
+
+      // Retorno Base drill-down
+      if (kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis?.length) {
+        content.push(drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)'));
+        kpi.retornoBaseAnalysis.forEach((analysis: any) => {
+          const chips: string[] = [
+            `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
+            `Meta: ${analysis.metaTarget} min`,
+            `Média equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
+            `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
+          ];
+          if (analysis.summary?.countRetornoMuitoAlto > 0) chips.push(`Retorno>60min: ${analysis.summary.countRetornoMuitoAlto}`);
+          content.push(
+            cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true),
+            chipRow(chips),
+          );
+          analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
+            content.push({
+              columns: [
+                { text: ev.date_ref || '—', bold: true, fontSize: 7.5, width: 'auto' },
+                { text: ev.flags?.map((f: string) => this.retornoFlagLabel(f)).join(' '), fontSize: 7, color: RED, width: '*', margin: [4, 0, 0, 0] },
+              ],
+              margin: [0, 6, 0, 2],
+            });
+            content.push({ text: `Última OS Liberada: ${ev.hora_ultima_ordem || '—'}  →  Log Off Corrigido: ${ev.log_off_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 3] });
+            if (ev.flags?.includes('retorno_muito_alto')) content.push(alertItem(`Retorno muito alto: ${ev.retorno_base_min?.toFixed(1)} min — mais de 1,5× a meta de ${analysis.metaTarget} min. Retornos longos são descontados no cálculo de Utilização.`));
+            else if (ev.flags?.includes('retorno_alto')) content.push(alertItem(`Retorno acima da meta: ${ev.retorno_base_min?.toFixed(1)} min — acima de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_retorno_min?.toFixed(1)} min, média geral: ${ev.global_avg_retorno_min?.toFixed(1)} min). Descontado no cálculo de Utilização.`));
+            if (evIdx < evArr.length - 1) content.push(orderDivider());
+          });
+          content.push(cardDivider());
+        });
+      }
+    });
+
+    // Scorecard table
+    if (report.teamScorecard.length > 0) {
+      content.push(
+        { text: 'Scorecard por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 6], pageBreak: 'before' },
+        { text: 'Todos os KPIs por equipe. Azul = meta atingida, vermelho = abaixo da meta.', fontSize: 7.5, color: GRAY, margin: [0, 0, 0, 8] },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+            body: [
+              [th('Equipe'), th('Rank'), th('Dias'), th('OS/Dia\n4,4'), th('Efic.\n100%'), th('Util.\n85%'), th('TME\n20'), th('Login\n8'), th('Desloc\n25'), th('Ret.\n40'), th('Score')],
+              ...report.teamScorecard.map((row) => [
+                td(row.team, { bold: true, alignment: 'left' as const, fillColor: row.kpisBelowMeta >= 4 ? '#fff1f2' : row.kpisBelowMeta === 3 ? '#fffbeb' : null }),
+                td(`${row.classificacao ?? '—'}`, { color: GRAY }),
+                td(`${row.diasTrabalhados ?? '—'}`, { color: GRAY }),
+                td(fmt(row.kpis.osDia), { color: row.kpiStatus.osDia === 'above' ? BLUE : row.kpiStatus.osDia === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.eficiencia != null ? `${fmt(row.kpis.eficiencia, 0)}%` : '—', { color: row.kpiStatus.eficiencia === 'above' ? BLUE : row.kpiStatus.eficiencia === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.utilizacao != null ? `${fmt(row.kpis.utilizacao, 0)}%` : '—', { color: row.kpiStatus.utilizacao === 'above' ? BLUE : row.kpiStatus.utilizacao === 'below' ? RED : DARK, bold: true }),
+                td(fmt(row.kpis.tmeImp, 0), { color: row.kpiStatus.tmeImp === 'above' ? BLUE : row.kpiStatus.tmeImp === 'below' ? RED : DARK, bold: true }),
+                td(fmt(row.kpis.primeiroLogin, 0), { color: row.kpiStatus.primeiroLogin === 'above' ? BLUE : row.kpiStatus.primeiroLogin === 'below' ? RED : DARK, bold: true }),
+                td(fmt(row.kpis.primeiroDesloc, 0), { color: row.kpiStatus.primeiroDesloc === 'above' ? BLUE : row.kpiStatus.primeiroDesloc === 'below' ? RED : DARK, bold: true }),
+                td(fmt(row.kpis.retornoBase, 0), { color: row.kpiStatus.retornoBase === 'above' ? BLUE : row.kpiStatus.retornoBase === 'below' ? RED : DARK, bold: true }),
+                td(`${row.score}/7`, { bold: true, color: row.score >= 6 ? BLUE : row.score >= 4 ? '#d97706' : RED }),
+              ]),
+            ],
+          },
+          layout: 'lightHorizontalLines',
+        },
+      );
+    }
+
+    // Deviations
+    if (report.deviations.mostRecurring.length > 0) {
+      content.push(
+        { text: 'Desvios de Padrão Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8], pageBreak: 'before' },
+        {
+          columns: [
+            {
+              stack: [
+                { text: 'Mais Recorrentes', bold: true, fontSize: 8, color: GRAY, margin: [0, 0, 0, 6] },
+                {
+                  table: {
+                    widths: ['*', 'auto'],
+                    body: report.deviations.mostRecurring.map((d) => [
+                      td(d.category, { alignment: 'left' as const }),
+                      td(`${d.occurrences}`, { bold: true, color: RED }),
+                    ]),
+                  },
+                  layout: 'lightHorizontalLines',
+                },
+              ],
+              width: '50%',
+            },
+            report.deviations.teamBreakdown.length > 0 ? {
+              stack: [
+                { text: 'Por Equipe', bold: true, fontSize: 8, color: GRAY, margin: [0, 0, 0, 6] },
+                {
+                  table: {
+                    widths: ['auto', '*'],
+                    body: report.deviations.teamBreakdown.map((t) => [
+                      td(t.team, { bold: true, alignment: 'left' as const }),
+                      td(t.deviations.join(' · '), { color: GRAY }),
+                    ]),
+                  },
+                  layout: 'lightHorizontalLines',
+                },
+              ],
+              width: '50%',
+            } : {},
+          ],
+          columnGap: 16,
+        },
+      );
+    }
+
+    // Action plan
+    if (report.specialAnalysis.actionPlan.length > 0) {
+      content.push(
+        { text: 'Plano de Acao por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 8], pageBreak: 'before' },
+      );
+      const plans = report.specialAnalysis.actionPlan;
+      for (let i = 0; i < plans.length; i += 2) {
+        const makeCard = (plan: any): any => ({
+          stack: [
+            { text: plan.team, bold: true, fontSize: 9, margin: [0, 0, 0, 4] },
+            ...plan.issues.map((iss: string) => ({ text: `! ${iss}`, fontSize: 7.5, color: RED, margin: [0, 0, 0, 2] })),
+            ...plan.recommendations.map((r: string) => ({ text: `> ${r}`, fontSize: 7, color: DARK, margin: [4, 0, 0, 2] })),
+          ],
+          margin: [0, 0, 0, 8],
+        });
+        content.push({
+          columns: [
+            { stack: [makeCard(plans[i])], width: '50%' },
+            { stack: [plans[i + 1] ? makeCard(plans[i + 1]) : {}], width: '50%' },
+          ],
+          columnGap: 12,
+        });
+      }
+    }
+
+    return {
+      pageSize: 'A4',
+      pageMargins: [40, 45, 40, 45] as [number, number, number, number],
+      content,
+      styles: {
+        sectionHeader: { fontSize: 13, bold: true, color: DARK },
+      },
+      defaultStyle: { font: 'Roboto', fontSize: 8, color: DARK },
+    };
+  }
 
   protected openFilterDrawer(): void {
     this.filterDrawerOpen.set(true);
