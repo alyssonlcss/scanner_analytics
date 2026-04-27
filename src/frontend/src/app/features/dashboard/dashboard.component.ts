@@ -177,22 +177,24 @@ type SavedFilterState = {
               <div class="period-shell">
                 <div class="period-selects">
                   <ng-container *ngFor="let filter of periodFilters(); trackBy: trackByFilterKey">
-                    <span class="select-caption">{{ filter.title }}</span>
-                    <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
-                      (mousemove)="dragScrollList(filter.key, $event)">
-                      <button
-                        type="button"
-                        class="option-item"
-                        *ngFor="let option of filter.options; trackBy: trackByOption"
-                        [class.option-item-active]="isOptionSelected(filter, option)"
-                        [attr.aria-selected]="isOptionSelected(filter, option)"
-                        (mousedown)="beginOptionSelection(filter.key, option, $event)"
-                        (mouseenter)="continueOptionSelection(filter.key, option, $event)"
-                        (mouseup)="endFilterDrag()">
-                        {{ option }}
-                      </button>
+                    <div class="select-shell">
+                      <span class="select-caption">{{ filter.title }}</span>
+                      <div class="option-list" role="listbox" [attr.aria-label]="filter.title" aria-multiselectable="true"
+                        (mousemove)="dragScrollList(filter.key, $event)">
+                        <button
+                          type="button"
+                          class="option-item"
+                          *ngFor="let option of filter.options; trackBy: trackByOption"
+                          [class.option-item-active]="isOptionSelected(filter, option)"
+                          [attr.aria-selected]="isOptionSelected(filter, option)"
+                          (mousedown)="beginOptionSelection(filter.key, option, $event)"
+                          (mouseenter)="continueOptionSelection(filter.key, option, $event)"
+                          (mouseup)="endFilterDrag()">
+                          {{ option }}
+                        </button>
+                      </div>
+                      <span class="select-summary">{{ describeSelection(filter) }}</span>
                     </div>
-                    <span class="select-summary">{{ describeSelection(filter) }}</span>
                   </ng-container>
                 </div>
 
@@ -1775,6 +1777,12 @@ type SavedFilterState = {
         gap: 4px;
       }
 
+      .day-range-display {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+
       .day-range-display > div {
         padding: 2px 4px;
         border-radius: 6px;
@@ -1896,7 +1904,6 @@ type SavedFilterState = {
           border-radius: 12px;
         }
 
-        .day-range-display,
         .period-selects {
           grid-template-columns: 1fr;
         }
