@@ -3283,8 +3283,8 @@ export class PostDownloadReportService {
         if (currNr) prevLiberadaMap.set(currNr, prevLib);
       }
 
-      // Flag threshold: orders where TME IMP > team average * 1.5 OR > meta * 1.5
-      const flagThreshold = Math.max(teamAvgTme * 1.5, TME_IMP_META * 1.5, 20);
+      // Flag rule: orders where TME IMP exceeds 1.5x team average OR exceeds meta (20 min)
+      const teamAvgThreshold = teamAvgTme * 1.5;
 
       const flaggedOrders: TmeImpOrderEvidence[] = [];
       let countTmeMuitoAlto = 0;
@@ -3301,7 +3301,9 @@ export class PostDownloadReportService {
         const tmeValid = tmeMin !== null && Number.isFinite(tmeMin) && tmeMin > 0;
 
         const flags: TmeImpOrderEvidence['flags'] = [];
-        if (tmeValid && tmeMin >= flagThreshold) { flags.push('tme_muito_alto'); countTmeMuitoAlto++; }
+        const exceedsTeamAvg = tmeValid && teamAvgTme > 0 && tmeMin! >= teamAvgThreshold;
+        const exceedsMeta = tmeValid && tmeMin! > TME_IMP_META;
+        if (exceedsTeamAvg || exceedsMeta) { flags.push('tme_muito_alto'); countTmeMuitoAlto++; }
         if (!aCaminho && tlValid)                { flags.push('sem_deslocamento'); countSemDeslocamento++; }
         if (!trValid && tmeValid)                { flags.push('sem_execucao'); countSemExecucao++; }
 
