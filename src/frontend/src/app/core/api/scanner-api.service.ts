@@ -88,6 +88,7 @@ export interface OsDiaOrderEvidence {
   hd_total_min: number;
   hd_pct_tr: number;
   hd_pct_tl: number;
+  global_avg_tl_min: number;
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
@@ -110,6 +111,7 @@ export interface OsDiaTeamAnalysis {
   metaTarget: number;
   gap: number;
   hdTotalMin: number;
+  globalAvgTlMin: number;
   tempPrepTotalMin: number;
   semOrdemTotalMin: number;
   totalOrders: number;

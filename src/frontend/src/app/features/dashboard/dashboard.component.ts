@@ -8,7 +8,7 @@ const pdfMake = require('pdfmake/build/pdfmake');
 const pdfFonts = require('pdfmake/build/vfs_fonts');
 pdfMake.vfs = pdfFonts.pdfMake?.vfs ?? pdfFonts.vfs;
 
-import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpTeamAnalysis, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocTeamAnalysis, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
@@ -472,7 +472,7 @@ type SavedFilterState = {
                           TR&gt;20% HD: <strong>{{ analysis.summary.countTrExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTlExceeds > 0">
-                          TL&gt;20% HD: <strong>{{ analysis.summary.countTlExceeds }}</strong>
+                          TL&gt;25%médG: <strong>{{ analysis.summary.countTlExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
                           TempPrep≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
@@ -580,25 +580,18 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> esta OS consumiu {{ ev.tr_ordem_min }} min — {{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Tempo previsto no M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado' }}</strong>. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.
+                                  <strong>Tempo de Reparo alto:</strong> {{ osDiaAlertBody('tr_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('tl_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Deslocamento alto:</strong> o técnico passou {{ ev.tl_ordem_min }} min em deslocamento nesta OS — {{ ev.hd_pct_tl }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.
+                                  <strong>Tempo de Deslocamento alto:</strong> {{ osDiaAlertBody('tl_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> o técnico levou {{ ev.temp_prep_os_min }} min entre <ng-container *ngIf="ev.prev_liberada">a liberação da OS anterior e o registro de saída nesta OS</ng-container><ng-container *ngIf="!ev.prev_liberada">o início da jornada e o registro de saída da primeira OS</ng-container> — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.
+                                  <strong>TempPrep/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.
+                                  <strong>SemOrdem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details">
-                                      <ng-container [ngSwitch]="d.type">
-                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até o primeiro despacho ({{ d.to || '—' }}).</ng-container>
-                                        <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '\u2014' }})<ng-container *ngIf="d.desp_anterior"> · Desp. Anterior ({{ d.desp_anterior }})</ng-container> até Despachada ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo descontado</ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '\u2014' }}) até Início Intervalo ({{ d.to || '\u2014' }}).</ng-container>
-                                      </ng-container>
-                                    </li>
+                                    <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -613,7 +606,7 @@ type SavedFilterState = {
                   </div>
                   </ng-container>
                   <ng-template #noOsDiaAnalysis>
-                    <p class="rpt-no-data">Nenhuma equipe abaixo da meta de OS/Dia para os filtros selecionados.</p>
+                    <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                   </ng-template>
                 </ng-container>
                 <!-- Eficiência drill-down (evidências de incidências) -->
@@ -686,16 +679,16 @@ type SavedFilterState = {
                               </div>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo muito baixo:</strong> esta OS foi encerrada com apenas {{ ev.tr_ordem_min }} min de atendimento — menos de 20% do tempo previsto<ng-container *ngIf="ev.tempo_padrao_min !== undefined"> de {{ ev.tempo_padrao_min }} min</ng-container> e da média geral de {{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min. Pode indicar OS encerrada sem atendimento completo ou lançamento incorreto no sistema.
+                                  <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev, analysis) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
-                                  <strong>Deslocamento (TL) muito curto:</strong> o tempo de deslocamento desta OS foi de apenas {{ ev.tl_ordem_min }} min — inferior a 25% da média geral de {{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.
+                                  <strong>Deslocamento (TL) muito curto:</strong> {{ eficienciaAlertBody('deslocamento_curto', ev, analysis) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> esta OS consumiu {{ ev.tr_ordem_min }} min — {{ ev.hd_pct_tr }}% da jornada de {{ ev.hd_total_min }} min, acima do limite de 20%. Tempo previsto no M300: <strong>{{ ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado' }}</strong>. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.
+                                  <strong>Tempo de Reparo alto:</strong> {{ eficienciaAlertBody('tr_excede_hd', ev, analysis) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('tempo_padrao_vazio')" class="osdia-ev-alert">
-                                  <strong>Tempo Padrão ausente:</strong> esta OS foi atendida em {{ ev.tr_ordem_min }} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.
+                                  <strong>Tempo Padrão ausente:</strong> {{ eficienciaAlertBody('tempo_padrao_vazio', ev, analysis) }}
                                 </li>
                               </ul>
                             </div>
@@ -719,6 +712,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- Eficiência: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === 'Eficiência' && (!kpi.evidenceAnalysis || kpi.evidenceAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Top 3 e 3 Abaixo do Padrão
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
                 <!-- Utilização drill-down (3 abaixo do padrão) -->
                 <ng-container *ngIf="kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis && report.specialAnalysis.utilizacaoAnalysis.length > 0">
@@ -844,19 +845,12 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> o técnico levou {{ ev.temp_prep_os_min }} min entre <ng-container *ngIf="ev.prev_liberada">a liberação da OS anterior e o registro de saída nesta OS</ng-container><ng-container *ngIf="!ev.prev_liberada">o início da jornada e o registro de saída da primeira OS</ng-container> — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.
+                                  <strong>TempPrep/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ ev.sem_os_total_min }} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.
+                                  <strong>SemOrdem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details">
-                                      <ng-container [ngSwitch]="d.type">
-                                        <ng-container *ngSwitchCase="'inicio_jornada'"><strong>Início Jornada:</strong> {{ d.min }} min do Início Calendário ({{ d.from || '—' }}) até o primeiro despacho ({{ d.to || '—' }}).</ng-container>
-                                        <ng-container *ngSwitchCase="'entre_ordens'"><strong>Entre OS:</strong> {{ d.min }} min sem nova OS — Lib. Anterior ({{ d.from || '\u2014' }})<ng-container *ngIf="d.desp_anterior"> · Desp. Anterior ({{ d.desp_anterior }})</ng-container> até Despachada ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo descontado</ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'fim_jornada'"><strong>Antes Log Off:</strong> {{ d.min }} min entre última Liberada ({{ d.from || '\u2014' }}) e Log Off ({{ d.to || '\u2014' }})<ng-container *ngIf="d.interval_discounted"> — intervalo de 60 min descontado</ng-container><ng-container *ngIf="d.retorno_base_discounted"> — retorno base <ng-container *ngIf="d.retorno_base_used_row">do dia ({{ d.retorno_base_discounted }} min) descontado</ng-container><ng-container *ngIf="!d.retorno_base_used_row">médio ({{ d.retorno_base_discounted }} min) descontado</ng-container></ng-container>.</ng-container>
-                                        <ng-container *ngSwitchCase="'intervalo_deslocamento'"><strong>Desl. Intervalo:</strong> {{ d.min }} min — Lib. Anterior ({{ d.from || '\u2014' }}) até Início Intervalo ({{ d.to || '\u2014' }}).</ng-container>
-                                      </ng-container>
-                                    </li>
+                                    <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -869,6 +863,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- Utilização: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === 'Utilização' && (!report.specialAnalysis.utilizacaoAnalysis || report.specialAnalysis.utilizacaoAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — 3 Abaixo do Padrão
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
                 <!-- TME IMP drill-down -->
                 <ng-container *ngIf="kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis && kpi.tmeImpAnalysis.length > 0">
@@ -929,13 +931,13 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
-                              <strong>TME IMP elevado:</strong> esta OS acumulou {{ ev.tme_imp_min | number:'1.1-1' }} min de tempo improdutivo — acima da média da equipe ({{ ev.team_avg_tme_min | number:'1.1-1' }} min) e da média geral ({{ ev.global_avg_tme_min | number:'1.1-1' }} min). Esse é o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva registrada. Quanto maior esse tempo, mais prejudica a pontuação da equipe.
+                              <strong>TME IMP elevado:</strong> {{ tmeImpAlertBody('tme_muito_alto', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('sem_deslocamento')" class="osdia-ev-alert">
-                              <strong>Sem registro de deslocamento:</strong> a OS tem {{ ev.tl_ordem_min | number:'1.1-1' }} min de deslocamento, mas não há horário de saída lançado no sistema. O técnico se deslocou mas não atualizou o aplicativo, impedindo o cálculo correto do tempo improdutivo.
+                              <strong>Sem registro de deslocamento:</strong> {{ tmeImpAlertBody('sem_deslocamento', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('sem_execucao')" class="osdia-ev-alert">
-                              <strong>Sem TR Ordem:</strong> esta OS não tem registro de execução, mas acumulou tempo improdutivo. Pode indicar uma OS encerrada sem atendimento real ou lançamento incorreto no sistema.
+                              <strong>Sem TR Ordem:</strong> {{ tmeImpAlertBody('sem_execucao', ev) }}
                             </li>
                           </ul>
                         </div>
@@ -945,6 +947,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- TME IMP: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === 'TME IMP' && (!kpi.tmeImpAnalysis || kpi.tmeImpAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Ordens com TME IMP Elevado
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
                 <!-- 1º Login drill-down -->
                 <ng-container *ngIf="kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis && kpi.primeiroLoginAnalysis.length > 0">
@@ -985,10 +995,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login muito tardio:</strong> o técnico levou {{ ev.primeiro_login_min | number:'1.1-1' }} min para entrar no sistema — mais do que o dobro da meta de {{ analysis.metaTarget }} min. Um atraso tão grande atrasa o primeiro despacho e reduz bastante o tempo disponível para atendimento no dia.
+                              <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('login_tardio') && !ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login tardio:</strong> o técnico levou {{ ev.primeiro_login_min | number:'1.1-1' }} min para entrar no sistema — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_login_min | number:'1.1-1' }} min). Quanto mais tarde o técnico acessa o sistema, mais tarde recebe o primeiro despacho e menos chamados consegue atender no dia.
+                              <strong>Login tardio:</strong> {{ loginAlertBody('login_tardio', ev, analysis) }}
                             </li>
                           </ul>
                         </div>
@@ -998,6 +1008,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- 1º Login: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === '1º Login' && (!kpi.primeiroLoginAnalysis || kpi.primeiroLoginAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com 1º Login Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
                 <!-- 1º Desloc. drill-down -->
                 <ng-container *ngIf="kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis && kpi.primeiroDeslocAnalysis.length > 0">
@@ -1051,22 +1069,16 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
-                              <strong>Despacho tardio:</strong> a equipe recebeu a primeira OS com <strong>{{ ev.despacho_apos_inicio_min | number:'1.1-1' }} min</strong> de atraso em relação ao início da jornada — acima do limite de 10 min.
-                              <ng-container *ngIf="ev.login_atraso_min > 0">
-                                Desse total, <strong>{{ ev.login_atraso_min | number:'1.1-1' }} min</strong> foram de atraso no acesso ao sistema
-                                (início da jornada {{ ev.inicio_calendario }} → acesso {{ ev.log_in_corrigido }})
-                                e os demais <strong>{{ (ev.despacho_apos_inicio_min - ev.login_atraso_min) | number:'1.1-1' }} min</strong> de espera entre o acesso e o primeiro despacho.
-                              </ng-container>
-                              Esse atraso reduz o tempo disponível para atendimentos no dia.
+                              <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento muito lento:</strong> a equipe levou {{ ev.primeiro_desloc_min | number:'1.1-1' }} min para registrar saída após o primeiro despacho — mais de 1,5 vez a meta de {{ analysis.metaTarget }} min. Uma demora tão grande indica que o técnico ficou parado por muito tempo antes de se deslocar para o primeiro atendimento do dia.
+                              <strong>Deslocamento muito lento:</strong> {{ deslocAlertBody('desloc_muito_lento', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento lento:</strong> a equipe levou {{ ev.primeiro_desloc_min | number:'1.1-1' }} min para registrar saída após o primeiro despacho — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_desloc_min | number:'1.1-1' }} min). Sair tarde para o primeiro atendimento reduz o aproveitamento da jornada.
+                              <strong>Deslocamento lento:</strong> {{ deslocAlertBody('desloc_lento', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
-                              <strong>Sem deslocamento registrado:</strong> há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.
+                              <strong>Sem deslocamento registrado:</strong> {{ deslocAlertBody('sem_desloc_registrado', ev, analysis) }}
                             </li>
                           </ul>
                         </div>
@@ -1076,6 +1088,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- 1º Desloc.: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === '1º Desloc.' && (!kpi.primeiroDeslocAnalysis || kpi.primeiroDeslocAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com 1º Desloc. Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
                 <!-- Retorno Base drill-down -->
                 <ng-container *ngIf="kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis && kpi.retornoBaseAnalysis.length > 0">
@@ -1116,10 +1136,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno muito alto:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — mais de 1,5 vez a meta de {{ analysis.metaTarget }} min. Pode indicar trajeto muito longo até a base, região de atuação distante, ou permanência no campo sem atendimento após a última OS. Retornos longos são descontados no cálculo de Utilização, prejudicando a nota da equipe.
+                              <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno acima da meta:</strong> {{ ev.retorno_base_min | number:'1.1-1' }} min — acima da meta de {{ analysis.metaTarget }} min (média da equipe: {{ ev.team_avg_retorno_min | number:'1.1-1' }} min, média geral: {{ ev.global_avg_retorno_min | number:'1.1-1' }} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.
+                              <strong>Retorno acima da meta:</strong> {{ retornoAlertBody('retorno_alto', ev, analysis) }}
                             </li>
                           </ul>
                         </div>
@@ -1129,6 +1149,14 @@ type SavedFilterState = {
                       </ng-template>
                     </div>
                   </div>
+                </ng-container>
+                <!-- Retorno Base: all teams at meta -->
+                <ng-container *ngIf="kpi.kpi === 'Retorno Base' && (!kpi.retornoBaseAnalysis || kpi.retornoBaseAnalysis.length === 0)">
+                  <div class="kpi-osdia-drill-head">
+                    🔍 Análise Detalhada — Dias com Retorno Base Acima da Meta
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
+                  </div>
+                  <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
                 </ng-container>
               </section>
             </ng-container>
@@ -2957,6 +2985,7 @@ type SavedFilterState = {
       .rpt-cross-val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
       .rpt-no-data { margin: 0; font-size: 0.76rem; color: var(--muted); font-style: italic; }
+      .kpi-meta-ok { margin: 8px 0 0; font-size: 0.82rem; color: #16a34a; font-weight: 600; }
 
       /* ── Idle notice (equipe com poucas ordens sem alertas) ── */
       .osdia-idle-notice {
@@ -4054,7 +4083,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           ];
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
           if (analysis.summary?.countTrExceeds > 0) chips.push(`TR>20% HD: ${analysis.summary.countTrExceeds}`);
-          if (analysis.summary?.countTlExceeds > 0) chips.push(`TL>20% HD: ${analysis.summary.countTlExceeds}`);
+          if (analysis.summary?.countTlExceeds > 0) chips.push(`TL>25%médG: ${analysis.summary.countTlExceeds}`);
           if (analysis.summary?.countTempPrepAlto > 0) chips.push(`TempPrep≥10min: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS≥10min: ${analysis.summary.countSemOsAlto}`);
           content.push(
@@ -4097,14 +4126,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 content.push({ text: `⏸ Intervalo: ${ev.inicio_intervalo} → ${ev.fim_intervalo || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
               }
               const alerts: any[] = [];
-              if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`Tempo de Reparo alto: esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}.`));
-              if (ev.flags?.includes('tl_excede_hd')) alerts.push(alertItem(`Tempo de Deslocamento alto: ${ev.tl_ordem_min} min em deslocamento — ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%.`));
-              if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'lib. anterior e saída desta OS' : 'início da jornada e saída da 1ª OS'} — acima do limite de 10 min.`));
+              if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`Tempo de Reparo alto: ${this.osDiaAlertBody('tr_excede_hd', ev)}`));
+              if (ev.flags?.includes('tl_excede_hd')) alerts.push(alertItem(`Tempo de Deslocamento alto: ${this.osDiaAlertBody('tl_excede_hd', ev)}`));
+              if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
-                alerts.push(alertItem(`SemOrdem/OS: ${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min.`));
+                alerts.push(alertItem(`SemOrdem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
                 ev.sem_os_details.forEach((d: any) => {
-                  const typeLabel: Record<string, string> = { inicio_jornada: 'Início Jornada', entre_ordens: 'Entre OS', fim_jornada: 'Antes Log Off', intervalo_deslocamento: 'Desl. Intervalo' };
-                  content.push({ text: `  ↳ ${typeLabel[d.type] || d.type}: ${d.min} min (${d.from || '—'} → ${d.to || '—'})`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
+                  content.push({ text: `  ↳ ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
                 });
               }
               if (alerts.length > 0) content.push(...alerts);
@@ -4151,10 +4179,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             content.push({ text: `OS  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
             const alerts: any[] = [];
-            if (ev.flags?.includes('tr_muito_baixo')) alerts.push(alertItem(`TR muito baixo: ${ev.tr_ordem_min} min de atendimento — menos de 20% do tempo previsto${ev.tempo_padrao_min !== undefined ? ` de ${ev.tempo_padrao_min} min` : ''} e da média geral de ${analysis.globalAvgExecucaoMin?.toFixed(1)} min.`));
-            if (ev.flags?.includes('deslocamento_curto')) alerts.push(alertItem(`TL muito curto: ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min.`));
-            if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`TR alto: ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%.`));
-            if (ev.flags?.includes('tempo_padrao_vazio')) alerts.push(alertItem(`Tempo Padrão ausente: OS atendida em ${ev.tr_ordem_min} min, mas sem tempo padrão no M300. Eficiência calculada como zero.`));
+            if (ev.flags?.includes('tr_muito_baixo')) alerts.push(alertItem(`Tempo de Reparo muito baixo: ${this.eficienciaAlertBody('tr_muito_baixo', ev, analysis)}`));
+            if (ev.flags?.includes('deslocamento_curto')) alerts.push(alertItem(`Deslocamento (TL) muito curto: ${this.eficienciaAlertBody('deslocamento_curto', ev, analysis)}`));
+            if (ev.flags?.includes('tr_excede_hd')) alerts.push(alertItem(`Tempo de Reparo alto: ${this.eficienciaAlertBody('tr_excede_hd', ev, analysis)}`));
+            if (ev.flags?.includes('tempo_padrao_vazio')) alerts.push(alertItem(`Tempo Padrão ausente: ${this.eficienciaAlertBody('tempo_padrao_vazio', ev, analysis)}`));
             if (alerts.length > 0) content.push(...alerts);
             if (evIdx < evArr.length - 1) content.push(orderDivider());
           });
@@ -4217,12 +4245,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               content.push({ text: `⏸ Intervalo: ${ev.inicio_intervalo} → ${ev.fim_intervalo || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
             }
             const alerts: any[] = [];
-            if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'lib. anterior e saída desta OS' : 'início da jornada e saída da 1ª OS'} — acima do limite de 10 min.`));
+            if (ev.flags?.includes('temp_prep_alto')) alerts.push(alertItem(`TempPrep/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
-              alerts.push(alertItem(`SemOrdem/OS: ${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min.`));
+              alerts.push(alertItem(`SemOrdem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
               ev.sem_os_details.forEach((d: any) => {
-                const typeLabel: Record<string, string> = { inicio_jornada: 'Início Jornada', entre_ordens: 'Entre OS', fim_jornada: 'Antes Log Off', intervalo_deslocamento: 'Desl. Intervalo' };
-                content.push({ text: `  ↳ ${typeLabel[d.type] || d.type}: ${d.min} min (${d.from || '—'} → ${d.to || '—'})`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
+                content.push({ text: `  ↳ ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [8, 1, 0, 1] });
               });
             }
             if (alerts.length > 0) content.push(...alerts);
@@ -4265,9 +4292,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             content.push({ text: `OS Atual  →  Despachada: ${ev.despachada || '—'}  →  A Caminho: ${ev.a_caminho || '—'}  →  No Local: ${ev.no_local || '—'}  →  Liberada: ${ev.liberada || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] });
             const alerts: any[] = [];
-            if (ev.flags?.includes('tme_muito_alto')) alerts.push(alertItem(`TME IMP elevado: ${ev.tme_imp_min?.toFixed(1)} min — acima da média da equipe (${ev.team_avg_tme_min?.toFixed(1)} min) e da média geral (${ev.global_avg_tme_min?.toFixed(1)} min). Tempo entre No Local e liberação sem execução produtiva.`));
-            if (ev.flags?.includes('sem_deslocamento')) alerts.push(alertItem(`Sem registro de deslocamento: ${ev.tl_ordem_min?.toFixed(1)} min de deslocamento sem horário de saída lançado.`));
-            if (ev.flags?.includes('sem_execucao')) alerts.push(alertItem(`Sem TR Ordem: OS sem registro de execução, mas com tempo improdutivo acumulado.`));
+            if (ev.flags?.includes('tme_muito_alto')) alerts.push(alertItem(`TME IMP elevado: ${this.tmeImpAlertBody('tme_muito_alto', ev)}`));
+            if (ev.flags?.includes('sem_deslocamento')) alerts.push(alertItem(`Sem registro de deslocamento: ${this.tmeImpAlertBody('sem_deslocamento', ev)}`));
+            if (ev.flags?.includes('sem_execucao')) alerts.push(alertItem(`Sem TR Ordem: ${this.tmeImpAlertBody('sem_execucao', ev)}`));
             if (alerts.length > 0) content.push(...alerts);
             if (evIdx < evArr.length - 1) content.push(orderDivider());
           });
@@ -4300,8 +4327,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               margin: [0, 6, 0, 2],
             });
             content.push({ text: `Início Calendário: ${ev.inicio_calendario || '—'}  →  Log In Corrigido: ${ev.log_in_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 3] });
-            if (ev.flags?.includes('login_muito_tardio')) content.push(alertItem(`Login muito tardio: ${ev.primeiro_login_min?.toFixed(1)} min — mais do que o dobro da meta de ${analysis.metaTarget} min.`));
-            else if (ev.flags?.includes('login_tardio')) content.push(alertItem(`Login tardio: ${ev.primeiro_login_min?.toFixed(1)} min — acima da meta de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_login_min?.toFixed(1)} min).`));
+            if (ev.flags?.includes('login_muito_tardio')) content.push(alertItem(`Login muito tardio: ${this.loginAlertBody('login_muito_tardio', ev, analysis)}`));
+            else if (ev.flags?.includes('login_tardio')) content.push(alertItem(`Login tardio: ${this.loginAlertBody('login_tardio', ev, analysis)}`));
             if (evIdx < evArr.length - 1) content.push(orderDivider());
           });
           content.push(cardDivider());
@@ -4337,10 +4364,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             content.push({ text: `Início da jornada  →  Início Calendário: ${ev.inicio_calendario || '—'}  -  Log In: ${ev.log_in_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 1] });
             content.push({ text: `1ª OS  →  Despachada: ${ev.hora_primeiro_despacho || '—'}  →  A Caminho: ${ev.hora_primeiro_deslocamento || '—'}`, fontSize: 7, color: GRAY, margin: [0, 1, 0, 3] });
             const alerts: any[] = [];
-            if (ev.flags?.includes('despacho_tardio')) alerts.push(alertItem(`Despacho tardio: ${ev.despacho_apos_inicio_min?.toFixed(1)} min de atraso em relação ao início da jornada — acima do limite de 10 min.${ev.login_atraso_min > 0 ? ` Desse total, ${ev.login_atraso_min?.toFixed(1)} min de atraso no login e ${(ev.despacho_apos_inicio_min - ev.login_atraso_min)?.toFixed(1)} min de espera até o despacho.` : ''}`));
-            if (ev.flags?.includes('desloc_muito_lento')) alerts.push(alertItem(`Deslocamento muito lento: ${ev.primeiro_desloc_min?.toFixed(1)} min para registrar saída após o despacho — mais de 1,5× a meta de ${analysis.metaTarget} min.`));
-            else if (ev.flags?.includes('desloc_lento')) alerts.push(alertItem(`Deslocamento lento: ${ev.primeiro_desloc_min?.toFixed(1)} min após o despacho — acima da meta de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_desloc_min?.toFixed(1)} min).`));
-            if (ev.flags?.includes('sem_desloc_registrado')) alerts.push(alertItem(`Sem deslocamento registrado: há despacho, mas o técnico não atualizou o status de saída.`));
+            if (ev.flags?.includes('despacho_tardio')) alerts.push(alertItem(`Despacho tardio: ${this.deslocAlertBody('despacho_tardio', ev, analysis)}`));
+            if (ev.flags?.includes('desloc_muito_lento')) alerts.push(alertItem(`Deslocamento muito lento: ${this.deslocAlertBody('desloc_muito_lento', ev, analysis)}`));
+            else if (ev.flags?.includes('desloc_lento')) alerts.push(alertItem(`Deslocamento lento: ${this.deslocAlertBody('desloc_lento', ev, analysis)}`));
+            if (ev.flags?.includes('sem_desloc_registrado')) alerts.push(alertItem(`Sem deslocamento registrado: ${this.deslocAlertBody('sem_desloc_registrado', ev, analysis)}`));
             if (alerts.length > 0) content.push(...alerts);
             if (evIdx < evArr.length - 1) content.push(orderDivider());
           });
@@ -4373,8 +4400,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               margin: [0, 6, 0, 2],
             });
             content.push({ text: `Última OS Liberada: ${ev.hora_ultima_ordem || '—'}  →  Log Off Corrigido: ${ev.log_off_corrigido || '—'}`, fontSize: 7, color: GRAY, margin: [0, 2, 0, 3] });
-            if (ev.flags?.includes('retorno_muito_alto')) content.push(alertItem(`Retorno muito alto: ${ev.retorno_base_min?.toFixed(1)} min — mais de 1,5× a meta de ${analysis.metaTarget} min. Retornos longos são descontados no cálculo de Utilização.`));
-            else if (ev.flags?.includes('retorno_alto')) content.push(alertItem(`Retorno acima da meta: ${ev.retorno_base_min?.toFixed(1)} min — acima de ${analysis.metaTarget} min (média equipe: ${ev.team_avg_retorno_min?.toFixed(1)} min, média geral: ${ev.global_avg_retorno_min?.toFixed(1)} min). Descontado no cálculo de Utilização.`));
+            if (ev.flags?.includes('retorno_muito_alto')) content.push(alertItem(`Retorno muito alto: ${this.retornoAlertBody('retorno_muito_alto', ev, analysis)}`));
+            else if (ev.flags?.includes('retorno_alto')) content.push(alertItem(`Retorno acima da meta: ${this.retornoAlertBody('retorno_alto', ev, analysis)}`));
             if (evIdx < evArr.length - 1) content.push(orderDivider());
           });
           content.push(cardDivider());
@@ -4542,8 +4569,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected osDiaFlagLabel(flag: string): string {
     const labels: Record<string, string> = {
       tr_excede_hd:       'TR>20%HD',
-      tl_excede_hd:       'TL>20%HD',
-      temp_prep_alto:     'TempPrep≥20min',
+      tl_excede_hd:       'TL>25%médG',
+      temp_prep_alto:     'TempPrep≥10min',
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
@@ -4626,6 +4653,109 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
     return labels[flag] ?? flag;
   }
+
+  // ─── Alert body builders — SINGLE SOURCE OF TRUTH for HTML template + PDF export ────────────────
+  // To change any alert text: edit ONLY here. Both HTML and PDF will reflect the change automatically.
+
+  private nf(v: number, minDec = 1, maxDec = 1): string {
+    return v.toLocaleString('pt-BR', { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
+  }
+
+  protected osDiaAlertBody(flag: string, ev: any): string {
+    switch (flag) {
+      case 'tr_excede_hd':
+        return `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+      case 'tl_excede_hd':
+        return `o técnico passou ${ev.tl_ordem_min} min em deslocamento nesta OS — ${ev.global_avg_tl_min > 0 ? this.nf((ev.tl_ordem_min - ev.global_avg_tl_min) / ev.global_avg_tl_min * 100, 0, 0) : '?'}% acima da média geral de ${this.nf(ev.global_avg_tl_min)} min, representando ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.`;
+      case 'temp_prep_alto':
+        return `o técnico levou ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS'} — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
+      case 'sem_os_alto':
+        return `${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
+      default:
+        return '';
+    }
+  }
+
+  protected semOsDetailText(d: any): string {
+    switch (d.type) {
+      case 'inicio_jornada':
+        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}).`;
+      case 'entre_ordens':
+        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''}.`;
+      case 'fim_jornada':
+        return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
+      case 'intervalo_deslocamento':
+        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
+      default:
+        return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
+    }
+  }
+
+  protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence, analysis: EficienciaTeamAnalysis): string {
+    switch (flag) {
+      case 'tr_muito_baixo':
+        return `${ev.tr_ordem_min} min de execução — ${analysis.globalAvgExecucaoMin > 0 ? this.nf((analysis.globalAvgExecucaoMin - ev.tr_ordem_min) / analysis.globalAvgExecucaoMin * 100, 0, 0) : '?'}% abaixo da média geral de ${this.nf(analysis.globalAvgExecucaoMin)} min. Deslocamento registrado (TL): ${ev.tl_ordem_min} min${ev.tl_ordem_min > analysis.globalAvgDeslocamentoMin ? ' — TL elevado indica erro no apontamento de "A Caminho" ou "No Local", comprimindo artificialmente o TR' : ' — grande possibilidade de erro de apontamento de "A Caminho" ou "No Local"'}.`;
+      case 'deslocamento_curto':
+        return `o tempo de deslocamento desta OS foi de apenas ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${this.nf(analysis.globalAvgDeslocamentoMin)} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.`;
+      case 'tr_excede_hd':
+        return `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+      case 'tempo_padrao_vazio':
+        return `esta OS foi atendida em ${ev.tr_ordem_min} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.`;
+      default:
+        return '';
+    }
+  }
+
+  protected tmeImpAlertBody(flag: string, ev: TmeImpOrderEvidence): string {
+    switch (flag) {
+      case 'tme_muito_alto':
+        return `esta OS acumulou ${this.nf(ev.tme_imp_min)} min de tempo improdutivo — acima da média da equipe (${this.nf(ev.team_avg_tme_min)} min) e da média geral (${this.nf(ev.global_avg_tme_min)} min). Esse é o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva registrada. Quanto maior esse tempo, mais prejudica a pontuação da equipe.`;
+      case 'sem_deslocamento':
+        return `a OS tem ${this.nf(ev.tl_ordem_min)} min de deslocamento, mas não há horário de saída lançado no sistema. O técnico se deslocou mas não atualizou o aplicativo, impedindo o cálculo correto do tempo improdutivo.`;
+      case 'sem_execucao':
+        return `esta OS não tem registro de execução, mas acumulou tempo improdutivo. Pode indicar uma OS encerrada sem atendimento real ou lançamento incorreto no sistema.`;
+      default:
+        return '';
+    }
+  }
+
+  protected loginAlertBody(flag: string, ev: PrimeiroLoginDayEvidence, analysis: PrimeiroLoginTeamAnalysis): string {
+    switch (flag) {
+      case 'login_muito_tardio':
+        return `o técnico levou ${this.nf(ev.primeiro_login_min)} min para entrar no sistema — mais do que o dobro da meta de ${analysis.metaTarget} min. Um atraso tão grande atrasa o primeiro despacho e reduz bastante o tempo disponível para atendimento no dia.`;
+      case 'login_tardio':
+        return `o técnico levou ${this.nf(ev.primeiro_login_min)} min para entrar no sistema — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_login_min)} min). Quanto mais tarde o técnico acessa o sistema, mais tarde recebe o primeiro despacho e menos chamados consegue atender no dia.`;
+      default:
+        return '';
+    }
+  }
+
+  protected deslocAlertBody(flag: string, ev: PrimeiroDeslocDayEvidence, analysis: PrimeiroDeslocTeamAnalysis): string {
+    switch (flag) {
+      case 'despacho_tardio':
+        return `a equipe recebeu a primeira OS com ${this.nf(ev.despacho_apos_inicio_min)} min de atraso em relação ao início da jornada — acima do limite de 10 min.${ev.login_atraso_min > 0 ? ` Desse total, ${this.nf(ev.login_atraso_min)} min foram de atraso no acesso ao sistema (início da jornada ${ev.inicio_calendario} → acesso ${ev.log_in_corrigido}) e os demais ${this.nf(ev.despacho_apos_inicio_min - ev.login_atraso_min)} min de espera entre o acesso e o primeiro despacho.` : ''} Esse atraso reduz o tempo disponível para atendimentos no dia.`;
+      case 'desloc_muito_lento':
+        return `a equipe levou ${this.nf(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — mais de 1,5× a meta de ${analysis.metaTarget} min. Uma demora tão grande indica que o técnico ficou parado por muito tempo antes de se deslocar para o primeiro atendimento do dia.`;
+      case 'desloc_lento':
+        return `a equipe levou ${this.nf(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_desloc_min)} min). Sair tarde para o primeiro atendimento reduz o aproveitamento da jornada.`;
+      case 'sem_desloc_registrado':
+        return `há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.`;
+      default:
+        return '';
+    }
+  }
+
+  protected retornoAlertBody(flag: string, ev: RetornoBaseDayEvidence, analysis: RetornoBaseTeamAnalysis): string {
+    switch (flag) {
+      case 'retorno_muito_alto':
+        return `${this.nf(ev.retorno_base_min)} min — mais de 1,5× a meta de ${analysis.metaTarget} min. Pode indicar trajeto muito longo até a base, região de atuação distante, ou permanência no campo sem atendimento após a última OS. Retornos longos são descontados no cálculo de Utilização, prejudicando a nota da equipe.`;
+      case 'retorno_alto':
+        return `${this.nf(ev.retorno_base_min)} min — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_retorno_min)} min, média geral: ${this.nf(ev.global_avg_retorno_min)} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.`;
+      default:
+        return '';
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
   protected getFimJornadaDetail(ev: OsDiaOrderEvidence): NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null {
     return ev.sem_os_details?.find((d: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number]) => d.type === 'fim_jornada') ?? null;
