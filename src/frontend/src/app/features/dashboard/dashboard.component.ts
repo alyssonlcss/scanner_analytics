@@ -3609,12 +3609,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const filters = this.buildReportFiltersPayload();
       this.exportLoading.set(true);
       this.exportError.set('');
-      this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [] } }).subscribe({
+      this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams } }).subscribe({
         next: (result) => {
           this.exportLoading.set(false);
           this.exportModalOpen.set(false);
           const subtitle = [
-            filters.bases?.join(', ') || 'Todas as Bases',
+            filters.teams?.join(', ') || filters.bases?.join(', ') || 'Todas as Bases',
             filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Todos os Tipos',
           ].join(' · ');
           this.openPdfWindow({ report: result.generatedReport, title: 'Relatório Atual', subtitle });
