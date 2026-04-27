@@ -451,7 +451,7 @@ type SavedFilterState = {
                   </div>
                   <ng-container *ngIf="report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0; else noOsDiaAnalysis">
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.osDiaAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterOsDiaEvidence(report.specialAnalysis.osDiaAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }} OS/dia</span>
@@ -718,7 +718,7 @@ type SavedFilterState = {
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.utilizacaoAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterOsDiaEvidence(report.specialAnalysis.utilizacaoAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }}%</span>
@@ -869,7 +869,7 @@ type SavedFilterState = {
                   </div>
                   <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. O TME IMP mede o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva — quanto maior esse tempo, mais prejudica a pontuação da equipe.</p>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.tmeImpAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterTmeImpEvidence(kpi.tmeImpAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
@@ -945,7 +945,7 @@ type SavedFilterState = {
                   </div>
                   <p class="rpt-section-desc">Dias em que o primeiro login corrigido superou a meta de 8 min. Atrasos no login atrasam o primeiro despacho, comprimem a jornada e reduzem o número de OS possíveis.</p>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.primeiroLoginAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterLoginEvidence(kpi.primeiroLoginAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
@@ -998,7 +998,7 @@ type SavedFilterState = {
                   </div>
                   <p class="rpt-section-desc">Dias em que o tempo entre o primeiro despacho e o primeiro "A Caminho" superou a meta de 25 min. Um 1º Desloc. alto indica que a equipe demora a sair em campo após o primeiro despacho.</p>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.primeiroDeslocAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterDeslocEvidence(kpi.primeiroDeslocAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
@@ -1076,7 +1076,7 @@ type SavedFilterState = {
                   </div>
                   <p class="rpt-section-desc">Dias em que o retorno à base superou a meta de 40 min. Este tempo é descontado no cálculo de Utilização, impactando diretamente a nota da equipe.</p>
                   <div class="rpt-osdia-grid">
-                    <div class="rpt-osdia-card" *ngFor="let analysis of kpi.retornoBaseAnalysis">
+                    <div class="rpt-osdia-card" *ngFor="let analysis of filterRetornoEvidence(kpi.retornoBaseAnalysis)">
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
@@ -4452,6 +4452,26 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
+  }
+
+  protected filterOsDiaEvidence<T extends { idleAnalysis?: unknown; flaggedOrders: unknown[] }>(list: T[]): T[] {
+    return list.filter((a) => a.idleAnalysis || a.flaggedOrders.length > 0);
+  }
+
+  protected filterTmeImpEvidence(list: TmeImpTeamAnalysis[]): TmeImpTeamAnalysis[] {
+    return list.filter((a) => a.flaggedOrders.length > 0);
+  }
+
+  protected filterLoginEvidence(list: PrimeiroLoginTeamAnalysis[]): PrimeiroLoginTeamAnalysis[] {
+    return list.filter((a) => a.flaggedDays.length > 0);
+  }
+
+  protected filterDeslocEvidence(list: PrimeiroDeslocTeamAnalysis[]): PrimeiroDeslocTeamAnalysis[] {
+    return list.filter((a) => a.flaggedDays.length > 0);
+  }
+
+  protected filterRetornoEvidence(list: RetornoBaseTeamAnalysis[]): RetornoBaseTeamAnalysis[] {
+    return list.filter((a) => a.flaggedDays.length > 0);
   }
 
   protected sortedEficienciaAnalysis(list: EficienciaTeamAnalysis[]): EficienciaTeamAnalysis[] {
