@@ -3545,23 +3545,30 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   /**
    * Step 1: mode selection
-   * 'current' → window.print() on live page (captures everything exactly as rendered)
-   * 'proprias'/'parceiras' → show base selection step
+   * 'current'             → gera PDF completo
+   * 'proprias'/'parceiras' → baixa os 4 PDFs (um por base) automaticamente
    */
   protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras'): void {
+    const report = this.reportData();
+    if (!report) return;
+    this.exportModalOpen.set(false);
+
     if (mode === 'current') {
-      const report = this.reportData();
-      if (!report) return;
-      this.exportModalOpen.set(false);
       this.openPdfWindow({ report, title: 'Relatório Completo', subtitle: 'Todas as Equipes' });
       return;
     }
-    this.exportModeType.set(mode);
-    this.exportModalStep.set('bases');
+
+    const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
+    for (const base of this.reportBaseOptions) {
+      const mapping = REPORT_BASE_PREFIX_MAP[base];
+      const prefix = (mode === 'proprias' ? mapping.own : mapping.partner).toUpperCase();
+      const filtered = this.filterReportByTeamPrefix(report, prefix);
+      this.openPdfWindow({ report: filtered, title: base, subtitle: typeLabel });
+    }
   }
 
   /**
-   * Step 2: base selected — generate PDF for that single base
+   * @deprecated use exportWithMode; kept for template compatibility
    */
   protected exportBase(base: string): void {
     const report = this.reportData();
