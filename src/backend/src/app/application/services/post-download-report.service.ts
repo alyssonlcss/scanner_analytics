@@ -496,7 +496,6 @@ export class PostDownloadReportService {
     const teamMetrics = this.buildTeamMetrics(tempSemOs);
     const deviationInsights = this.buildDeviationInsights(filtered.desvios);
     const crossedInsights = this.buildCrossedInsights(teamMetrics, kpis, deviationInsights.teamBreakdown);
-    const actionPlan = this.buildActionPlans(teamMetrics, kpis, deviationInsights.teamBreakdown);
     const osDiaAnalysis = this.analyzeOsDia(filtered.deslocamentos, filtered.ranking, kpis);
 
     // Analyze Eficiencia KPI for evidence of masked efficiency or issues
@@ -517,6 +516,11 @@ export class PostDownloadReportService {
     // Analyze Utilização KPI — jornada-level evidence for top/bottom teams
     const utilizacaoAnalysis = this.analyzeUtilizacao(filtered.deslocamentos, kpis);
     console.log('[Generate Report] Utilização analysis results:', utilizacaoAnalysis.length);
+
+    const actionPlan = this.buildActionPlans(
+      teamMetrics, kpis, deviationInsights.teamBreakdown,
+      osDiaAnalysis, utilizacaoAnalysis, eficienciaAnalysis,
+    );
 
     // Analyze remaining KPIs
     const tmeImpAnalysis      = this.analyzeTmeImp(filtered.deslocamentos, filtered.ranking, kpis);
@@ -1275,8 +1279,18 @@ export class PostDownloadReportService {
     teamMetrics: TeamMetricSummary[],
     kpis: KpiInsight[],
     teamDeviations: DeviationByTeam[],
+    osDiaAnalysis: OsDiaTeamAnalysis[] = [],
+    utilizacaoAnalysis: UtilizacaoTeamAnalysis[] = [],
+    eficienciaAnalysis: EficienciaTeamAnalysis[] = [],
   ): TeamActionPlan[] {
     const deviationMap = new Map(teamDeviations.map((item) => [item.team, item.deviations]));
+    const osDiaMap = new Map(osDiaAnalysis.map((a) => [a.team, a]));
+    const utilizacaoMap = new Map(utilizacaoAnalysis.map((a) => [a.team, a]));
+    const eficienciaMap = new Map(
+      eficienciaAnalysis
+        .filter((a) => a.analysisType === 'underperformer')
+        .map((a) => [a.team, a]),
+    );
 
     const opportunityTeams = new Set<string>();
     for (const insight of kpis) {
@@ -1295,7 +1309,16 @@ export class PostDownloadReportService {
       const issues: string[] = [];
       const recommendations: string[] = [];
       const deviations = deviationMap.get(tm.team) ?? [];
+      const osDia = osDiaMap.get(tm.team);
+      const util = utilizacaoMap.get(tm.team);
+      const efic = eficienciaMap.get(tm.team);
 
+      // Determine which KPI categories this team is failing
+      const teamInOsDia = kpis.find((k) => k.kpi === 'OS Dia')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInUtil  = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInEfic  = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Eficiência'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+
+      // Phase 1: Generic KPI status per failing KPI
       for (const insight of kpis) {
         if (!insight.opportunityTeams.some((t) => t.team === tm.team)) {
           continue;
@@ -1303,27 +1326,159 @@ export class PostDownloadReportService {
 
         const teamScore = insight.scores.find((s) => s.team === tm.team);
         const highlight = teamScore ? ` (${teamScore.rawValue}, meta: ${insight.metaTarget})` : '';
-
         issues.push(`${insight.kpi} abaixo do esperado${highlight}`);
 
-        if (insight.kpi === 'Utilização' || normalizeToken(insight.kpi) === normalizeToken('OS Dia')) {
-          if (tm.semOrdemJornada > 30) {
-            recommendations.push(
-              `Revisar gestão de fila — ${tm.team} tem alto tempo sem OS entre ordens (${tm.semOrdemJornada} min/dia em média).`,
-            );
-          }
-        }
-
-        if (insight.kpi === 'TME IMP') {
-          if (tm.tempPrepJornada > 20) {
-            recommendations.push(
-              `Cobrar redução do TempPrep — equipe leva em média ${tm.tempPrepJornada} min/dia para confirmar deslocamento após despacho.`,
-            );
-          }
+        if (insight.kpi === 'TME IMP' && tm.tempPrepJornada > 20) {
+          recommendations.push(
+            `Cobrar redução do TempPrep — equipe leva em média ${tm.tempPrepJornada} min/dia para confirmar deslocamento após despacho.`,
+          );
         }
       }
 
-      // Deviation-based recommendations
+      // Phase 2: OS Dia / Utilização — idle culpability patterns
+      if (teamInOsDia || teamInUtil) {
+        const idleAnalysis = osDia ?? util;
+        if (idleAnalysis) {
+          // Shared minimal shape across OsDiaOrderEvidence and UtilizacaoOrderEvidence
+          type SharedEvidence = {
+            flags: string[];
+            prev_liberada?: string;
+            temp_prep_os_min?: number;
+            sem_os_details?: Array<{ type: string; min: number }>;
+            sem_os_total_min?: number;
+            tl_ordem_min: number;
+          };
+          const orders = idleAnalysis.flaggedOrders as unknown as SharedEvidence[];
+
+          // Pattern 1: Espera por nova OS (gap entre ordens / início de jornada)
+          const semOsEntre = orders.filter(
+            (o) => o.flags.includes('sem_os_alto') &&
+              o.sem_os_details?.some((d) => d.type === 'entre_ordens' || d.type === 'inicio_jornada'),
+          );
+          if (semOsEntre.length > 0 || idleAnalysis.summary.countSemOsAlto > 0) {
+            const avgMin = semOsEntre.length > 0
+              ? round2(semOsEntre.reduce((s, o) => s + (o.sem_os_total_min ?? 0), 0) / semOsEntre.length)
+              : round2(idleAnalysis.semOrdemTotalMin);
+            issues.push(`Tempo de espera por nova OS (média ${avgMin} min) — possível gargalo de comunicação com a central`);
+            recommendations.push('Reduzir tempo de fila: ao liberar uma OS, acionar imediatamente a central para próximo despacho');
+          }
+
+          // Pattern 2: TempPrep elevado pós-despacho (não é 1ª OS)
+          const tempPrepPosDespach = orders.filter(
+            (o) => o.flags.includes('temp_prep_alto') && Boolean(o.prev_liberada),
+          );
+          if (tempPrepPosDespach.length > 0) {
+            const avgTp = round2(
+              tempPrepPosDespach.reduce((s, o) => s + (o.temp_prep_os_min ?? 0), 0) / tempPrepPosDespach.length,
+            );
+            issues.push(`TempPrep médio elevado (${avgTp} min) — demora entre despacho recebido e início do deslocamento`);
+            recommendations.push('Verificar se equipe confirma o deslocamento imediatamente após receber o despacho');
+          }
+
+          // Pattern 3: Deslocamento para almoço após liberada (intervalo_deslocamento)
+          const intervaloDeslocamentos = orders.filter(
+            (o) => o.sem_os_details?.some((d) => d.type === 'intervalo_deslocamento'),
+          );
+          if (intervaloDeslocamentos.length > 0) {
+            const avgDeslocMin = round2(
+              intervaloDeslocamentos.reduce((s, o) => {
+                const d = o.sem_os_details?.find((x) => x.type === 'intervalo_deslocamento');
+                return s + (d?.min ?? 0);
+              }, 0) / intervaloDeslocamentos.length,
+            );
+            issues.push(`Intervalo de almoço iniciado após liberação de OS com deslocamento elevado (${avgDeslocMin} min) — padrão suspeito`);
+            recommendations.push('Orientar que o deslocamento para intervalo deve ocorrer a partir do ponto atual, não de novo endereço');
+          }
+
+          // Pattern 4: Erro de apontamento (1ª OS com TempPrep > 30 min)
+          const primeiraOsErro = orders.filter(
+            (o) => o.flags.includes('temp_prep_alto') && !o.prev_liberada && (o.temp_prep_os_min ?? 0) > 30,
+          );
+          if (primeiraOsErro.length > 0) {
+            const avgTp = round2(
+              primeiraOsErro.reduce((s, o) => s + (o.temp_prep_os_min ?? 0), 0) / primeiraOsErro.length,
+            );
+            issues.push(`Possível erro de apontamento: 1ª OS com TempPrep de ${avgTp} min a partir do Início de Calendário`);
+            recommendations.push('Validar se o Login foi registrado no local correto e se o despacho ocorreu dentro da janela de início de turno');
+          }
+
+          // Pattern 5: Horas extras + ociosidade elevada (≥15%)
+          const ia = idleAnalysis.idleAnalysis;
+          if (ia && ia.horasExtras > 0 && ia.idlePct >= 15) {
+            issues.push(`Horas extras (${round2(ia.horasExtras)} min/dia) com ociosidade simultânea — possível janela improdutiva não apontada`);
+            recommendations.push('Revisar apontamentos do período: identificar horas extras que coincidem com SemOrdem ou TempPrep elevado');
+          }
+
+          // Crossed deviations — Ócio
+          const hasUtilAcima100 = deviations.some((d) => {
+            const t = normalizeToken(d);
+            return (t.includes('util') || t.includes('utilizacao')) && t.includes('100');
+          });
+          if (hasUtilAcima100) {
+            issues.push('Sobreposição de ordens detectada — possível erro de apontamento que infla TempPrep/SemOrdem');
+          }
+
+          const hasIntervaloUltimo = deviations.some((d) => {
+            const t = normalizeToken(d);
+            return t.includes('intervalo') && (t.includes('ultimo') || t.includes('last') || t.includes('por ultimo'));
+          });
+          if (hasIntervaloUltimo && idleAnalysis.summary.countSemOsAlto > 0) {
+            issues.push('Intervalo registrado ao final do turno enquanto há tempo sem OS — padrão de ócio não declarado');
+          }
+
+          const hasEmOrdem = deviations.some((d) => normalizeToken(d).includes('em ordem'));
+          if (hasEmOrdem && ia && ia.idlePct >= 10) {
+            issues.push('Técnico apontado como Em Ordem mas com tempo ocioso acima do limite — inconsistência de apontamento');
+          }
+        } else if (tm.semOrdemJornada > 30) {
+          recommendations.push(
+            `Revisar gestão de fila — ${tm.team} tem alto tempo sem OS entre ordens (${tm.semOrdemJornada} min/dia em média).`,
+          );
+        }
+      }
+
+      // Phase 3: Eficiência — efficiency culpability patterns
+      if (teamInEfic && efic) {
+        // Pattern 1: Deslocamento muito curto + TR elevado
+        const deslocCurto = efic.flaggedOrders.filter(
+          (o) => o.tl_ordem_min < 5 && o.flags.includes('tr_excede_hd'),
+        );
+        if (deslocCurto.length > 0) {
+          issues.push(`${deslocCurto.length} OS com deslocamento muito curto (<5 min) e TR elevado — possível técnico já no local ao receber despacho ou erro de A Caminho`);
+          recommendations.push('Verificar se o botão A Caminho está sendo acionado no endereço correto e no momento certo');
+        }
+
+        // Pattern 2: TR excede HD por ausência de Tempo Padrão
+        const countTp = Math.max(
+          efic.flaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length,
+          efic.summary.countTempoPadraoVazio,
+        );
+        if (countTp > 0) {
+          issues.push(`${countTp} OS sem Tempo Padrão definido com TR alto — falta de referência de execução para essa classe/causa`);
+          recommendations.push('Solicitar ao time de engenharia o cadastro do Tempo Padrão para as classes/causas mais recorrentes');
+        }
+
+        // Crossed deviations — Eficiência
+        const hasUtilAcima100Efic = deviations.some((d) => {
+          const t = normalizeToken(d);
+          return (t.includes('util') || t.includes('utilizacao')) && t.includes('100');
+        });
+        if (hasUtilAcima100Efic && efic.summary.countTrExcedeHd > 0) {
+          issues.push('Sobreposição de ordens detectada — soma ao diagnóstico de TR elevado como possível sobreposição');
+        }
+
+        const hasPrimDesl2h = deviations.some((d) => {
+          const t = normalizeToken(d);
+          return t.includes('1o deslocamento') ||
+            (t.includes('primeiro') && t.includes('deslocamento') && t.includes('2')) ||
+            t.includes('inicio turno') && t.includes('2 horas');
+        });
+        if (hasPrimDesl2h) {
+          issues.push('1º Deslocamento >2 horas — sinaliza possível problema de deslocamento que afeta a eficiência inicial');
+        }
+      }
+
+      // Phase 4: Deviation-based recommendations (existing logic)
       const deviationIssues: Array<{ token: string; message: string; rec: string }> = [
         {
           token: 'util < 40%',
