@@ -374,12 +374,15 @@ type SavedFilterState = {
 
               <!-- Row 3: highlights + top issues -->
               <div class="exec-footer-row">
-                <div class="exec-badges">
-                  <div class="exec-badge exec-badge--yellow" *ngIf="es.idleHighlight">
-                    <span>⏳</span><span>{{ es.idleHighlight }}</span>
-                  </div>
-                  <div class="exec-badge exec-badge--red" *ngIf="es.heWithIdleCount > 0">
-                    <span>⚠</span><span>{{ es.heWithIdleCount }} equipe(s) com H.E. e ociosidade simultânea</span>
+                <div class="exec-badges-horizontal">
+                  <span class="exec-badges-label">ALERTAS</span>
+                  <div class="exec-badges">
+                    <div class="exec-badge exec-badge--yellow" *ngIf="es.idleHighlight">
+                      <span>⏳</span><span>{{ es.idleHighlight }}</span>
+                    </div>
+                    <div class="exec-badge exec-badge--red" *ngIf="es.heWithIdleCount > 0">
+                      <span>⚠</span><span>{{ es.heWithIdleCount }} equipe(s) com H.E. e ociosidade simultânea</span>
+                    </div>
                   </div>
                 </div>
                 <div class="exec-top-issues" *ngIf="es.topActionIssues.length > 0">
@@ -710,7 +713,7 @@ type SavedFilterState = {
                 <ng-container *ngIf="kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis && report.specialAnalysis.utilizacaoAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — 3 Abaixo do Padrão
-                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
                     <div class="rpt-osdia-card" *ngFor="let analysis of report.specialAnalysis.utilizacaoAnalysis">
@@ -860,7 +863,7 @@ type SavedFilterState = {
                 <ng-container *ngIf="kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis && kpi.tmeImpAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — Ordens com TME IMP Elevado
-                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. O TME IMP mede o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva — quanto maior esse tempo, mais prejudica a pontuação da equipe.</p>
                   <div class="rpt-osdia-grid">
@@ -936,7 +939,7 @@ type SavedFilterState = {
                 <ng-container *ngIf="kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis && kpi.primeiroLoginAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — Dias com 1º Login Acima da Meta
-                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o primeiro login corrigido superou a meta de 8 min. Atrasos no login atrasam o primeiro despacho, comprimem a jornada e reduzem o número de OS possíveis.</p>
                   <div class="rpt-osdia-grid">
@@ -989,7 +992,7 @@ type SavedFilterState = {
                 <ng-container *ngIf="kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis && kpi.primeiroDeslocAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — Dias com 1º Desloc. Acima da Meta
-                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o tempo entre o primeiro despacho e o primeiro "A Caminho" superou a meta de 25 min. Um 1º Desloc. alto indica que a equipe demora a sair em campo após o primeiro despacho.</p>
                   <div class="rpt-osdia-grid">
@@ -1067,7 +1070,7 @@ type SavedFilterState = {
                 <ng-container *ngIf="kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis && kpi.retornoBaseAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
                     🔍 Análise Detalhada — Dias com Retorno Base Acima da Meta
-                    <span class="rpt-osdia-src-inline">Fonte: Tab_Completa-Deslocamentos</span>
+                    <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o retorno à base superou a meta de 40 min. Este tempo é descontado no cálculo de Utilização, impactando diretamente a nota da equipe.</p>
                   <div class="rpt-osdia-grid">
@@ -2357,21 +2360,45 @@ type SavedFilterState = {
         flex-wrap: wrap;
       }
 
+      .exec-badges-horizontal {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        min-width: 320px;
+        gap: 12px;
+      }
+      .exec-badges-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-right: 8px;
+        min-width: 70px;
+        text-align: right;
+      }
       .exec-badges {
         display: flex;
-        gap: 8px;
+        gap: 6px;
         flex-wrap: wrap;
         flex: 1;
+        min-width: 0;
       }
 
       .exec-badge {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 5px 12px;
-        border-radius: 8px;
-        font-size: 0.75rem;
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 0.72rem;
         font-weight: 500;
+        min-width: 0;
+        flex: 0 1 auto;
+        justify-content: flex-start;
+        box-sizing: border-box;
+        text-align: left;
+        max-width: 100%;
       }
 
       .exec-badge--yellow {
