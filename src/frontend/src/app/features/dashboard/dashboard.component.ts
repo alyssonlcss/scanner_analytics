@@ -3604,10 +3604,26 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras'): void {
     const report = this.reportData();
     if (!report) return;
-    this.exportModalOpen.set(false);
 
     if (mode === 'current') {
-      this.openPdfWindow({ report, title: 'Relatório Completo', subtitle: 'Todas as Equipes' });
+      const filters = this.buildReportFiltersPayload();
+      this.exportLoading.set(true);
+      this.exportError.set('');
+      this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [] } }).subscribe({
+        next: (result) => {
+          this.exportLoading.set(false);
+          this.exportModalOpen.set(false);
+          const subtitle = [
+            filters.bases?.join(', ') || 'Todas as Bases',
+            filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Todos os Tipos',
+          ].join(' · ');
+          this.openPdfWindow({ report: result.generatedReport, title: 'Relatório Atual', subtitle });
+        },
+        error: () => {
+          this.exportLoading.set(false);
+          this.exportError.set('Falha ao gerar dados de exportação. Verifique se o backend está disponível.');
+        },
+      });
       return;
     }
 
@@ -3623,11 +3639,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     forkJoin(requests).subscribe({
       next: (results) => {
+        this.exportLoading.set(false);
+        this.exportModalOpen.set(false);
         results.forEach((result, i) => {
           const base = this.reportBaseOptions[i];
           this.openPdfWindow({ report: result.generatedReport, title: base, subtitle: typeLabel });
         });
-        this.exportLoading.set(false);
       },
       error: () => {
         this.exportLoading.set(false);
