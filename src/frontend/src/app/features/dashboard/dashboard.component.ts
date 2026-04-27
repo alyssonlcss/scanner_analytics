@@ -1023,30 +1023,6 @@ type SavedFilterState = {
                 </div>
               </div>
             </section>
-            <!-- Análise Cruzada -->
-            <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.crossedInsights.length > 0">
-              <h2 class="rpt-section-title">🔀 Análise Cruzada</h2>
-              <div class="rpt-cross-grid">
-                <div class="rpt-glass-card" *ngFor="let insight of report.specialAnalysis.crossedInsights">
-                  <h3 class="rpt-card-sub">{{ insight.title }}</h3>
-                  <p class="rpt-cross-desc">{{ insight.description }}</p>
-                  <ng-container *ngIf="insight.evidence.length > 0; else noEvidence">
-                    <div class="rpt-cross-rows">
-                      <div class="rpt-cross-row" *ngFor="let row of insight.evidence">
-                        <span *ngFor="let key of objectKeys(row)" class="rpt-cross-cell">
-                          <span class="rpt-cross-key">{{ key }}</span>
-                          <span class="rpt-cross-val">{{ row[key] }}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </ng-container>
-                  <ng-template #noEvidence>
-                    <p class="rpt-no-data">Sem evidências para os filtros selecionados.</p>
-                  </ng-template>
-                </div>
-              </div>
-            </section>
-
             <!-- Plano de Ação -->
             <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.actionPlan.length > 0">
               <h2 class="rpt-section-title">📋 Plano de Ação por Equipe</h2>
