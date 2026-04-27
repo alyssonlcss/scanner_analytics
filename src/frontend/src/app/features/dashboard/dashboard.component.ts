@@ -272,36 +272,58 @@ type SavedFilterState = {
 
             <!-- Executive Summary -->
             <div class="exec-summary anim-el" *ngIf="report.executiveSummary as es">
-              <div class="exec-summary-left">
-                <p class="exec-summary-headline">
-                  <strong>{{ es.totalTeams }} equipes</strong> analisadas
-                  <ng-container *ngIf="es.periodDays > 0"> em <strong>{{ es.periodDays }} dia(s)</strong></ng-container>.
-                  <ng-container *ngIf="es.teamsBelowMetaCount > 0">
-                    <span class="exec-alert"> {{ es.teamsBelowMetaCount }} com 3 ou mais KPIs abaixo da meta.</span>
-                  </ng-container>
-                </p>
-                <div class="exec-kpi-alerts" *ngIf="es.kpiAlerts.length > 0">
-                  <span class="exec-kpi-chip" *ngFor="let alert of es.kpiAlerts">
-                    <span class="exec-kpi-chip-name">{{ alert.kpi }}</span>
-                    <span class="exec-kpi-chip-count">{{ alert.teamsBelowMeta }} abaixo</span>
-                    <span class="exec-kpi-chip-worst">pior: {{ alert.worst.team }} ({{ alert.worst.value }})</span>
-                  </span>
+
+              <!-- Row 1: stat counters -->
+              <div class="exec-stats-row">
+                <div class="exec-stat">
+                  <span class="exec-stat-value">{{ es.totalTeams }}</span>
+                  <span class="exec-stat-label">Equipes</span>
+                </div>
+                <div class="exec-stat-divider"></div>
+                <div class="exec-stat" *ngIf="es.periodDays > 0">
+                  <span class="exec-stat-value">{{ es.periodDays }}</span>
+                  <span class="exec-stat-label">Dias analisados</span>
+                </div>
+                <div class="exec-stat-divider" *ngIf="es.periodDays > 0"></div>
+                <div class="exec-stat">
+                  <span class="exec-stat-value exec-stat-value--alert">{{ es.kpiAlerts.length }}</span>
+                  <span class="exec-stat-label">KPIs em alerta</span>
+                </div>
+                <div class="exec-stat-divider"></div>
+                <div class="exec-stat">
+                  <span class="exec-stat-value exec-stat-value--alert">{{ es.teamsBelowMetaCount }}</span>
+                  <span class="exec-stat-label">Equipes críticas</span>
                 </div>
               </div>
-              <div class="exec-summary-right">
-                <div class="exec-highlight" *ngIf="es.idleHighlight">
-                  <span class="exec-highlight-icon">⏳</span>
-                  <span>{{ es.idleHighlight }}</span>
+
+              <!-- Row 2: KPI alerts -->
+              <div class="exec-kpi-alerts" *ngIf="es.kpiAlerts.length > 0">
+                <div class="exec-kpi-row" *ngFor="let alert of es.kpiAlerts">
+                  <span class="exec-kpi-name">{{ alert.kpi }}</span>
+                  <div class="exec-kpi-bar-wrap">
+                    <div class="exec-kpi-bar" [style.width.%]="(alert.teamsBelowMeta / es.totalTeams) * 100"></div>
+                  </div>
+                  <span class="exec-kpi-count">{{ alert.teamsBelowMeta }}/{{ es.totalTeams }}</span>
+                  <span class="exec-kpi-worst">pior: <strong>{{ alert.worst.team }}</strong> ({{ alert.worst.value }})</span>
                 </div>
-                <div class="exec-highlight exec-highlight--red" *ngIf="es.heWithIdleCount > 0">
-                  <span class="exec-highlight-icon">⚠</span>
-                  <span>{{ es.heWithIdleCount }} equipe(s) com horas extras e ociosidade simultânea</span>
+              </div>
+
+              <!-- Row 3: highlights + top issues -->
+              <div class="exec-footer-row">
+                <div class="exec-badges">
+                  <div class="exec-badge exec-badge--yellow" *ngIf="es.idleHighlight">
+                    <span>⏳</span><span>{{ es.idleHighlight }}</span>
+                  </div>
+                  <div class="exec-badge exec-badge--red" *ngIf="es.heWithIdleCount > 0">
+                    <span>⚠</span><span>{{ es.heWithIdleCount }} equipe(s) com H.E. e ociosidade simultânea</span>
+                  </div>
                 </div>
                 <div class="exec-top-issues" *ngIf="es.topActionIssues.length > 0">
-                  <span class="exec-top-issues-label">Principais problemas:</span>
+                  <span class="exec-top-issues-label">Recorrentes</span>
                   <span class="exec-issue-tag" *ngFor="let issue of es.topActionIssues">{{ issue }}</span>
                 </div>
               </div>
+
             </div>
 
             <!-- KPI sections with bar charts -->
@@ -1933,120 +1955,192 @@ type SavedFilterState = {
 
       /* ── Executive Summary ── */
       .exec-summary {
-        display: flex;
-        gap: 20px;
-        flex-wrap: wrap;
-        padding: 18px 22px;
+        display: grid;
+        gap: 0;
         border-radius: 18px;
-        background: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.88);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border: 1px solid var(--border);
-        box-shadow: 0 2px 10px rgba(60, 40, 30, 0.07);
+        box-shadow: 0 2px 12px rgba(60, 40, 30, 0.07);
+        overflow: hidden;
       }
 
-      .exec-summary-left {
-        flex: 1;
-        min-width: 240px;
-        display: grid;
-        gap: 10px;
-      }
-
-      .exec-summary-right {
-        display: grid;
-        gap: 8px;
-        align-content: start;
-      }
-
-      .exec-summary-headline {
-        margin: 0;
-        font-size: 0.93rem;
-        color: var(--text);
-        line-height: 1.5;
-      }
-
-      .exec-alert {
-        color: #d63031;
-        font-weight: 700;
-      }
-
-      .exec-kpi-alerts {
+      /* stat counters */
+      .exec-stats-row {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-
-      .exec-kpi-chip {
-        display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 3px 10px 3px 8px;
-        border-radius: 99px;
-        background: rgba(230, 57, 80, 0.09);
-        border: 1px solid rgba(230, 57, 80, 0.25);
-        font-size: 0.72rem;
+        padding: 18px 24px;
+        gap: 0;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
       }
 
-      .exec-kpi-chip-name {
-        font-weight: 700;
+      .exec-stat {
+        display: grid;
+        gap: 2px;
+        padding: 0 24px 0 0;
+      }
+
+      .exec-stat:first-child {
+        padding-left: 0;
+      }
+
+      .exec-stat-value {
+        font-size: 1.65rem;
+        font-weight: 800;
         color: var(--text);
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
       }
 
-      .exec-kpi-chip-count {
-        color: #d63031;
+      .exec-stat-value--alert {
+        color: #ef4444;
+      }
+
+      .exec-stat-label {
+        font-size: 0.65rem;
         font-weight: 600;
-      }
-
-      .exec-kpi-chip-worst {
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
         color: var(--muted);
       }
 
-      .exec-highlight {
+      .exec-stat-divider {
+        width: 1px;
+        height: 36px;
+        background: var(--border);
+        margin: 0 24px 0 0;
+        flex-shrink: 0;
+      }
+
+      /* KPI alert rows */
+      .exec-kpi-alerts {
+        display: grid;
+        gap: 0;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .exec-kpi-row {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 7px 12px;
-        border-radius: 10px;
-        background: rgba(253, 203, 110, 0.18);
-        border: 1px solid rgba(253, 203, 110, 0.55);
+        gap: 12px;
+        padding: 7px 24px;
+        transition: background 120ms;
+      }
+
+      .exec-kpi-row:hover {
+        background: rgba(0,0,0,0.02);
+      }
+
+      .exec-kpi-name {
         font-size: 0.78rem;
-        color: #7d5500;
+        font-weight: 700;
+        color: var(--text);
+        min-width: 110px;
+        flex-shrink: 0;
+      }
+
+      .exec-kpi-bar-wrap {
+        flex: 1;
+        height: 6px;
+        border-radius: 99px;
+        background: #f0f2f5;
+        overflow: hidden;
+        min-width: 60px;
+      }
+
+      .exec-kpi-bar {
+        height: 100%;
+        border-radius: 99px;
+        background: #ef4444;
+        transition: width 400ms ease;
+      }
+
+      .exec-kpi-count {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #ef4444;
+        min-width: 36px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+
+      .exec-kpi-worst {
+        font-size: 0.72rem;
+        color: var(--muted);
+        min-width: 180px;
+        flex-shrink: 0;
+      }
+
+      .exec-kpi-worst strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* footer row */
+      .exec-footer-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 24px;
+        flex-wrap: wrap;
+      }
+
+      .exec-badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        flex: 1;
+      }
+
+      .exec-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
         font-weight: 500;
       }
 
-      .exec-highlight--red {
-        background: rgba(230, 57, 80, 0.09);
-        border-color: rgba(230, 57, 80, 0.3);
-        color: #c0392b;
+      .exec-badge--yellow {
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        color: #92400e;
       }
 
-      .exec-highlight-icon {
-        font-size: 1rem;
-        flex-shrink: 0;
+      .exec-badge--red {
+        background: rgba(239, 68, 68, 0.09);
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        color: #b91c1c;
       }
 
       .exec-top-issues {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
       }
 
       .exec-top-issues-label {
-        font-size: 0.72rem;
+        font-size: 0.65rem;
         font-weight: 700;
         color: var(--muted);
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.1em;
+        flex-shrink: 0;
       }
 
       .exec-issue-tag {
-        padding: 2px 9px;
-        border-radius: 99px;
-        background: rgba(100, 100, 100, 0.09);
-        border: 1px solid var(--border);
-        font-size: 0.71rem;
+        padding: 3px 10px;
+        border-radius: 6px;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        font-size: 0.72rem;
         color: var(--text);
+        font-weight: 500;
       }
 
       /* ── Team Scorecard ── */
