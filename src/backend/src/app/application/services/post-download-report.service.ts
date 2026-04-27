@@ -98,6 +98,8 @@ export interface GeneratedReport {
     mostRecurring: DeviationInsight[];
     teamBreakdown: DeviationByTeam[];
   };
+  executiveSummary: ExecutiveSummary;
+  teamScorecard: TeamKpiScorecard[];
   specialAnalysis: {
     tempPrepAndSemOs: TeamMetricSummary[];
     crossedInsights: CrossedInsight[];
@@ -410,6 +412,49 @@ interface RetornoBaseTeamAnalysis {
   };
 }
 
+// ─── Team Scorecard ────────────────────────────────────────────────────────
+interface TeamKpiScorecard {
+  team: string;
+  classificacao?: number;
+  diasTrabalhados?: number;
+  kpis: {
+    osDia?: number;
+    eficiencia?: number;
+    utilizacao?: number;
+    tmeImp?: number;
+    primeiroLogin?: number;
+    primeiroDesloc?: number;
+    retornoBase?: number;
+  };
+  kpiStatus: {
+    osDia?: 'above' | 'below';
+    eficiencia?: 'above' | 'below';
+    utilizacao?: 'above' | 'below';
+    tmeImp?: 'above' | 'below';
+    primeiroLogin?: 'above' | 'below';
+    primeiroDesloc?: 'above' | 'below';
+    retornoBase?: 'above' | 'below';
+  };
+  score: number;
+  kpisBelowMeta: number;
+}
+
+// ─── Executive Summary ──────────────────────────────────────────────────────
+interface ExecutiveSummary {
+  periodDays: number;
+  totalTeams: number;
+  teamsBelowMetaCount: number;
+  kpiAlerts: Array<{
+    kpi: string;
+    teamsBelowMeta: number;
+    worst: { team: string; value: number };
+    meta: number;
+  }>;
+  topActionIssues: string[];
+  idleHighlight: string | null;
+  heWithIdleCount: number;
+}
+
 const KPI_DIRECTIONS: Record<string, 'higher-is-better' | 'lower-is-better'> = {
   'OS Dia': 'higher-is-better',
   'Eficiência': 'higher-is-better',
@@ -538,6 +583,11 @@ export class PostDownloadReportService {
     const retornoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'));
     if (retornoKpi && retornoBaseAnalysis.length > 0) retornoKpi.retornoBaseAnalysis = retornoBaseAnalysis;
 
+    const teamScorecard = this.buildTeamScorecard(filtered.ranking, kpis);
+    const executiveSummary = this.buildExecutiveSummary(
+      kpis, teamScorecard, osDiaAnalysis, utilizacaoAnalysis, actionPlan, filtered.ranking,
+    );
+
     const generatedAt = new Date().toISOString();
     const report: GeneratedReport = {
       generatedAt,
@@ -555,6 +605,8 @@ export class PostDownloadReportService {
       },
       kpis,
       deviations: deviationInsights,
+      executiveSummary,
+      teamScorecard,
       specialAnalysis: {
         tempPrepAndSemOs: teamMetrics,
         crossedInsights,
@@ -1546,6 +1598,157 @@ export class PostDownloadReportService {
     }
 
     return plans.slice(0, 25);
+  }
+
+  // ─── Team Scorecard ────────────────────────────────────────────────────────
+  private buildTeamScorecard(rankingRows: CsvRow[], kpis: KpiInsight[]): TeamKpiScorecard[] {
+    if (rankingRows.length === 0) return [];
+
+    const rankAcc = createAccessor(rankingRows[0]);
+    const teamCol  = rankAcc.resolve(['Equipe', 'Team', 'Equipe Nome']);
+    const classCol = rankAcc.resolve(['Classificação', 'Classificacao']);
+    const diasCol  = rankAcc.resolve(['Dias Trabalhados', 'DiasTrabalhados']);
+    if (!teamCol) return [];
+
+    // First occurrence per team: grab classificacao and diasTrabalhados
+    const teamMeta = new Map<string, { classificacao?: number; diasTrabalhados?: number }>();
+    for (const row of rankingRows) {
+      const team = String(row[teamCol] ?? '').trim();
+      if (!team || teamMeta.has(team)) continue;
+      const cl = classCol ? parseNumber(String(row[classCol] ?? '')) : null;
+      const dt = diasCol  ? parseNumber(String(row[diasCol]  ?? '')) : null;
+      teamMeta.set(team, {
+        classificacao:   (cl !== null && Number.isFinite(cl)) ? cl : undefined,
+        diasTrabalhados: (dt !== null && Number.isFinite(dt)) ? dt : undefined,
+      });
+    }
+
+    // kpi name → team → raw value (from KPI scores already computed)
+    const kpiValueMap = new Map<string, Map<string, number>>();
+    for (const insight of kpis) {
+      const m = new Map<string, number>();
+      for (const s of insight.scores) m.set(s.team, s.rawValue);
+      kpiValueMap.set(insight.kpi, m);
+    }
+
+    const KPI_KEY_MAP: Array<{ key: keyof TeamKpiScorecard['kpis']; kpiName: string }> = [
+      { key: 'osDia',         kpiName: 'OS Dia'       },
+      { key: 'eficiencia',    kpiName: 'Eficiência'   },
+      { key: 'utilizacao',    kpiName: 'Utilização'   },
+      { key: 'tmeImp',        kpiName: 'TME IMP'      },
+      { key: 'primeiroLogin', kpiName: '1º Login'     },
+      { key: 'primeiroDesloc',kpiName: '1º Desloc.'   },
+      { key: 'retornoBase',   kpiName: 'Retorno Base' },
+    ];
+
+    const allTeams = new Set<string>(teamMeta.keys());
+    for (const insight of kpis) {
+      for (const s of insight.scores) allTeams.add(s.team);
+    }
+
+    const result: TeamKpiScorecard[] = [];
+
+    for (const team of allTeams) {
+      const meta = teamMeta.get(team) ?? {};
+      const kpiValues: TeamKpiScorecard['kpis']    = {};
+      const kpiStatus: TeamKpiScorecard['kpiStatus'] = {};
+      let score = 0;
+      let kpisBelowMeta = 0;
+
+      for (const { key, kpiName } of KPI_KEY_MAP) {
+        const val = kpiValueMap.get(kpiName)?.get(team);
+        if (val === undefined) continue;
+        (kpiValues as Record<string, number>)[key] = val;
+        const threshold = KPI_THRESHOLDS.find((t) => normalizeToken(t.kpi) === normalizeToken(kpiName));
+        if (!threshold) continue;
+        const isAbove = threshold.direction === 'higher-is-better' ? val >= threshold.meta : val <= threshold.meta;
+        (kpiStatus as Record<string, string>)[key] = isAbove ? 'above' : 'below';
+        if (isAbove) score++; else kpisBelowMeta++;
+      }
+
+      result.push({ team, ...meta, kpis: kpiValues, kpiStatus, score, kpisBelowMeta });
+    }
+
+    return result.sort((a, b) => {
+      if (a.classificacao !== undefined && b.classificacao !== undefined) return a.classificacao - b.classificacao;
+      if (a.classificacao !== undefined) return -1;
+      if (b.classificacao !== undefined) return 1;
+      return b.score - a.score;
+    });
+  }
+
+  // ─── Executive Summary ─────────────────────────────────────────────────────
+  private buildExecutiveSummary(
+    kpis: KpiInsight[],
+    scorecard: TeamKpiScorecard[],
+    osDiaAnalysis: OsDiaTeamAnalysis[],
+    utilizacaoAnalysis: UtilizacaoTeamAnalysis[],
+    actionPlan: TeamActionPlan[],
+    rankingRows: CsvRow[],
+  ): ExecutiveSummary {
+    const totalTeams = scorecard.length;
+    const teamsBelowMetaCount = scorecard.filter((s) => s.kpisBelowMeta >= 3).length;
+
+    // Period days: max value of Dias Trabalhados across ranking rows
+    let periodDays = 0;
+    if (rankingRows.length > 0) {
+      const acc = rankingRows.length > 0 ? createAccessor(rankingRows[0]) : null;
+      const diasCol = acc?.resolve(['Dias Trabalhados', 'DiasTrabalhados']);
+      if (diasCol) {
+        for (const row of rankingRows) {
+          const v = parseNumber(String(row[diasCol] ?? ''));
+          if (v !== null && Number.isFinite(v) && v > periodDays) periodDays = v;
+        }
+      }
+    }
+
+    // KPI alerts: per-kpi count of teams below meta + worst
+    const kpiAlerts: ExecutiveSummary['kpiAlerts'] = [];
+    for (const insight of kpis) {
+      const below = insight.scores.filter((s) =>
+        insight.direction === 'higher-is-better'
+          ? s.rawValue < insight.metaTarget
+          : s.rawValue > insight.metaTarget,
+      );
+      if (below.length === 0) continue;
+      const worst = insight.direction === 'higher-is-better'
+        ? below.reduce((a, b) => a.rawValue < b.rawValue ? a : b)
+        : below.reduce((a, b) => a.rawValue > b.rawValue ? a : b);
+      kpiAlerts.push({
+        kpi:            insight.kpi,
+        teamsBelowMeta: below.length,
+        worst:          { team: worst.team, value: round2(worst.rawValue) },
+        meta:           insight.metaTarget,
+      });
+    }
+    kpiAlerts.sort((a, b) => b.teamsBelowMeta - a.teamsBelowMeta);
+
+    // Top action issues: most common issue strings across all plans
+    const issueCounts = new Map<string, number>();
+    for (const plan of actionPlan) {
+      for (const issue of plan.issues) {
+        issueCounts.set(issue, (issueCounts.get(issue) ?? 0) + 1);
+      }
+    }
+    const topActionIssues = Array.from(issueCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([issue]) => issue);
+
+    // Idle highlight
+    const allWithIdle = ([...osDiaAnalysis, ...utilizacaoAnalysis] as Array<{ idleAnalysis?: { idlePct: number } }>)
+      .filter((a) => a.idleAnalysis && a.idleAnalysis.idlePct >= 15);
+    const idleHighlight = allWithIdle.length > 0
+      ? `${allWithIdle.length} equipe(s) com ociosidade acima de 15% da jornada`
+      : null;
+
+    const heWithIdleCount = ([...osDiaAnalysis, ...utilizacaoAnalysis] as Array<{
+      idleAnalysis?: { idlePct: number; horasExtras?: number };
+    }>)
+      .filter((a) => a.idleAnalysis && (a.idleAnalysis.horasExtras ?? 0) > 0 && a.idleAnalysis.idlePct >= 15)
+      .length;
+
+    return { periodDays, totalTeams, teamsBelowMetaCount, kpiAlerts, topActionIssues, idleHighlight, heWithIdleCount };
   }
 
   private analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): OsDiaTeamAnalysis[] {

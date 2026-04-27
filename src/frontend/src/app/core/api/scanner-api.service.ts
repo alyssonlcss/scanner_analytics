@@ -349,6 +349,47 @@ export interface RetornoBaseTeamAnalysis {
   };
 }
 
+export interface TeamKpiScorecard {
+  team: string;
+  classificacao?: number;
+  diasTrabalhados?: number;
+  kpis: {
+    osDia?: number;
+    eficiencia?: number;
+    utilizacao?: number;
+    tmeImp?: number;
+    primeiroLogin?: number;
+    primeiroDesloc?: number;
+    retornoBase?: number;
+  };
+  kpiStatus: {
+    osDia?: 'above' | 'below';
+    eficiencia?: 'above' | 'below';
+    utilizacao?: 'above' | 'below';
+    tmeImp?: 'above' | 'below';
+    primeiroLogin?: 'above' | 'below';
+    primeiroDesloc?: 'above' | 'below';
+    retornoBase?: 'above' | 'below';
+  };
+  score: number;
+  kpisBelowMeta: number;
+}
+
+export interface ExecutiveSummary {
+  periodDays: number;
+  totalTeams: number;
+  teamsBelowMetaCount: number;
+  kpiAlerts: Array<{
+    kpi: string;
+    teamsBelowMeta: number;
+    worst: { team: string; value: number };
+    meta: number;
+  }>;
+  topActionIssues: string[];
+  idleHighlight: string | null;
+  heWithIdleCount: number;
+}
+
 export interface GeneratedReport {
   generatedAt: string;
   filtersApplied: {
@@ -368,6 +409,8 @@ export interface GeneratedReport {
     mostRecurring: Array<{ category: string; occurrences: number }>;
     teamBreakdown: Array<{ team: string; deviations: string[] }>;
   };
+  executiveSummary: ExecutiveSummary;
+  teamScorecard: TeamKpiScorecard[];
   specialAnalysis: {
     tempPrepAndSemOs: ReportTeamMetric[];
     crossedInsights: ReportCrossedInsight[];

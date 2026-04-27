@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 
-import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpTeamAnalysis, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocTeamAnalysis, type RetornoBaseTeamAnalysis, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpTeamAnalysis, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocTeamAnalysis, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
@@ -269,6 +269,40 @@ type SavedFilterState = {
 
             <!-- TOC Scroll Spy sidebar -->
             <app-toc-nav [kpis]="report.kpis" />
+
+            <!-- Executive Summary -->
+            <div class="exec-summary anim-el" *ngIf="report.executiveSummary as es">
+              <div class="exec-summary-left">
+                <p class="exec-summary-headline">
+                  <strong>{{ es.totalTeams }} equipes</strong> analisadas
+                  <ng-container *ngIf="es.periodDays > 0"> em <strong>{{ es.periodDays }} dia(s)</strong></ng-container>.
+                  <ng-container *ngIf="es.teamsBelowMetaCount > 0">
+                    <span class="exec-alert"> {{ es.teamsBelowMetaCount }} com 3 ou mais KPIs abaixo da meta.</span>
+                  </ng-container>
+                </p>
+                <div class="exec-kpi-alerts" *ngIf="es.kpiAlerts.length > 0">
+                  <span class="exec-kpi-chip" *ngFor="let alert of es.kpiAlerts">
+                    <span class="exec-kpi-chip-name">{{ alert.kpi }}</span>
+                    <span class="exec-kpi-chip-count">{{ alert.teamsBelowMeta }} abaixo</span>
+                    <span class="exec-kpi-chip-worst">pior: {{ alert.worst.team }} ({{ alert.worst.value }})</span>
+                  </span>
+                </div>
+              </div>
+              <div class="exec-summary-right">
+                <div class="exec-highlight" *ngIf="es.idleHighlight">
+                  <span class="exec-highlight-icon">⏳</span>
+                  <span>{{ es.idleHighlight }}</span>
+                </div>
+                <div class="exec-highlight exec-highlight--red" *ngIf="es.heWithIdleCount > 0">
+                  <span class="exec-highlight-icon">⚠</span>
+                  <span>{{ es.heWithIdleCount }} equipe(s) com horas extras e ociosidade simultânea</span>
+                </div>
+                <div class="exec-top-issues" *ngIf="es.topActionIssues.length > 0">
+                  <span class="exec-top-issues-label">Principais problemas:</span>
+                  <span class="exec-issue-tag" *ngFor="let issue of es.topActionIssues">{{ issue }}</span>
+                </div>
+              </div>
+            </div>
 
             <!-- KPI sections with bar charts -->
             <ng-container *ngIf="report.kpis.length > 0">
@@ -998,6 +1032,65 @@ type SavedFilterState = {
                 </ng-container>
               </section>
             </ng-container>
+
+            <!-- Scorecard por Equipe -->
+            <section class="rpt-section anim-el" *ngIf="report.teamScorecard && report.teamScorecard.length > 0">
+              <h2 class="rpt-section-title">🏅 Scorecard por Equipe</h2>
+              <p class="rpt-section-desc">Todos os KPIs de cada equipe em uma visão única. Verde = meta atingida, vermelho = abaixo da meta.</p>
+              <div class="scorecard-scroll-wrap">
+                <table class="scorecard-table">
+                  <thead>
+                    <tr>
+                      <th class="sc-th sc-th-team">Equipe</th>
+                      <th class="sc-th sc-th-rank">Rank</th>
+                      <th class="sc-th">Dias</th>
+                      <th class="sc-th">OS/Dia<br><span class="sc-meta">meta 4,4</span></th>
+                      <th class="sc-th">Eficiência<br><span class="sc-meta">meta 100%</span></th>
+                      <th class="sc-th">Utilização<br><span class="sc-meta">meta 85%</span></th>
+                      <th class="sc-th">TME IMP<br><span class="sc-meta">meta 20</span></th>
+                      <th class="sc-th">1º Login<br><span class="sc-meta">meta 8min</span></th>
+                      <th class="sc-th">1º Desloc.<br><span class="sc-meta">meta 25min</span></th>
+                      <th class="sc-th">Ret. Base<br><span class="sc-meta">meta 40min</span></th>
+                      <th class="sc-th">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="sc-row"
+                        *ngFor="let row of report.teamScorecard"
+                        [class.sc-row--critical]="row.kpisBelowMeta >= 4"
+                        [class.sc-row--warning]="row.kpisBelowMeta === 3">
+                      <td class="sc-td sc-td-team">{{ row.team }}</td>
+                      <td class="sc-td sc-td-center">{{ row.classificacao ?? '—' }}</td>
+                      <td class="sc-td sc-td-center">{{ row.diasTrabalhados ?? '—' }}</td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.osDia === 'above'" [class.sc-kpi--below]="row.kpiStatus.osDia === 'below'">
+                        {{ row.kpis.osDia != null ? (row.kpis.osDia | number:'1.1-1') : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.eficiencia === 'above'" [class.sc-kpi--below]="row.kpiStatus.eficiencia === 'below'">
+                        {{ row.kpis.eficiencia != null ? (row.kpis.eficiencia | number:'1.0-0') + '%' : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.utilizacao === 'above'" [class.sc-kpi--below]="row.kpiStatus.utilizacao === 'below'">
+                        {{ row.kpis.utilizacao != null ? (row.kpis.utilizacao | number:'1.0-0') + '%' : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.tmeImp === 'above'" [class.sc-kpi--below]="row.kpiStatus.tmeImp === 'below'">
+                        {{ row.kpis.tmeImp != null ? (row.kpis.tmeImp | number:'1.0-0') : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.primeiroLogin === 'above'" [class.sc-kpi--below]="row.kpiStatus.primeiroLogin === 'below'">
+                        {{ row.kpis.primeiroLogin != null ? (row.kpis.primeiroLogin | number:'1.0-0') : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.primeiroDesloc === 'above'" [class.sc-kpi--below]="row.kpiStatus.primeiroDesloc === 'below'">
+                        {{ row.kpis.primeiroDesloc != null ? (row.kpis.primeiroDesloc | number:'1.0-0') : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-kpi" [class.sc-kpi--above]="row.kpiStatus.retornoBase === 'above'" [class.sc-kpi--below]="row.kpiStatus.retornoBase === 'below'">
+                        {{ row.kpis.retornoBase != null ? (row.kpis.retornoBase | number:'1.0-0') : '—' }}
+                      </td>
+                      <td class="sc-td sc-td-score" [class.sc-score--good]="row.score >= 6" [class.sc-score--mid]="row.score >= 4 && row.score < 6" [class.sc-score--bad]="row.score < 4">
+                        {{ row.score }}/7
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
             <!-- Desvios -->
             <section class="rpt-section anim-el" *ngIf="report.deviations.mostRecurring.length > 0">
@@ -1836,6 +1929,257 @@ type SavedFilterState = {
       .rpt-export-btn:hover {
         background: rgba(230, 57, 80, 0.18);
         border-color: rgba(230, 57, 80, 0.6);
+      }
+
+      /* ── Executive Summary ── */
+      .exec-summary {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        padding: 18px 22px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 10px rgba(60, 40, 30, 0.07);
+      }
+
+      .exec-summary-left {
+        flex: 1;
+        min-width: 240px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .exec-summary-right {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+      }
+
+      .exec-summary-headline {
+        margin: 0;
+        font-size: 0.93rem;
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      .exec-alert {
+        color: #d63031;
+        font-weight: 700;
+      }
+
+      .exec-kpi-alerts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .exec-kpi-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px 3px 8px;
+        border-radius: 99px;
+        background: rgba(230, 57, 80, 0.09);
+        border: 1px solid rgba(230, 57, 80, 0.25);
+        font-size: 0.72rem;
+      }
+
+      .exec-kpi-chip-name {
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .exec-kpi-chip-count {
+        color: #d63031;
+        font-weight: 600;
+      }
+
+      .exec-kpi-chip-worst {
+        color: var(--muted);
+      }
+
+      .exec-highlight {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border-radius: 10px;
+        background: rgba(253, 203, 110, 0.18);
+        border: 1px solid rgba(253, 203, 110, 0.55);
+        font-size: 0.78rem;
+        color: #7d5500;
+        font-weight: 500;
+      }
+
+      .exec-highlight--red {
+        background: rgba(230, 57, 80, 0.09);
+        border-color: rgba(230, 57, 80, 0.3);
+        color: #c0392b;
+      }
+
+      .exec-highlight-icon {
+        font-size: 1rem;
+        flex-shrink: 0;
+      }
+
+      .exec-top-issues {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .exec-top-issues-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .exec-issue-tag {
+        padding: 2px 9px;
+        border-radius: 99px;
+        background: rgba(100, 100, 100, 0.09);
+        border: 1px solid var(--border);
+        font-size: 0.71rem;
+        color: var(--text);
+      }
+
+      /* ── Team Scorecard ── */
+      .scorecard-scroll-wrap {
+        overflow-x: auto;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 12px rgba(60, 40, 30, 0.07);
+        background: #fff;
+      }
+
+      .scorecard-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.8rem;
+      }
+
+      .sc-th {
+        padding: 11px 12px;
+        background: #f5f7fa;
+        font-size: 0.67rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #8392a5;
+        border-bottom: 2px solid #e4e9f0;
+        white-space: nowrap;
+        text-align: center;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      .sc-th:first-child {
+        border-radius: 16px 0 0 0;
+        text-align: left;
+      }
+
+      .sc-th:last-child {
+        border-radius: 0 16px 0 0;
+      }
+
+      .sc-th-team {
+        text-align: left;
+        min-width: 170px;
+        padding-left: 18px;
+      }
+
+      .sc-th-rank {
+        min-width: 48px;
+      }
+
+      .sc-td {
+        padding: 9px 12px;
+        border-bottom: 1px solid #f0f2f5;
+        color: #2d3748;
+        vertical-align: middle;
+      }
+
+      .sc-row:last-child .sc-td {
+        border-bottom: none;
+      }
+
+      .sc-row:hover .sc-td {
+        background: #f8faff;
+      }
+
+      .sc-td-team {
+        font-weight: 600;
+        white-space: nowrap;
+        padding-left: 18px;
+        color: #1a202c;
+      }
+
+      .sc-td-center {
+        text-align: center;
+        color: #8392a5;
+        font-size: 0.78rem;
+      }
+
+      .sc-td-kpi {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        padding: 6px 8px;
+      }
+
+      .sc-kpi--above {
+        color: #2563eb;
+        font-weight: 700;
+      }
+
+      .sc-kpi--below {
+        color: #ef4444;
+        font-weight: 700;
+      }
+
+      .sc-td-score {
+        text-align: center;
+        padding-right: 16px;
+      }
+
+      .sc-score--good {
+        color: #2563eb;
+        font-weight: 700;
+      }
+
+      .sc-score--mid {
+        color: #f59e0b;
+        font-weight: 700;
+      }
+
+      .sc-score--bad {
+        color: #ef4444;
+        font-weight: 700;
+      }
+
+      .sc-row--critical .sc-td {
+        background: rgba(220, 38, 38, 0.025);
+      }
+
+      .sc-row--warning .sc-td {
+        background: rgba(217, 119, 6, 0.025);
+      }
+
+      .sc-meta {
+        font-size: 0.6rem;
+        font-weight: 500;
+        text-transform: none;
+        letter-spacing: 0;
+        color: #a0aec0;
+        display: block;
+        margin-top: 1px;
       }
 
       /* ── Shared glass card ── */
