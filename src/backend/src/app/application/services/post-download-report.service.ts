@@ -4072,7 +4072,10 @@ export class PostDownloadReportService {
         lines.push('_Fonte: Scanner 4.4 - CE M300_');
         lines.push('');
 
+        let firstEvidence = true;
         for (const analysis of insight.evidenceAnalysis) {
+          if (!firstEvidence) { lines.push(hr); lines.push(''); }
+          firstEvidence = false;
           const typeLabel = analysis.analysisType === 'top_performer' ? '🏆 Top Performer' : '⚠ Oportunidade';
           lines.push(`##### ${typeLabel} — ${analysis.team}`);
           lines.push('');
@@ -4229,7 +4232,10 @@ export class PostDownloadReportService {
       lines.push('> Evidências por ordem das equipes abaixo da meta de OS/Dia (4.4). Fonte: **Scanner 4.4 - CE M300**');
       lines.push('');
 
+      let firstOsDia = true;
       for (const analysis of report.specialAnalysis.osDiaAnalysis) {
+        if (!firstOsDia) { lines.push(hr); lines.push(''); }
+        firstOsDia = false;
         lines.push(`### ${analysis.team}`);
         lines.push('');
         lines.push(
@@ -4269,7 +4275,10 @@ export class PostDownloadReportService {
       lines.push('> Evidências das 3 piores equipes em Utilização (meta: 85%). Fonte: **Tab_Completa-Deslocamentos**');
       lines.push('');
 
+      let firstUtil = true;
       for (const analysis of report.specialAnalysis.utilizacaoAnalysis) {
+        if (!firstUtil) { lines.push(hr); lines.push(''); }
+        firstUtil = false;
         lines.push(`### ⚠ Oportunidade — ${analysis.team}`);
         lines.push('');
         lines.push(
@@ -4314,7 +4323,10 @@ export class PostDownloadReportService {
     if (report.specialAnalysis.actionPlan.length === 0) {
       lines.push('_Nenhuma equipe com oportunidade de melhoria identificada para os filtros selecionados._');
     } else {
+      let firstPlan = true;
       for (const plan of report.specialAnalysis.actionPlan) {
+        if (!firstPlan) { lines.push(hr); lines.push(''); }
+        firstPlan = false;
         lines.push(`### ${plan.team}`);
         lines.push('');
         lines.push('**Problemas identificados:**');

@@ -258,20 +258,7 @@ type SavedFilterState = {
                 <h1 class="rpt-hero-title">Relatório Analítico</h1>
                 <span class="rpt-hero-meta">Gerado em {{ report.generatedAt | date:'dd/MM/yyyy HH:mm' }}</span>
               </div>
-              <div class="rpt-hero-totals">
-                <div class="rpt-total-item">
-                  <span class="rpt-total-v">{{ report.totals.teams }}</span>
-                  <span class="rpt-total-l">Equipes</span>
-                </div>
-                <div class="rpt-total-item">
-                  <span class="rpt-total-v">{{ report.totals.deslocamentos }}</span>
-                  <span class="rpt-total-l">Deslocamentos</span>
-                </div>
-                <div class="rpt-total-item">
-                  <span class="rpt-total-v">{{ report.totals.rankingRows }}</span>
-                  <span class="rpt-total-l">Linhas Ranking</span>
-                </div>
-              </div>
+
               <button class="rpt-export-btn" (click)="openExportModal()">Exportar PDF</button>
             </div>
 
@@ -398,7 +385,7 @@ type SavedFilterState = {
                 </div>
                 <div class="exec-top-issues" *ngIf="es.topActionIssues.length > 0">
                   <span class="exec-top-issues-label">Recorrentes</span>
-                  <span class="exec-issue-tag" *ngFor="let issue of es.topActionIssues">{{ issue }}</span>
+                  <span class="exec-issue-tag" *ngFor="let issue of es.topActionIssues" [title]="issue">{{ issue.split(':')[0] }}</span>
                 </div>
               </div>
 
@@ -3736,7 +3723,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
     const docDef = this.buildPdfDocDef(section);
-    const safeName = `${section.title} - ${section.subtitle}`.replace(/[^\w\s\-]/g, '').trim();
+    const safeName = `${section.title} - ${section.subtitle}`
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\s\-]/g, '').trim();
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
   }
 
@@ -3793,22 +3782,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
       { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 28] },
     ];
-    if (es) {
-      cover.push({
-        columns: [
-          { stack: [{ text: `${es.totalTeams}`, fontSize: 24, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
-          es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 24, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] } : {},
-          { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 24, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
-          { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 24, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, bold: true, color: MUTED, margin: [0, 2, 0, 0] }] },
-        ],
-        columnGap: 20,
-      });
-    }
+
 
     // Build content array
     const content: any[] = [
       ...cover.filter(Boolean),
-      { text: '', pageBreak: 'after' },
     ];
 
     // Executive summary
@@ -3851,8 +3829,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         });
       }
       if (es.topActionIssues.length > 0) {
-        content.push({ text: `Recorrências: ${es.topActionIssues.join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
+        const shortLabel = (s: string): string => s.split(':')[0].trim();
+        content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
       }
+      content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 16, 0, 0], pageBreak: 'after' });
     }
 
     // KPI sections
@@ -3862,13 +3842,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
 
       content.push(
-        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 3] },
+        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 3], keepWithNext: true },
         {
           columns: [
             { text: dirUp ? '↑ Maior é melhor' : '↓ Menor é melhor', fontSize: 7.5, bold: true, color: dirUp ? '#15803d' : RED },
             { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Média: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: GRAY },
           ],
           margin: [0, 0, 0, 10],
+          keepWithNext: true,
         },
       );
 
@@ -3903,6 +3884,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           margin: [0, 0, 0, 3],
         });
       });
+
+      if (kpi.opportunityTeams.length === 0) {
+        content.push({ text: 'Todas as equipes atingiram a meta esperada.', fontSize: 8, color: '#15803d', italics: true, margin: [0, 6, 0, 0] });
+      }
 
       // Analysis table per KPI
       let analysisTable: any = null;
@@ -4102,7 +4087,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       };
 
       const cardDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 4, 0, 4] });
-      const orderDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#e2e8f0', dash: { length: 4, space: 3 } }], margin: [0, 3, 0, 3] });
+      const orderDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#e2e8f0' }], margin: [0, 3, 0, 3] });
 
       // Wrap items in a left-bordered indented block (team level = blue bar, order level = gray bar).
       const indentBlock = (items: any[], color: string, indent = 8): any => ({
@@ -4129,8 +4114,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — OS Dia'));
-        report.specialAnalysis.osDiaAnalysis.forEach((analysis: any) => {
+        const osDiaList = report.specialAnalysis.osDiaAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
+        if (osDiaList.length > 0) content.push(drillHead('Análise Detalhada — OS Dia'));
+        osDiaList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `OS/Dia ${fmt(analysis.osDiaValue)}`,
             `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
@@ -4187,16 +4173,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             teamItems.push(...orderBlocks);
           }
           const osDiaBarColor = isAbove(kpi, analysis.osDiaValue) ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue)));
-          content.push(indentBlock(teamItems, osDiaBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue)), indentBlock(teamItems, osDiaBarColor, 8)], unbreakable: true });
+          if (analysisIdx < osDiaList.length - 1) content.push(cardDivider());
         });
       }
 
       // Eficiência drill-down
       if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)'));
-        kpi.evidenceAnalysis.forEach((analysis: any) => {
+        const efList = kpi.evidenceAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || (a.summary?.countTempoPadraoVazio ?? 0) > 0);
+        if (efList.length > 0) content.push(drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)'));
+        efList.forEach((analysis: any, analysisIdx: number) => {
           const isTop = analysis.analysisType === 'top_performer';
           const teamBarColor = isTop ? BLUE : RED;
           const chips: string[] = [
@@ -4231,16 +4217,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.summary?.countTempoPadraoVazio > 0) {
             teamItems.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
           }
-          content.push(cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop));
-          content.push(indentBlock(teamItems, teamBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop), indentBlock(teamItems, teamBarColor, 8)], unbreakable: true });
+          if (analysisIdx < efList.length - 1) content.push(cardDivider());
         });
       }
 
       // Utilização drill-down
       if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)'));
-        report.specialAnalysis.utilizacaoAnalysis.forEach((analysis: any) => {
+        const utilList = report.specialAnalysis.utilizacaoAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
+        if (utilList.length > 0) content.push(drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)'));
+        utilList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Utilização: ${analysis.utilizacaoValue}%`,
             `Meta: ${analysis.metaTarget}%`,
@@ -4291,16 +4277,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const utilizacaoBarColor = (analysis.utilizacaoValue ?? 0) >= (analysis.metaTarget ?? 0) ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true));
-          content.push(indentBlock(teamItems, utilizacaoBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true), indentBlock(teamItems, utilizacaoBarColor, 8)], unbreakable: true });
+          if (analysisIdx < utilList.length - 1) content.push(cardDivider());
         });
       }
 
       // TME IMP drill-down
       if (kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)'));
-        kpi.tmeImpAnalysis.forEach((analysis: any) => {
+        const tmeList = kpi.tmeImpAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0);
+        if (tmeList.length > 0) content.push(drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)'));
+        tmeList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
@@ -4328,16 +4314,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const tmeBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true));
-          content.push(indentBlock(teamItems, tmeBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, tmeBarColor, 8)], unbreakable: true });
+          if (analysisIdx < tmeList.length - 1) content.push(cardDivider());
         });
       }
 
       // 1º Login drill-down
       if (kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)'));
-        kpi.primeiroLoginAnalysis.forEach((analysis: any) => {
+        const loginList = kpi.primeiroLoginAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
+        if (loginList.length > 0) content.push(drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)'));
+        loginList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
@@ -4367,16 +4353,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const loginBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true));
-          content.push(indentBlock(teamItems, loginBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, loginBarColor, 8)], unbreakable: true });
+          if (analysisIdx < loginList.length - 1) content.push(cardDivider());
         });
       }
 
       // 1º Desloc. drill-down
       if (kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)'));
-        kpi.primeiroDeslocAnalysis.forEach((analysis: any) => {
+        const deslocList = kpi.primeiroDeslocAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
+        if (deslocList.length > 0) content.push(drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)'));
+        deslocList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
@@ -4411,16 +4397,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const deslocBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true));
-          content.push(indentBlock(teamItems, deslocBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, deslocBarColor, 8)], unbreakable: true });
+          if (analysisIdx < deslocList.length - 1) content.push(cardDivider());
         });
       }
 
       // Retorno Base drill-down
       if (kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis?.length) {
-        content.push(drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)'));
-        kpi.retornoBaseAnalysis.forEach((analysis: any) => {
+        const retornoList = kpi.retornoBaseAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
+        if (retornoList.length > 0) content.push(drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)'));
+        retornoList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
@@ -4450,17 +4436,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const retornoBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push(cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true));
-          content.push(indentBlock(teamItems, retornoBarColor, 8));
-          content.push(cardDivider());
+          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, retornoBarColor, 8)], unbreakable: true });
+          if (analysisIdx < retornoList.length - 1) content.push(cardDivider());
         });
       }
+      content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0] });
     });
 
     // Scorecard table
     if (report.teamScorecard.length > 0) {
       content.push(
-        { text: 'Scorecard por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 6], pageBreak: 'before' },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
+        { text: 'Scorecard por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 6] },
         { text: 'Todos os KPIs por equipe. Azul = meta atingida, vermelho = abaixo da meta.', fontSize: 7.5, color: GRAY, margin: [0, 0, 0, 8] },
         {
           table: {
@@ -4491,7 +4478,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Deviations
     if (report.deviations.mostRecurring.length > 0) {
       content.push(
-        { text: 'Desvios de Padrão Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8], pageBreak: 'before' },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
+        { text: 'Desvios de Padrão Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8] },
         {
           columns: [
             {
@@ -4535,7 +4523,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Action plan
     if (report.specialAnalysis.actionPlan.length > 0) {
       content.push(
-        { text: 'Plano de Acao por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 8], pageBreak: 'before' },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
+        { text: 'Plano de Acao por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 8] },
       );
       const plans = report.specialAnalysis.actionPlan;
       for (let i = 0; i < plans.length; i += 2) {
