@@ -1386,363 +1386,143 @@ export class PostDownloadReportService {
       const efic = eficienciaMap.get(tm.team);
 
       // Determine which KPI categories this team is failing
-      const teamInOsDia = kpis.find((k) => k.kpi === 'OS Dia')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
-      const teamInUtil  = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
-      const teamInEfic  = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Eficiência'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInOsDia   = kpis.find((k) => k.kpi === 'OS Dia')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInUtil    = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInEfic    = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Eficiência'))?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInTme     = kpis.find((k) => k.kpi === 'TME IMP')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInLogin   = kpis.find((k) => k.kpi === '1º Login')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInDesloc  = kpis.find((k) => k.kpi === '1º Desloc.')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
+      const teamInRetorno = kpis.find((k) => k.kpi === 'Retorno Base')?.opportunityTeams.some((t) => t.team === tm.team) ?? false;
 
-      // Phase 1: Per-KPI status + flag-specific analytical recommendations
-      // OS Dia / Utilização / Eficiência have dedicated Phases 2-4 with deep patterns;
-      // only a brief default rec is added here so each issue always has paired guidance.
-      // TME IMP, 1º Login, 1º Desloc., Retorno Base use per-flag specifics because there is no later phase for them.
-      const kpiDefaultRecs: Record<string, string> = {
-        'OS Dia':       'Revisar alocação de ordens e identificar gargalos que reduzem o número de atendimentos por dia.',
-        'Eficiência':   'Verificar Tempo Padrão cadastrado para as classes/causas atendidas e identificar OS com TR muito acima do padrão.',
-        'Utilização':   'Reduzir tempos ociosos entre ordens: acionar a central imediatamente após liberar cada OS.',
-        'TME IMP':      'Cobrar que a equipe inicie e finalize o registro de atendimento sem demoras entre chegada ao local e liberação da OS.',
-        '1º Login':     'Orientar a equipe a fazer login no sistema imediatamente ao iniciar a jornada, antes do primeiro despacho.',
-        '1º Desloc.':   'Cobrar que a equipe acione o status "A Caminho" imediatamente após receber o primeiro despacho do dia.',
-        'Retorno Base': 'Verificar a região de atuação e orientar que a última OS do dia seja encerrada o mais próximo possível da base.',
-      };
+      // Helper: KPI impact label to append as context at the end of each issue
+      const kpiCtx = (kpiName: string): string => ` → impacta ${kpiName} abaixo da meta.`;
 
-      for (const insight of kpis) {
-        if (!insight.opportunityTeams.some((t) => t.team === tm.team)) {
-          continue;
-        }
-
-        const teamScore = insight.scores.find((s) => s.team === tm.team);
-        const highlight = teamScore ? ` (${teamScore.rawValue}, meta: ${insight.metaTarget})` : '';
-        const statusLabel = insight.direction === 'lower-is-better' ? 'acima do esperado' : 'abaixo do esperado';
-        issues.push(`${insight.kpi} ${statusLabel}${highlight}`);
-
-        // OS Dia / Utilização / Eficiência: one-liner so Phase 2-4 recs aren't orphaned
-        if (insight.kpi === 'OS Dia' || insight.kpi === 'Utilização' || insight.kpi === 'Eficiência') {
-          const defaultRec = kpiDefaultRecs[insight.kpi];
-          if (defaultRec) recommendations.push(defaultRec);
-          continue;
-        }
-
-        // ── TME IMP: per-flag analytical guidance ───────────────────────────
-        if (insight.kpi === 'TME IMP') {
-          const tme = tmeImpMap.get(tm.team);
-          if (tme) {
-            let hasRec = false;
-            if (tme.summary.countTmeMuitoAlto > 0) {
-              const worst = tme.flaggedOrders
-                .filter((o) => o.flags.includes('tme_muito_alto'))
-                .sort((a, b) => b.tme_imp_min - a.tme_imp_min)[0];
-              recommendations.push(
-                `${tme.summary.countTmeMuitoAlto} OS com TME IMP elevado — pior caso OS ${worst.nr_ordem} com ${round2(worst.tme_imp_min)} min improdutivo` +
-                ` (média da equipe: ${round2(worst.team_avg_tme_min)} min). Verificar se havia impedimento de acesso, aguardo de material/apoio ou se a OS` +
-                ` ficou aberta indevidamente após o atendimento.`,
-              );
-              hasRec = true;
-            }
-            if (tme.summary.countSemDeslocamento > 0) {
-              recommendations.push(
-                `${tme.summary.countSemDeslocamento} OS sem registro de "A Caminho" — sem esse status o TME IMP não pode ser calculado corretamente.` +
-                ` Cobrar preenchimento do aplicativo no momento exato do deslocamento para cada atendimento.`,
-              );
-              hasRec = true;
-            }
-            if (tme.summary.countSemExecucao > 0) {
-              recommendations.push(
-                `${tme.summary.countSemExecucao} OS com TME IMP mas sem TR registrado — verificar se o atendimento foi realizado e corrigir` +
-                ` o lançamento no sistema para que a execução seja contabilizada.`,
-              );
-              hasRec = true;
-            }
-            if (!hasRec) {
-              recommendations.push(
-                `TME IMP médio de ${round2(tme.tmeImpValue)} min acima da meta de ${tme.metaTarget} min — cobrar que o técnico inicie os` +
-                ` procedimentos de atendimento imediatamente após chegar ao local, reduzindo o tempo improdutivo entre chegada e liberação da OS.`,
-              );
-            }
-            if (tm.tempPrepJornada > 20) {
-              recommendations.push(
-                `TempPrep médio elevado (${tm.tempPrepJornada} min/dia) — cobrar confirmação imediata do deslocamento ao receber o despacho, sem aguardar antes de sair.`,
-              );
-            }
-          } else {
-            recommendations.push(
-              tm.tempPrepJornada > 20
-                ? `Cobrar redução do TempPrep — equipe leva em média ${tm.tempPrepJornada} min/dia para confirmar deslocamento após despacho.`
-                : kpiDefaultRecs['TME IMP'],
-            );
-          }
-          continue;
-        }
-
-        // ── 1º Login: per-flag analytical guidance ──────────────────────────
-        if (insight.kpi === '1º Login') {
-          const login = loginMap.get(tm.team);
-          if (login) {
-            let hasRec = false;
-            if (login.summary.countLoginMuitoTardio > 0) {
-              const worst = login.flaggedDays
-                .filter((d) => d.flags.includes('login_muito_tardio'))
-                .sort((a, b) => b.primeiro_login_min - a.primeiro_login_min)[0];
-              recommendations.push(
-                `${login.summary.countLoginMuitoTardio} dia(s) com login muito tardio — pior caso ${worst.date_ref} com ${round2(worst.primeiro_login_min)} min` +
-                ` de atraso (meta: ${login.metaTarget} min, > dobro). Investigar causa e reforçar protocolo de início de turno: login deve ser feito` +
-                ` antes de qualquer outra atividade.`,
-              );
-              hasRec = true;
-            } else if (login.summary.countLoginTardio > 0) {
-              const lateOnes = login.flaggedDays.filter((d) => d.flags.includes('login_tardio'));
-              const avgLate = lateOnes.length > 0 ? round2(lateOnes.reduce((s, d) => s + d.primeiro_login_min, 0) / lateOnes.length) : 0;
-              recommendations.push(
-                `${login.summary.countLoginTardio} dia(s) com login acima da meta (média ${avgLate} min; meta: ${login.metaTarget} min) —` +
-                ` orientar login imediato ao início da jornada; cada minuto de atraso atrasa o primeiro despacho e reduz os atendimentos possíveis do dia.`,
-              );
-              hasRec = true;
-            }
-            if (login.diasAcimaMetaCount > 1) {
-              recommendations.push(
-                `Padrão recorrente: login tardio em ${login.diasAcimaMetaCount}/${login.totalDays} dias — verificar se há problema técnico de acesso` +
-                ` ao sistema ou hábito operacional; abordar no próximo alinhamento de equipe.`,
-              );
-              hasRec = true;
-            }
-            if (!hasRec) recommendations.push(kpiDefaultRecs['1º Login']);
-          } else {
-            recommendations.push(kpiDefaultRecs['1º Login']);
-          }
-          continue;
-        }
-
-        // ── 1º Desloc.: per-flag analytical guidance ────────────────────────
-        if (insight.kpi === '1º Desloc.') {
-          const desloc = deslocMap.get(tm.team);
-          if (desloc) {
-            let hasRec = false;
-            if (desloc.summary.countDeslocMuitoLento > 0) {
-              const worst = desloc.flaggedDays
-                .filter((d) => d.flags.includes('desloc_muito_lento'))
-                .sort((a, b) => b.primeiro_desloc_min - a.primeiro_desloc_min)[0];
-              recommendations.push(
-                `${desloc.summary.countDeslocMuitoLento} dia(s) com 1º deslocamento muito lento — pior caso ${worst.date_ref} com` +
-                ` ${round2(worst.primeiro_desloc_min)} min entre despacho e "A Caminho" (meta: ${desloc.metaTarget} min, >1,5×).` +
-                ` Investigar se houve problema operacional ou se o técnico demorou a sair após receber o despacho.`,
-              );
-              hasRec = true;
-            } else if (desloc.summary.countDeslocLento > 0) {
-              recommendations.push(
-                `${desloc.summary.countDeslocLento} dia(s) com 1º deslocamento acima da meta (${desloc.metaTarget} min) —` +
-                ` cobrar que "A Caminho" seja acionado imediatamente ao receber o primeiro despacho, sem aguardar na base.`,
-              );
-              hasRec = true;
-            }
-            if (desloc.summary.countSemDeslocRegistrado > 0) {
-              recommendations.push(
-                `${desloc.summary.countSemDeslocRegistrado} dia(s) sem registro de "A Caminho" para o 1º despacho —` +
-                ` técnico não atualizou o status de saída; cobrar uso correto do aplicativo durante o deslocamento.`,
-              );
-              hasRec = true;
-            }
-            if (desloc.summary.countDespachioTardio > 0) {
-              const tardioOnes = desloc.flaggedDays.filter((d) => d.flags.includes('despacho_tardio'));
-              const avgTardio  = tardioOnes.length > 0 ? round2(tardioOnes.reduce((s, d) => s + d.despacho_apos_inicio_min, 0) / tardioOnes.length) : 0;
-              const loginDelay = tardioOnes.length > 0 ? round2(tardioOnes.reduce((s, d) => s + d.login_atraso_min, 0) / tardioOnes.length) : 0;
-              recommendations.push(
-                `${desloc.summary.countDespachioTardio} dia(s) com despacho tardio — média de ${avgTardio} min após início de jornada` +
-                `${loginDelay > 0 ? ` (inclui ${loginDelay} min de atraso no login)` : ''}.` +
-                ` Alinhar prontidão imediata desde o início do turno e cobrar que o sistema esteja aberto antes de a jornada começar.`,
-              );
-              hasRec = true;
-            }
-            if (!hasRec) recommendations.push(kpiDefaultRecs['1º Desloc.']);
-          } else {
-            recommendations.push(kpiDefaultRecs['1º Desloc.']);
-          }
-          continue;
-        }
-
-        // ── Retorno Base: per-flag analytical guidance ───────────────────────
-        if (insight.kpi === 'Retorno Base') {
-          const retorno = retornoMap.get(tm.team);
-          if (retorno) {
-            let hasRec = false;
-            if (retorno.summary.countRetornoMuitoAlto > 0) {
-              const worst = retorno.flaggedDays
-                .filter((d) => d.flags.includes('retorno_muito_alto'))
-                .sort((a, b) => b.retorno_base_min - a.retorno_base_min)[0];
-              recommendations.push(
-                `${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno muito alto (>1,5× meta) — pior caso ${worst.date_ref} com` +
-                ` ${round2(worst.retorno_base_min)} min (meta: ${retorno.metaTarget} min). Verificar se a última OS do dia está sendo encerrada` +
-                ` longe da base; esse tempo é descontado diretamente na Utilização.`,
-              );
-              hasRec = true;
-            } else if (retorno.summary.countRetornoAlto > 0) {
-              recommendations.push(
-                `${retorno.summary.countRetornoAlto} dia(s) com retorno acima da meta de ${retorno.metaTarget} min —` +
-                ` avaliar com o planejamento a possibilidade de encerrar a jornada com OS geograficamente mais próximas da base.`,
-              );
-              hasRec = true;
-            }
-            if (retorno.diasAcimaMetaCount > 1) {
-              recommendations.push(
-                `Retorno acima da meta em ${retorno.diasAcimaMetaCount}/${retorno.totalDays} dias — padrão recorrente que impacta a Utilização;` +
-                ` discutir redistribuição das últimas OS do dia ou ajuste de rota de encerramento de turno.`,
-              );
-              hasRec = true;
-            }
-            if (!hasRec) recommendations.push(kpiDefaultRecs['Retorno Base']);
-          } else {
-            recommendations.push(kpiDefaultRecs['Retorno Base']);
-          }
-          continue;
-        }
-
-        // Fallback for any other KPI
-        const fallbackRec = kpiDefaultRecs[insight.kpi];
-        if (fallbackRec) recommendations.push(fallbackRec);
-      }
-
-      // Phase 2: OS Dia / Utilização — idle culpability patterns
+      // ── OS Dia / Utilização — flag-first analysis ──────────────────────────
       if (teamInOsDia || teamInUtil) {
         const idleAnalysis = osDia ?? util;
         if (idleAnalysis) {
-          // Shared minimal shape across OsDiaOrderEvidence and UtilizacaoOrderEvidence
-          type SharedEvidence = {
+          type SharedEv = {
             flags: string[];
+            nr_ordem?: string;
             prev_liberada?: string;
             temp_prep_os_min?: number;
             sem_os_details?: Array<{ type: string; min: number }>;
             sem_os_total_min?: number;
             tl_ordem_min: number;
+            hd_pct_tr?: number;
+            hd_total_min?: number;
+            tr_ordem_min?: number;
+            tempo_padrao_min?: number;
           };
-          const orders = idleAnalysis.flaggedOrders as unknown as SharedEvidence[];
+          const orders = idleAnalysis.flaggedOrders as unknown as SharedEv[];
+          const kpiLabel = teamInOsDia && teamInUtil ? 'OS Dia e Utilização' : teamInOsDia ? 'OS Dia' : 'Utilização';
 
-          // Pattern 1: Espera por nova OS (gap entre ordens / início de jornada)
-          const semOsEntre = orders.filter(
-            (o) => o.flags.includes('sem_os_alto') &&
-              o.sem_os_details?.some((d) => d.type === 'entre_ordens' || d.type === 'inicio_jornada'),
-          );
-          if (semOsEntre.length > 0 || idleAnalysis.summary.countSemOsAlto > 0) {
-            const avgMin = semOsEntre.length > 0
-              ? round2(semOsEntre.reduce((s, o) => s + (o.sem_os_total_min ?? 0), 0) / semOsEntre.length)
-              : round2(idleAnalysis.semOrdemTotalMin);
-            issues.push(`Tempo de espera por nova OS (média ${avgMin} min) — possível gargalo de comunicação com a central`);
-            recommendations.push('Reduzir tempo de fila: ao liberar uma OS, acionar imediatamente a central para próximo despacho');
-          }
+          // TR and TL only affect OS Dia and Eficiência — Utilização is driven by idle time (TempPrep, SemOrdem)
+          const trTlParts: string[] = [];
+          if (teamInOsDia) trTlParts.push('OS Dia');
+          if (teamInEfic) trTlParts.push('Eficiência');
+          const kpiLabelTrTl = trTlParts.length > 0 ? trTlParts.join(' e ') : 'OS Dia';
 
-          // Pattern 2: TempPrep elevado pós-despacho (não é 1ª OS)
-          const tempPrepPosDespach = orders.filter(
-            (o) => o.flags.includes('temp_prep_alto') && Boolean(o.prev_liberada),
-          );
-          if (tempPrepPosDespach.length > 0) {
-            const avgTp = round2(
-              tempPrepPosDespach.reduce((s, o) => s + (o.temp_prep_os_min ?? 0), 0) / tempPrepPosDespach.length,
+          // Flag: TR>20%HD — OS com tempo de reparo acima de 20% da jornada
+          const trExcede = orders.filter((o) => o.flags.includes('tr_excede_hd'));
+          if (trExcede.length > 0) {
+            const worst = trExcede.slice().sort((a, b) => (b.tr_ordem_min ?? 0) - (a.tr_ordem_min ?? 0))[0];
+            issues.push(
+              `TR>20%HD: ${trExcede.length} OS com tempo de reparo acima de 20% da jornada — pior caso OS ${worst.nr_ordem ?? '—'}` +
+              ` (${worst.tr_ordem_min ?? '?'} min, ${worst.hd_pct_tr ?? '?'}% da HD de ${worst.hd_total_min ?? '?'} min).` +
+              kpiCtx(kpiLabelTrTl),
             );
-            issues.push(`TempPrep médio elevado (${avgTp} min) — demora entre despacho recebido e início do deslocamento`);
-            recommendations.push('Verificar se equipe confirma o deslocamento imediatamente após receber o despacho');
+            recommendations.push(
+              `TR>20%HD — Comparar as OS mais longas com o Tempo Padrão M300` +
+              (worst.tempo_padrao_min !== undefined ? ` (${worst.tempo_padrao_min} min cadastrado para essa classe/causa)` : ' (sem tempo padrão cadastrado para esse tipo — solicitar ao time de engenharia)') +
+              `. Se o TR real superar o padrão de forma sistemática, levantar a causa raiz (complexidade, falta de material, erro de diagnóstico) e escalar para o supervisor.`,
+            );
           }
 
-          // Pattern 3: Deslocamento para almoço após liberada (intervalo_deslocamento)
-          const intervaloDeslocamentos = orders.filter(
-            (o) => o.sem_os_details?.some((d) => d.type === 'intervalo_deslocamento'),
-          );
-          if (intervaloDeslocamentos.length > 0) {
-            const avgDeslocMin = round2(
-              intervaloDeslocamentos.reduce((s, o) => {
+          // Flag: TL>25%médG — OS com deslocamento acima de 25% da média global
+          const tlExcede = orders.filter((o) => o.flags.includes('tl_excede_hd'));
+          if (tlExcede.length > 0) {
+            issues.push(
+              `TL>25%médG: ${tlExcede.length} OS com tempo de deslocamento acima de 25% da média global — cada OS com TL longo retira tempo produtivo da jornada.` +
+              kpiCtx(kpiLabelTrTl),
+            );
+            recommendations.push(
+              `TL>25%médG — Avaliar com o planejamento a distribuição geográfica das ordens desta equipe; se o padrão for recorrente, identificar OS sistematicamente distantes e propor ajuste no roteiro de despacho.`,
+            );
+          }
+
+          // Flag: TempPrep≥10min — demora entre despacho e saída
+          const tempPrepOrders = orders.filter((o) => o.flags.includes('temp_prep_alto'));
+          if (tempPrepOrders.length > 0) {
+            const avgTp = round2(tempPrepOrders.reduce((s, o) => s + (o.temp_prep_os_min ?? 0), 0) / tempPrepOrders.length);
+            const firstOs = tempPrepOrders.filter((o) => !o.prev_liberada);
+            const betweenOs = tempPrepOrders.filter((o) => Boolean(o.prev_liberada));
+            const ctx = firstOs.length > 0 && betweenOs.length > 0
+              ? `${betweenOs.length} entre ordens e ${firstOs.length} na 1ª OS do dia`
+              : firstOs.length > 0 ? `${firstOs.length} na 1ª OS do dia — demora desde o início de calendário até o primeiro deslocamento`
+              : `${betweenOs.length} entre ordens — demora após receber um novo despacho`;
+            issues.push(
+              `TempPrep≥10min: ${tempPrepOrders.length} OS com tempo de preparação elevado (média ${avgTp} min — ${ctx}).` +
+              kpiCtx('Utilização'),
+            );
+            recommendations.push(
+              `TempPrep≥10min — Ao receber o despacho, acionar imediatamente o status "A Caminho" sem aguardar na base.` +
+              (firstOs.length > 0 ? ` Para a 1ª OS do dia, verificar se o Login foi feito antes da janela de despacho e se o técnico já estava pronto para sair.` : '') +
+              ` Reforçar no próximo alinhamento que TempPrep alto é descontado diretamente na Utilização.`,
+            );
+          }
+
+          // Flag: SemOrdem≥10min — intervalos sem atendimento
+          if (idleAnalysis.summary.countSemOsAlto > 0) {
+            const semOsOrders = orders.filter((o) => o.flags.includes('sem_os_alto'));
+            const avgMin = semOsOrders.length > 0
+              ? round2(semOsOrders.reduce((s, o) => s + (o.sem_os_total_min ?? 0), 0) / semOsOrders.length)
+              : round2(idleAnalysis.semOrdemTotalMin);
+            const hasEntreOrdens = semOsOrders.some((o) => o.sem_os_details?.some((d) => d.type === 'entre_ordens'));
+            const hasInicio = semOsOrders.some((o) => o.sem_os_details?.some((d) => d.type === 'inicio_jornada'));
+            const semOsCtx = hasEntreOrdens && hasInicio ? 'entre ordens e no início de jornada'
+              : hasEntreOrdens ? 'entre ordens' : 'no início de jornada';
+            issues.push(
+              `SemOrdem≥10min: ${idleAnalysis.summary.countSemOsAlto} OS/dias com tempo ocioso acima de 10 min (média ${avgMin} min — ${semOsCtx}).` +
+              kpiCtx('Utilização'),
+            );
+            recommendations.push(
+              `SemOrdem≥10min — Ao liberar uma OS, acionar imediatamente a central para receber o próximo despacho; cobrar que o técnico não aguarde passivamente. Se o gargalo for da central (fila vazia), mapear o horário de pico e ajustar a priorização de despacho.`,
+            );
+
+            // Intervalo de almoço suspeito
+            const intervaloDesl = semOsOrders.filter((o) => o.sem_os_details?.some((d) => d.type === 'intervalo_deslocamento'));
+            if (intervaloDesl.length > 0) {
+              const avgItvMin = round2(intervaloDesl.reduce((s, o) => {
                 const d = o.sem_os_details?.find((x) => x.type === 'intervalo_deslocamento');
                 return s + (d?.min ?? 0);
-              }, 0) / intervaloDeslocamentos.length,
-            );
-            issues.push(`Intervalo de almoço iniciado após liberação de OS com deslocamento elevado (${avgDeslocMin} min) — padrão suspeito`);
-            recommendations.push('Orientar que o deslocamento para intervalo deve ocorrer a partir do ponto atual, não de novo endereço');
+              }, 0) / intervaloDesl.length);
+              issues.push(
+                `Desl. para intervalo suspeito: ${intervaloDesl.length} OS com deslocamento de ${avgItvMin} min antes do intervalo de almoço — possível saída de ponto para realizar o intervalo.`,
+              );
+              recommendations.push(
+                `Desl. para intervalo — Orientar que o intervalo de almoço deve ser iniciado a partir do ponto atual de atendimento, não de um novo endereço; deslocamentos longos pré-intervalo são contabilizados no SemOrdem.`,
+              );
+            }
           }
 
-          // Pattern 4: Erro de apontamento (1ª OS com TempPrep > 30 min)
-          const primeiraOsErro = orders.filter(
-            (o) => o.flags.includes('temp_prep_alto') && !o.prev_liberada && (o.temp_prep_os_min ?? 0) > 30,
-          );
-          if (primeiraOsErro.length > 0) {
-            const avgTp = round2(
-              primeiraOsErro.reduce((s, o) => s + (o.temp_prep_os_min ?? 0), 0) / primeiraOsErro.length,
-            );
-            issues.push(`Possível erro de apontamento: 1ª OS com TempPrep de ${avgTp} min a partir do Início de Calendário`);
-            recommendations.push('Validar se o Login foi registrado no local correto e se o despacho ocorreu dentro da janela de início de turno');
-          }
-
-          // Pattern 5: Horas extras + ociosidade elevada (≥15%)
+          // Horas extras + ociosidade elevada
           const ia = idleAnalysis.idleAnalysis;
           if (ia && ia.horasExtras > 0 && ia.idlePct >= 15) {
-            issues.push(`Horas extras (${round2(ia.horasExtras)} min/dia) com ociosidade simultânea — possível janela improdutiva não apontada`);
-            recommendations.push('Revisar apontamentos do período: identificar horas extras que coincidem com SemOrdem ou TempPrep elevado');
+            issues.push(
+              `Horas extras com ociosidade elevada: ${round2(ia.horasExtras)} min/dia de horas extras registradas com ${ia.idlePct.toFixed(1)}% de ociosidade simultânea — possível janela improdutiva não declarada.`,
+            );
+            recommendations.push(
+              `Horas extras + ociosidade — Revisar os apontamentos do período: identificar se as horas extras coincidem com SemOrdem ou TempPrep elevado; se sim, solicitar justificativa do técnico e corrigir os registros.`,
+            );
           }
-
-          // Crossed deviations — Ócio
-          const hasUtilAcima100 = deviations.some((d) => {
-            const t = normalizeToken(d);
-            return (t.includes('util') || t.includes('utilizacao')) && t.includes('100');
-          });
-          if (hasUtilAcima100) {
-            issues.push('Sobreposição de ordens detectada — possível erro de apontamento que infla TempPrep/SemOrdem');
-          }
-
-          const hasIntervaloUltimo = deviations.some((d) => {
-            const t = normalizeToken(d);
-            return t.includes('intervalo') && (t.includes('ultimo') || t.includes('last') || t.includes('por ultimo'));
-          });
-          if (hasIntervaloUltimo && idleAnalysis.summary.countSemOsAlto > 0) {
-            issues.push('Intervalo registrado ao final do turno enquanto há tempo sem OS — padrão de ócio não declarado');
-          }
-
-          const hasEmOrdem = deviations.some((d) => normalizeToken(d).includes('em ordem'));
-          if (hasEmOrdem && ia && ia.idlePct >= 10) {
-            issues.push('Técnico apontado como Em Ordem mas com tempo ocioso acima do limite — inconsistência de apontamento');
-          }
-        } else if (tm.semOrdemJornada > 30) {
-          recommendations.push(
-            `Revisar gestão de fila — ${tm.team} tem alto tempo sem OS entre ordens (${tm.semOrdemJornada} min/dia em média).`,
-          );
         }
       }
 
-      // Phase 3: Eficiência — efficiency culpability patterns
-      if (teamInEfic && efic) {
-        // Pattern 1: Deslocamento muito curto + TR elevado
-        const deslocCurto = efic.flaggedOrders.filter(
-          (o) => o.tl_ordem_min < 5 && o.flags.includes('tr_excede_hd'),
-        );
-        if (deslocCurto.length > 0) {
-          issues.push(`${deslocCurto.length} OS com deslocamento muito curto (<5 min) e TR elevado — possível técnico já no local ao receber despacho ou erro de A Caminho`);
-          recommendations.push('Verificar se o botão A Caminho está sendo acionado no endereço correto e no momento certo');
-        }
-
-        // Pattern 2: TR excede HD por ausência de Tempo Padrão
-        const countTp = Math.max(
-          efic.flaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length,
-          efic.summary.countTempoPadraoVazio,
-        );
-        if (countTp > 0) {
-          issues.push(`${countTp} OS sem Tempo Padrão definido com TR alto — falta de referência de execução para essa classe/causa`);
-          recommendations.push('Solicitar ao time de engenharia o cadastro do Tempo Padrão para as classes/causas mais recorrentes');
-        }
-
-        // Crossed deviations — Eficiência
-        const hasUtilAcima100Efic = deviations.some((d) => {
-          const t = normalizeToken(d);
-          return (t.includes('util') || t.includes('utilizacao')) && t.includes('100');
-        });
-        if (hasUtilAcima100Efic && efic.summary.countTrExcedeHd > 0) {
-          issues.push('Sobreposição de ordens detectada — soma ao diagnóstico de TR elevado como possível sobreposição');
-        }
-
-        const hasPrimDesl2h = deviations.some((d) => {
-          const t = normalizeToken(d);
-          return t.includes('1o deslocamento') ||
-            (t.includes('primeiro') && t.includes('deslocamento') && t.includes('2')) ||
-            t.includes('inicio turno') && t.includes('2 horas');
-        });
-        if (hasPrimDesl2h) {
-          issues.push('1º Deslocamento >2 horas — sinaliza possível problema de deslocamento que afeta a eficiência inicial');
-        }
-      }
-
-      // Pattern: TR muito baixo — ordens encerradas com TR muito abaixo da média global (qualquer analysisType)
+      // ── Eficiência — flag-first analysis ──────────────────────────────────
       const eficAny = eficienciaAnalysis.find((a) => a.team === tm.team);
+
+      // Flag: TR muito baixo (qualquer analysisType — indica erro de apontamento)
       const trBaixoOrders = eficAny?.flaggedOrders.filter((o) => o.flags.includes('tr_muito_baixo')) ?? [];
       if (trBaixoOrders.length > 0) {
         const globalAvgExec = eficAny!.globalAvgExecucaoMin;
@@ -1750,14 +1530,222 @@ export class PostDownloadReportService {
         const avgTl = round2(trBaixoOrders.reduce((s, o) => s + o.tl_ordem_min, 0) / trBaixoOrders.length);
         const tlAlto = globalAvgTl > 0 && avgTl > globalAvgTl;
         const worst = trBaixoOrders.slice().sort((a, b) => a.tr_ordem_min - b.tr_ordem_min)[0];
-        recommendations.push(
-          `${trBaixoOrders.length} OS encerrada(s) com TR muito abaixo da média global de ${round2(globalAvgExec)} min` +
-          ` — pior caso OS ${worst.nr_ordem} com apenas ${worst.tr_ordem_min} min de execução.` +
-          (tlAlto
-            ? ` TL médio dessas ordens: ${avgTl} min (média global: ${round2(globalAvgTl)} min) — TL elevado reforça a hipótese de erro de apontamento em "A Caminho" ou "No Local", comprimindo artificialmente o TR registrado.`
-            : '') +
-          ` Reforçar com a equipe a importância de registrar cada etapa do atendimento ("A Caminho", "No Local" e liberação da OS) no momento exato em que ocorre — apontamentos fora de ordem ou com atraso distorcem o TR real e prejudicam o resultado de Eficiência de toda a equipe.`,
+        issues.push(
+          `TR muito baixo: ${trBaixoOrders.length} OS com tempo de execução muito abaixo da média global (${round2(globalAvgExec)} min) — pior caso OS ${worst.nr_ordem} com ${worst.tr_ordem_min} min.` +
+          (tlAlto ? ` TL médio dessas OS (${avgTl} min) acima da média global (${round2(globalAvgTl)} min) — reforça hipótese de erro de apontamento.` : '') +
+          kpiCtx('Eficiência'),
         );
+        recommendations.push(
+          `TR muito baixo — Cobrar que cada etapa do atendimento seja registrada no momento exato: "A Caminho" ao sair, "No Local" ao chegar e liberação da OS ao concluir.` +
+          (tlAlto ? ` O TL elevado dessas OS indica que "A Caminho" foi acionado tarde ou "No Local" foi acionado cedo, comprimindo artificialmente o TR registrado.` : ` Apontamentos fora de ordem ou com atraso distorcem o TR real e prejudicam o resultado de Eficiência de toda a equipe.`),
+        );
+      }
+
+      if (teamInEfic && efic) {
+        // Flag: TL muito curto — possível técnico já no local ou erro de A Caminho
+        const deslocCurto = efic.flaggedOrders.filter((o) => o.flags.includes('deslocamento_curto'));
+        if (deslocCurto.length > 0) {
+          issues.push(
+            `TL muito curto: ${deslocCurto.length} OS com deslocamento inferior a 25% da média global — possível atendimento sem deslocamento real ou erro de apontamento de "A Caminho".` +
+            kpiCtx('Eficiência'),
+          );
+          recommendations.push(
+            `TL muito curto — Verificar se o status "A Caminho" está sendo acionado no local correto e no momento certo; se o técnico já estava no local ao receber o despacho, orientar que isso deve ser comunicado à central para ajuste de roteiro.`,
+          );
+        }
+
+        // Flag: Tempo Padrão ausente — OS executadas sem referência no M300
+        const countTp = Math.max(
+          efic.flaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length,
+          efic.summary.countTempoPadraoVazio,
+        );
+        if (countTp > 0) {
+          issues.push(
+            `Tempo Padrão ausente: ${countTp} OS executadas sem Tempo Padrão cadastrado no M300 — eficiência contada como zero nessas OS independentemente do tempo real de execução.` +
+            kpiCtx('Eficiência'),
+          );
+          recommendations.push(
+            `Tempo Padrão ausente — Levantar as classes/causas dessas ${countTp} OS e solicitar formalmente ao time de engenharia o cadastro do Tempo Padrão correspondente. Enquanto não cadastrado, a equipe é penalizada mesmo executando o atendimento corretamente.`,
+          );
+        }
+
+        // Flag: TR>20%HD (Eficiência — deslocamento muito curto somado ao TR longo)
+        const trExcedeEfic = efic.flaggedOrders.filter((o) => o.flags.includes('tr_excede_hd'));
+        if (trExcedeEfic.length > 0) {
+          const hasDeslocCurto = trExcedeEfic.some((o) => o.tl_ordem_min < 5);
+          issues.push(
+            `TR>20%HD (Eficiência): ${trExcedeEfic.length} OS com tempo de reparo acima de 20% da jornada` +
+            (hasDeslocCurto ? ` — ${trExcedeEfic.filter((o) => o.tl_ordem_min < 5).length} delas com TL <5 min, sugerindo técnico já no local ou erro de "A Caminho".` : '.') +
+            kpiCtx('Eficiência'),
+          );
+          recommendations.push(
+            `TR>20%HD (Eficiência) — ${hasDeslocCurto ? 'Verificar se o botão "A Caminho" está sendo acionado no endereço correto e no momento certo; ' : ''}` +
+            `investigar as OS mais longas: comparar com o Tempo Padrão M300 e identificar se a causa raiz é complexidade real ou apontamento incorreto.`,
+          );
+        }
+      }
+
+      // ── TME IMP — flag-first analysis ──────────────────────────────────────
+      if (teamInTme) {
+        const tme = tmeImpMap.get(tm.team);
+        if (tme) {
+          if (tme.summary.countTmeMuitoAlto > 0) {
+            const worst = tme.flaggedOrders
+              .filter((o) => o.flags.includes('tme_muito_alto'))
+              .sort((a, b) => b.tme_imp_min - a.tme_imp_min)[0];
+            issues.push(
+              `TME IMP elevado: ${tme.summary.countTmeMuitoAlto} OS com tempo improdutivo (No Local → Liberada) acima de 1,5× a média — pior caso OS ${worst.nr_ordem}` +
+              ` com ${round2(worst.tme_imp_min)} min (vs. média da equipe ${round2(worst.team_avg_tme_min)} min).` +
+              kpiCtx('TME IMP'),
+            );
+            recommendations.push(
+              `TME IMP elevado — Verificar se havia impedimento de acesso, aguardo de material/apoio técnico ou se a OS ficou aberta após o atendimento. Cobrar que "Liberada" seja acionada imediatamente ao concluir o serviço no local.`,
+            );
+          }
+          if (tme.summary.countSemDeslocamento > 0) {
+            issues.push(
+              `Sem "A Caminho" registrado: ${tme.summary.countSemDeslocamento} OS sem status de deslocamento — sem esse dado o TME IMP é inflado artificialmente, pois o tempo começa a contar desde o último status anterior.` +
+              kpiCtx('TME IMP'),
+            );
+            recommendations.push(
+              `Sem "A Caminho" — Reforçar uso correto do aplicativo: acionar "A Caminho" no momento exato da saída para cada atendimento. A ausência desse registro impede o cálculo correto do TME IMP e prejudica o KPI de toda a equipe.`,
+            );
+          }
+          if (tme.summary.countSemExecucao > 0) {
+            issues.push(
+              `Sem TR registrado: ${tme.summary.countSemExecucao} OS com tempo improdutivo mas sem execução — OS encerrada sem atendimento real ou lançamento incorreto no sistema.` +
+              kpiCtx('TME IMP'),
+            );
+            recommendations.push(
+              `Sem TR registrado — Verificar junto ao técnico o que ocorreu nessas OS; se foram encerradas incorretamente, solicitar correção no sistema para que a execução seja contabilizada corretamente.`,
+            );
+          }
+          if (!tme.summary.countTmeMuitoAlto && !tme.summary.countSemDeslocamento && !tme.summary.countSemExecucao) {
+            issues.push(
+              `TME IMP médio de ${round2(tme.tmeImpValue)} min — acima da meta de ${tme.metaTarget} min; tempo improdutivo entre chegada ao local e liberação da OS está elevado.` +
+              kpiCtx('TME IMP'),
+            );
+            recommendations.push(
+              `TME IMP — Cobrar que ao chegar ao local o técnico inicie imediatamente os procedimentos de atendimento e acione "Liberada" assim que concluir, sem deixar a OS aberta.`,
+            );
+          }
+        }
+      }
+
+      // ── 1º Login — flag-first analysis ────────────────────────────────────
+      if (teamInLogin) {
+        const login = loginMap.get(tm.team);
+        if (login) {
+          if (login.summary.countLoginMuitoTardio > 0) {
+            const worst = login.flaggedDays
+              .filter((d) => d.flags.includes('login_muito_tardio'))
+              .sort((a, b) => b.primeiro_login_min - a.primeiro_login_min)[0];
+            issues.push(
+              `Login muito tardio: ${login.summary.countLoginMuitoTardio} dia(s) com acesso ao sistema com mais do dobro da meta de ${login.metaTarget} min — pior caso ${worst.date_ref} com ${round2(worst.primeiro_login_min)} min. Atrasa o primeiro despacho e reduz os atendimentos possíveis no dia.` +
+              kpiCtx('1º Login'),
+            );
+            recommendations.push(
+              `Login muito tardio — Investigar a causa específica (problema técnico, hábito operacional ou evento pontual) no(s) dia(s) identificado(s). Reforçar que o login deve ser a primeira ação ao iniciar a jornada; cada minuto de atraso retarda o primeiro despacho diretamente.`,
+            );
+          } else if (login.summary.countLoginTardio > 0) {
+            const lateOnes = login.flaggedDays.filter((d) => d.flags.includes('login_tardio'));
+            const avgLate = lateOnes.length > 0 ? round2(lateOnes.reduce((s, d) => s + d.primeiro_login_min, 0) / lateOnes.length) : 0;
+            issues.push(
+              `Login tardio: ${login.summary.countLoginTardio} dia(s) com login acima da meta de ${login.metaTarget} min (média ${avgLate} min nesse(s) dia(s)).` +
+              kpiCtx('1º Login'),
+            );
+            recommendations.push(
+              `Login tardio — Orientar login imediato ao iniciar a jornada. Se o atraso for recorrente nos mesmos dias da semana, investigar causa estrutural (trânsito, escala, problema técnico) e tratar com o supervisor.`,
+            );
+          }
+          if (login.diasAcimaMetaCount > 1) {
+            recommendations.push(
+              `Login tardio recorrente em ${login.diasAcimaMetaCount}/${login.totalDays} dias — verificar se há problema técnico de acesso ao sistema ou hábito operacional; abordar no próximo alinhamento de equipe com foco em rotina de início de turno.`,
+            );
+          }
+        }
+      }
+
+      // ── 1º Desloc. — flag-first analysis ──────────────────────────────────
+      if (teamInDesloc) {
+        const desloc = deslocMap.get(tm.team);
+        if (desloc) {
+          if (desloc.summary.countDeslocMuitoLento > 0) {
+            const worst = desloc.flaggedDays
+              .filter((d) => d.flags.includes('desloc_muito_lento'))
+              .sort((a, b) => b.primeiro_desloc_min - a.primeiro_desloc_min)[0];
+            issues.push(
+              `1º Desloc. muito lento: ${desloc.summary.countDeslocMuitoLento} dia(s) com mais de 1,5× a meta de ${desloc.metaTarget} min entre o primeiro despacho e "A Caminho" — pior caso ${worst.date_ref} com ${round2(worst.primeiro_desloc_min)} min parado antes de sair.` +
+              kpiCtx('1º Desloc.'),
+            );
+            recommendations.push(
+              `1º Desloc. muito lento — Investigar o que reteve o técnico antes de sair no(s) dia(s) identificado(s) (preparação de material, reunião, etc.). Reforçar que ao receber o primeiro despacho o status "A Caminho" deve ser acionado imediatamente.`,
+            );
+          } else if (desloc.summary.countDeslocLento > 0) {
+            issues.push(
+              `1º Desloc. lento: ${desloc.summary.countDeslocLento} dia(s) com tempo entre despacho e "A Caminho" acima de ${desloc.metaTarget} min — saída tardia para o primeiro atendimento reduz o aproveitamento da jornada.` +
+              kpiCtx('1º Desloc.'),
+            );
+            recommendations.push(
+              `1º Desloc. lento — Cobrar que "A Caminho" seja acionado imediatamente ao receber o despacho; se houver preparação prévia necessária, antecipar essa etapa antes da janela de despacho.`,
+            );
+          }
+          if (desloc.summary.countSemDeslocRegistrado > 0) {
+            issues.push(
+              `Sem "A Caminho" no 1º despacho: ${desloc.summary.countSemDeslocRegistrado} dia(s) sem registro de saída após o primeiro despacho — impossível calcular o 1º Desloc. real.` +
+              kpiCtx('1º Desloc.'),
+            );
+            recommendations.push(
+              `Sem "A Caminho" no 1º despacho — Reforçar uso correto do aplicativo: acionar "A Caminho" ao sair, mesmo que já esteja em deslocamento. A ausência prejudica o cálculo do KPI e impede identificar atrasos reais.`,
+            );
+          }
+          if (desloc.summary.countDespachioTardio > 0) {
+            const tardioOnes = desloc.flaggedDays.filter((d) => d.flags.includes('despacho_tardio'));
+            const avgTardio  = tardioOnes.length > 0 ? round2(tardioOnes.reduce((s, d) => s + d.despacho_apos_inicio_min, 0) / tardioOnes.length) : 0;
+            const loginDelay = tardioOnes.length > 0 ? round2(tardioOnes.reduce((s, d) => s + d.login_atraso_min, 0) / tardioOnes.length) : 0;
+            issues.push(
+              `Despacho tardio: ${desloc.summary.countDespachioTardio} dia(s) com o primeiro despacho recebido com mais de 10 min após o início de jornada — média de ${avgTardio} min` +
+              (loginDelay > 0 ? ` (inclui ${loginDelay} min de atraso de login)` : '') + `.` +
+              kpiCtx('1º Desloc.'),
+            );
+            recommendations.push(
+              `Despacho tardio — ${loginDelay > 0 ? 'Parte do atraso origina-se do login tardio: garantir que o técnico esteja logado antes do início da janela de despacho. ' : ''}` +
+              `Alinhar com a central o horário de início dos despachos para esta equipe e garantir prontidão desde o início do turno.`,
+            );
+          }
+        }
+      }
+
+      // ── Retorno Base — flag-first analysis ────────────────────────────────
+      if (teamInRetorno) {
+        const retorno = retornoMap.get(tm.team);
+        if (retorno) {
+          if (retorno.summary.countRetornoMuitoAlto > 0) {
+            const worst = retorno.flaggedDays
+              .filter((d) => d.flags.includes('retorno_muito_alto'))
+              .sort((a, b) => b.retorno_base_min - a.retorno_base_min)[0];
+            issues.push(
+              `Retorno Base muito alto: ${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno acima de 1,5× a meta de ${retorno.metaTarget} min — pior caso ${worst.date_ref} com ${round2(worst.retorno_base_min)} min. Esse tempo é descontado diretamente na Utilização.` +
+              kpiCtx('Retorno Base'),
+            );
+            recommendations.push(
+              `Retorno muito alto — Avaliar com o planejamento se a última OS do dia pode ser encerrada geograficamente mais próxima da base; se o trajeto de retorno for sistematicamente longo, propor ajuste no roteiro de encerramento de turno.`,
+            );
+          } else if (retorno.summary.countRetornoAlto > 0) {
+            issues.push(
+              `Retorno Base acima da meta: ${retorno.summary.countRetornoAlto} dia(s) com retorno entre a última OS e a base acima de ${retorno.metaTarget} min — esse tempo é descontado na Utilização.` +
+              kpiCtx('Retorno Base'),
+            );
+            recommendations.push(
+              `Retorno acima da meta — Avaliar a possibilidade de encerrar a jornada com OS mais próximas da base; discutir redistribuição geográfica das últimas ordens do dia com o planejamento.`,
+            );
+          }
+          if (retorno.diasAcimaMetaCount > 1) {
+            recommendations.push(
+              `Retorno recorrente acima da meta em ${retorno.diasAcimaMetaCount}/${retorno.totalDays} dias — padrão sistêmico; discutir ajuste de rota de encerramento de turno ou redistribuição das últimas OS do dia.`,
+            );
+          }
+        }
       }
 
       // Phase 4: Deviation-based recommendations (existing logic)
