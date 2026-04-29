@@ -3841,22 +3841,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const dirUp = kpi.direction === 'higher-is-better';
       const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
 
-      content.push(
-        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 3], keepWithNext: true },
+      const allTeams: Array<{ team: string; value: number; group: string }> = [
+        ...kpi.topTeams.map((t) => ({ ...t, group: 'top' })),
+        { team: 'Média geral', value: kpi.average, group: 'avg' },
+        ...kpi.opportunityTeams.map((t) => ({ ...t, group: 'opp' })),
+      ];
+
+      const kpiChartItems: any[] = [
+        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 3] },
         {
           columns: [
             { text: dirUp ? '↑ Maior é melhor' : '↓ Menor é melhor', fontSize: 7.5, bold: true, color: dirUp ? '#15803d' : RED },
             { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Média: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: GRAY },
           ],
           margin: [0, 0, 0, 10],
-          keepWithNext: true,
         },
-      );
-
-      const allTeams: Array<{ team: string; value: number; group: string }> = [
-        ...kpi.topTeams.map((t) => ({ ...t, group: 'top' })),
-        { team: 'Média geral', value: kpi.average, group: 'avg' },
-        ...kpi.opportunityTeams.map((t) => ({ ...t, group: 'opp' })),
       ];
 
       allTeams.forEach((t) => {
@@ -3865,7 +3864,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const mlPct = metaLinePct(kpi.kpi);
         const barColor = t.group === 'avg' ? MUTED : (above ? BLUE : RED);
         const valColor = t.group === 'avg' ? GRAY : (above ? BLUE : RED);
-        content.push({
+        kpiChartItems.push({
           columns: [
             { text: t.team, fontSize: 7.5, bold: t.group !== 'avg', width: 120, color: t.group === 'avg' ? GRAY : DARK },
             {
@@ -3886,7 +3885,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       });
 
       if (kpi.opportunityTeams.length === 0) {
-        content.push({ text: 'Todas as equipes atingiram a meta esperada.', fontSize: 8, color: '#15803d', italics: true, margin: [0, 6, 0, 0] });
+        kpiChartItems.push({ text: 'Todas as equipes atingiram a meta esperada.', fontSize: 8, color: '#15803d', italics: true, margin: [0, 6, 0, 0] });
       }
 
       // Analysis table per KPI
@@ -4014,7 +4013,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           margin: [0, 10, 0, 0],
         };
       }
-      if (analysisTable) content.push(analysisTable);
+      // KPI title + chart + table are indivisible: push as one unbreakable block
+      if (analysisTable) {
+        content.push({ stack: [{ stack: kpiChartItems }, analysisTable], unbreakable: true });
+      } else {
+        content.push({ stack: kpiChartItems, unbreakable: true });
+      }
 
       // ---- Drill-down cards per KPI ----
 
@@ -4110,7 +4114,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         margin: [0, 2, 0, 2],
       });
 
-      const drillHead = (text: string): any => ({ text, bold: true, fontSize: 8.5, color: DARK, margin: [0, 8, 0, 4], background: BG });
+      const drillHead = (text: string): any => ({ text, bold: true, fontSize: 8.5, color: DARK, margin: [0, 8, 0, 4], background: BG, keepWithNext: true });
 
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
@@ -4166,15 +4170,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
                 });
               }
-              orderBlocks.push(orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f)));
-              if (orderItems.length > 0) orderBlocks.push(indentBlock(orderItems, '#94a3b8', 6));
-              if (evIdx < evArr.length - 1) orderBlocks.push(orderDivider());
+              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
+              if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
+              teamItems.push({ stack: orderBlock, unbreakable: true });
+              if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
             });
-            teamItems.push(...orderBlocks);
           }
           const osDiaBarColor = isAbove(kpi, analysis.osDiaValue) ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue)), indentBlock(teamItems, osDiaBarColor, 8)], unbreakable: true });
-          if (analysisIdx < osDiaList.length - 1) content.push(cardDivider());
+          const osDiaHdr = cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue));
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), osDiaHdr], keepWithNext: true });
+          } else {
+            osDiaHdr.keepWithNext = true;
+            content.push(osDiaHdr);
+          }
+          content.push(indentBlock(teamItems, osDiaBarColor, 8));
         });
       }
 
@@ -4210,15 +4220,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${this.eficienciaAlertBody('deslocamento_curto', ev, analysis)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${this.eficienciaAlertBody('tr_excede_hd', ev, analysis)}`));
             if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${this.eficienciaAlertBody('tempo_padrao_vazio', ev, analysis)}`));
-            teamItems.push(orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.eficienciaFlagLabel(f)));
-            if (orderItems.length > 0) teamItems.push(indentBlock(orderItems, '#94a3b8', 6));
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.eficienciaFlagLabel(f))];
+            if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
+            teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           if (analysis.summary?.countTempoPadraoVazio > 0) {
             teamItems.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
           }
-          content.push({ stack: [cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop), indentBlock(teamItems, teamBarColor, 8)], unbreakable: true });
-          if (analysisIdx < efList.length - 1) content.push(cardDivider());
+          const efHdr = cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), efHdr], keepWithNext: true });
+          } else {
+            efHdr.keepWithNext = true;
+            content.push(efHdr);
+          }
+          content.push(indentBlock(teamItems, teamBarColor, 8));
         });
       }
 
@@ -4272,13 +4289,20 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
               });
             }
-            teamItems.push(orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f)));
-            if (orderItems.length > 0) teamItems.push(indentBlock(orderItems, '#94a3b8', 6));
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
+            if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
+            teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const utilizacaoBarColor = (analysis.utilizacaoValue ?? 0) >= (analysis.metaTarget ?? 0) ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true), indentBlock(teamItems, utilizacaoBarColor, 8)], unbreakable: true });
-          if (analysisIdx < utilList.length - 1) content.push(cardDivider());
+          const utilHdr = cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), utilHdr], keepWithNext: true });
+          } else {
+            utilHdr.keepWithNext = true;
+            content.push(utilHdr);
+          }
+          content.push(indentBlock(teamItems, utilizacaoBarColor, 8));
         });
       }
 
@@ -4309,13 +4333,20 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('tme_muito_alto')) orderItems.push(alertItem(`TME IMP elevado: ${this.tmeImpAlertBody('tme_muito_alto', ev)}`));
             if (ev.flags?.includes('sem_deslocamento')) orderItems.push(alertItem(`Sem registro de deslocamento: ${this.tmeImpAlertBody('sem_deslocamento', ev)}`));
             if (ev.flags?.includes('sem_execucao')) orderItems.push(alertItem(`Sem TR Ordem: ${this.tmeImpAlertBody('sem_execucao', ev)}`));
-            teamItems.push(orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.tmeImpFlagLabel(f), ev.date_ref || undefined));
-            if (orderItems.length > 0) teamItems.push(indentBlock(orderItems, '#94a3b8', 6));
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.tmeImpFlagLabel(f), ev.date_ref || undefined)];
+            if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
+            teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const tmeBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, tmeBarColor, 8)], unbreakable: true });
-          if (analysisIdx < tmeList.length - 1) content.push(cardDivider());
+          const tmeHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), tmeHdr], keepWithNext: true });
+          } else {
+            tmeHdr.keepWithNext = true;
+            content.push(tmeHdr);
+          }
+          content.push(indentBlock(teamItems, tmeBarColor, 8));
         });
       }
 
@@ -4338,23 +4369,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             dayItems.push(tl('Inicio Cal.', ev.inicio_calendario || '\u2014', `Log In: ${ev.log_in_corrigido || '\u2014'}`));
             if (ev.flags?.includes('login_muito_tardio')) dayItems.push(alertItem(`Login muito tardio: ${this.loginAlertBody('login_muito_tardio', ev, analysis)}`));
             else if (ev.flags?.includes('login_tardio')) dayItems.push(alertItem(`Login tardio: ${this.loginAlertBody('login_tardio', ev, analysis)}`));
-            teamItems.push({
-              text: [
-                { text: ev.date_ref || '\u2014', bold: true, fontSize: 7.5, color: DARK },
-                { text: '    ' },
-                ...((ev.flags ?? []).flatMap((f: string, i: number) => [
-                  ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
-                  { text: this.loginFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
-                ])),
-              ],
-              margin: [0, 6, 0, 2],
-            });
-            teamItems.push(indentBlock(dayItems, '#94a3b8', 6));
+            teamItems.push({ stack: [
+              {
+                text: [
+                  { text: ev.date_ref || '\u2014', bold: true, fontSize: 7.5, color: DARK },
+                  { text: '    ' },
+                  ...((ev.flags ?? []).flatMap((f: string, i: number) => [
+                    ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
+                    { text: this.loginFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
+                  ])),
+                ],
+                margin: [0, 6, 0, 2],
+              },
+              indentBlock(dayItems, '#94a3b8', 6),
+            ], unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const loginBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, loginBarColor, 8)], unbreakable: true });
-          if (analysisIdx < loginList.length - 1) content.push(cardDivider());
+          const loginHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), loginHdr], keepWithNext: true });
+          } else {
+            loginHdr.keepWithNext = true;
+            content.push(loginHdr);
+          }
+          content.push(indentBlock(teamItems, loginBarColor, 8));
         });
       }
 
@@ -4382,23 +4421,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Deslocamento muito lento: ${this.deslocAlertBody('desloc_muito_lento', ev, analysis)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${this.deslocAlertBody('desloc_lento', ev, analysis)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${this.deslocAlertBody('sem_desloc_registrado', ev, analysis)}`));
-            teamItems.push({
-              text: [
-                { text: `${ev.date_ref || '\u2014'}${ev.nr_ordem ? '  \u00b7  OS ' + ev.nr_ordem : ''}${ev.is_primeira_os_jornada ? '  \u00b7  1\u00aa OS' : ''}`, bold: true, fontSize: 7.5, color: DARK },
-                { text: '    ' },
-                ...((ev.flags ?? []).flatMap((f: string, i: number) => [
-                  ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
-                  { text: this.deslocFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
-                ])),
-              ],
-              margin: [0, 6, 0, 2],
-            });
-            teamItems.push(indentBlock(dayItems, '#94a3b8', 6));
+            teamItems.push({ stack: [
+              {
+                text: [
+                  { text: `${ev.date_ref || '\u2014'}${ev.nr_ordem ? '  \u00b7  OS ' + ev.nr_ordem : ''}${ev.is_primeira_os_jornada ? '  \u00b7  1\u00aa OS' : ''}`, bold: true, fontSize: 7.5, color: DARK },
+                  { text: '    ' },
+                  ...((ev.flags ?? []).flatMap((f: string, i: number) => [
+                    ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
+                    { text: this.deslocFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
+                  ])),
+                ],
+                margin: [0, 6, 0, 2],
+              },
+              indentBlock(dayItems, '#94a3b8', 6),
+            ], unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const deslocBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, deslocBarColor, 8)], unbreakable: true });
-          if (analysisIdx < deslocList.length - 1) content.push(cardDivider());
+          const deslocHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), deslocHdr], keepWithNext: true });
+          } else {
+            deslocHdr.keepWithNext = true;
+            content.push(deslocHdr);
+          }
+          content.push(indentBlock(teamItems, deslocBarColor, 8));
         });
       }
 
@@ -4421,23 +4468,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             dayItems.push(tl('Ultima OS Lib.', ev.hora_ultima_ordem || '\u2014', `Log Off: ${ev.log_off_corrigido || '\u2014'}`));
             if (ev.flags?.includes('retorno_muito_alto')) dayItems.push(alertItem(`Retorno muito alto: ${this.retornoAlertBody('retorno_muito_alto', ev, analysis)}`));
             else if (ev.flags?.includes('retorno_alto')) dayItems.push(alertItem(`Retorno acima da meta: ${this.retornoAlertBody('retorno_alto', ev, analysis)}`));
-            teamItems.push({
-              text: [
-                { text: ev.date_ref || '\u2014', bold: true, fontSize: 7.5, color: DARK },
-                { text: '    ' },
-                ...((ev.flags ?? []).flatMap((f: string, i: number) => [
-                  ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
-                  { text: this.retornoFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
-                ])),
-              ],
-              margin: [0, 6, 0, 2],
-            });
-            teamItems.push(indentBlock(dayItems, '#94a3b8', 6));
+            teamItems.push({ stack: [
+              {
+                text: [
+                  { text: ev.date_ref || '\u2014', bold: true, fontSize: 7.5, color: DARK },
+                  { text: '    ' },
+                  ...((ev.flags ?? []).flatMap((f: string, i: number) => [
+                    ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
+                    { text: this.retornoFlagLabel(f), bold: true, color: RED, fontSize: 6.5 },
+                  ])),
+                ],
+                margin: [0, 6, 0, 2],
+              },
+              indentBlock(dayItems, '#94a3b8', 6),
+            ], unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const retornoBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          content.push({ stack: [cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true), indentBlock(teamItems, retornoBarColor, 8)], unbreakable: true });
-          if (analysisIdx < retornoList.length - 1) content.push(cardDivider());
+          const retornoHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          if (analysisIdx > 0) {
+            content.push({ stack: [cardDivider(), retornoHdr], keepWithNext: true });
+          } else {
+            retornoHdr.keepWithNext = true;
+            content.push(retornoHdr);
+          }
+          content.push(indentBlock(teamItems, retornoBarColor, 8));
         });
       }
       content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0] });
