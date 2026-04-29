@@ -462,7 +462,7 @@ type SavedFilterState = {
                           TL&gt;25%médG: <strong>{{ analysis.summary.countTlExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          TempPrep≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          T. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -578,7 +578,7 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
+                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -724,7 +724,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
                         <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}%</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          TempPrep≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          T. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -837,7 +837,7 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
+                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -3322,6 +3322,16 @@ type SavedFilterState = {
         line-height: 1.5;
       }
 
+      .osdia-sem-os-label {
+        color: #b91c3a;
+        font-style: italic;
+      }
+
+      .osdia-sem-os-list li::marker {
+        color: #b91c3a;
+        font-style: italic;
+      }
+
       .rpt-td-flag {
         color: #b91c3a;
         font-weight: 700;
@@ -4150,7 +4160,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
           if (analysis.summary?.countTrExceeds > 0) chips.push(`TR>20% HD: ${analysis.summary.countTrExceeds}`);
           if (analysis.summary?.countTlExceeds > 0) chips.push(`TL>25%médG: ${analysis.summary.countTlExceeds}`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`TempPrep\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`T. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4189,7 +4199,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
                 ev.sem_os_details.forEach((d: any) => {
-                  orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
+                  const semLabel = this.semOsDetailLabel(d);
+                  const semBody = this.semOsDetailBody(d);
+                  orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4271,7 +4283,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           ];
           if (analysis.jornadasAbaixoMeta > 0) chips.push(`Jornadas < meta: ${analysis.jornadasAbaixoMeta}/${analysis.totalJornadas}`);
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`TempPrep\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`T. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4306,7 +4318,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
               ev.sem_os_details.forEach((d: any) => {
-                orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
+                const semLabel = this.semOsDetailLabel(d);
+                const semBody = this.semOsDetailBody(d);
+                orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4677,7 +4691,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const labels: Record<string, string> = {
       tr_excede_hd:       'TR>20%HD',
       tl_excede_hd:       'TL>25%médG',
-      temp_prep_alto:     'TempPrep≥10min',
+      temp_prep_alto:     'T. Partida≥10min',
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
@@ -4796,6 +4810,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
     }
+  }
+
+  protected semOsDetailLabel(d: any): string {
+    const text = this.semOsDetailText(d);
+    const sep = text.indexOf(': ');
+    return sep > -1 ? text.slice(0, sep) : text;
+  }
+
+  protected semOsDetailBody(d: any): string {
+    const text = this.semOsDetailText(d);
+    const sep = text.indexOf(': ');
+    return sep > -1 ? text.slice(sep + 2) : '';
   }
 
   protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence, analysis: EficienciaTeamAnalysis): string {
