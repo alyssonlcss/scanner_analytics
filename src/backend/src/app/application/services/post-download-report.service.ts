@@ -1428,12 +1428,12 @@ export class PostDownloadReportService {
           if (trExcede.length > 0) {
             const worst = trExcede.slice().sort((a, b) => (b.tr_ordem_min ?? 0) - (a.tr_ordem_min ?? 0))[0];
             issues.push(
-              `TR>20%HD: ${trExcede.length} OS com tempo de reparo acima de 20% da jornada — pior caso OS ${worst.nr_ordem ?? '—'}` +
+              `Temp. Reparo>20%HD: ${trExcede.length} OS com tempo de reparo acima de 20% da jornada — pior caso OS ${worst.nr_ordem ?? '—'}` +
               ` (${worst.tr_ordem_min ?? '?'} min, ${worst.hd_pct_tr ?? '?'}% da HD de ${worst.hd_total_min ?? '?'} min).` +
               kpiCtx(kpiLabelTrTl),
             );
             recommendations.push(
-              `TR>20%HD — Comparar as OS mais longas com o Tempo Padrão M300` +
+              `Temp. Reparo>20%HD — Comparar as OS mais longas com o Tempo Padrão M300` +
               (worst.tempo_padrao_min !== undefined ? ` (${worst.tempo_padrao_min} min cadastrado para essa classe/causa)` : ' (sem tempo padrão cadastrado para esse tipo — solicitar ao time de engenharia)') +
               `. Se o TR real superar o padrão de forma sistemática, levantar a causa raiz (complexidade, falta de material, erro de diagnóstico) e escalar para o supervisor.`,
             );
@@ -1531,12 +1531,12 @@ export class PostDownloadReportService {
         const tlAlto = globalAvgTl > 0 && avgTl > globalAvgTl;
         const worst = trBaixoOrders.slice().sort((a, b) => a.tr_ordem_min - b.tr_ordem_min)[0];
         issues.push(
-          `TR muito baixo: ${trBaixoOrders.length} OS com tempo de execução muito abaixo da média global (${round2(globalAvgExec)} min) — pior caso OS ${worst.nr_ordem} com ${worst.tr_ordem_min} min.` +
+          `Temp. Reparo muito baixo: ${trBaixoOrders.length} OS com tempo de execução muito abaixo da média global (${round2(globalAvgExec)} min) — pior caso OS ${worst.nr_ordem} com ${worst.tr_ordem_min} min.` +
           (tlAlto ? ` TL médio dessas OS (${avgTl} min) acima da média global (${round2(globalAvgTl)} min) — reforça hipótese de erro de apontamento.` : '') +
           kpiCtx('Eficiência'),
         );
         recommendations.push(
-          `TR muito baixo — Cobrar que cada etapa do atendimento seja registrada no momento exato: "A Caminho" ao sair, "No Local" ao chegar e liberação da OS ao concluir.` +
+          `Temp. Reparo muito baixo — Cobrar que cada etapa do atendimento seja registrada no momento exato: "A Caminho" ao sair, "No Local" ao chegar e liberação da OS ao concluir.` +
           (tlAlto ? ` O TL elevado dessas OS indica que "A Caminho" foi acionado tarde ou "No Local" foi acionado cedo, comprimindo artificialmente o TR registrado.` : ` Apontamentos fora de ordem ou com atraso distorcem o TR real e prejudicam o resultado de Eficiência de toda a equipe.`),
         );
       }
@@ -1574,12 +1574,12 @@ export class PostDownloadReportService {
         if (trExcedeEfic.length > 0) {
           const hasDeslocCurto = trExcedeEfic.some((o) => o.tl_ordem_min < 5);
           issues.push(
-            `TR>20%HD (Eficiência): ${trExcedeEfic.length} OS com tempo de reparo acima de 20% da jornada` +
+            `Temp. Reparo>20%HD (Eficiência): ${trExcedeEfic.length} OS com tempo de reparo acima de 20% da jornada` +
             (hasDeslocCurto ? ` — ${trExcedeEfic.filter((o) => o.tl_ordem_min < 5).length} delas com TL <5 min, sugerindo técnico já no local ou erro de "A Caminho".` : '.') +
             kpiCtx('Eficiência'),
           );
           recommendations.push(
-            `TR>20%HD (Eficiência) — ${hasDeslocCurto ? 'Verificar se o botão "A Caminho" está sendo acionado no endereço correto e no momento certo; ' : ''}` +
+            `Temp. Reparo>20%HD (Eficiência) — ${hasDeslocCurto ? 'Verificar se o botão "A Caminho" está sendo acionado no endereço correto e no momento certo; ' : ''}` +
             `investigar as OS mais longas: comparar com o Tempo Padrão M300 e identificar se a causa raiz é complexidade real ou apontamento incorreto.`,
           );
         }

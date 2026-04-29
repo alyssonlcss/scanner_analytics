@@ -456,13 +456,13 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip">OS/Dia <strong>{{ analysis.osDiaValue }}</strong></span>
                         <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTrExceeds > 0">
-                          TR&gt;20% HD: <strong>{{ analysis.summary.countTrExceeds }}</strong>
+                          Temp. Reparo&gt;20% HD: <strong>{{ analysis.summary.countTrExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTlExceeds > 0">
-                          TL&gt;25%médG: <strong>{{ analysis.summary.countTlExceeds }}</strong>
+                          Temp. Desloc.: <strong>{{ analysis.summary.countTlExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          T. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          Temp. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -724,7 +724,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
                         <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}%</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          T. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          Temp. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -4158,9 +4158,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
           ];
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
-          if (analysis.summary?.countTrExceeds > 0) chips.push(`TR>20% HD: ${analysis.summary.countTrExceeds}`);
-          if (analysis.summary?.countTlExceeds > 0) chips.push(`TL>25%médG: ${analysis.summary.countTlExceeds}`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`T. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTrExceeds > 0) chips.push(`Temp. Reparo>20% HD: ${analysis.summary.countTrExceeds}`);
+          if (analysis.summary?.countTlExceeds > 0) chips.push(`Temp. Desloc.: ${analysis.summary.countTlExceeds}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4283,7 +4283,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           ];
           if (analysis.jornadasAbaixoMeta > 0) chips.push(`Jornadas < meta: ${analysis.jornadasAbaixoMeta}/${analysis.totalJornadas}`);
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`T. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4689,9 +4689,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected osDiaFlagLabel(flag: string): string {
     const labels: Record<string, string> = {
-      tr_excede_hd:       'TR>20%HD',
-      tl_excede_hd:       'TL>25%médG',
-      temp_prep_alto:     'T. Partida≥10min',
+      tr_excede_hd:       'Temp. Reparo>20%HD',
+      tl_excede_hd:       'Temp. Desloc.',
+      temp_prep_alto:     'Temp. Partida≥10min',
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
@@ -4733,9 +4733,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected eficienciaFlagLabel(flag: string): string {
     const labels: Record<string, string> = {
       deslocamento_curto: 'Desloc. Curto',
-      tr_excede_hd: 'TR>20%HD',
-      tr_muito_baixo: 'TR Baixo',
-      tempo_padrao_vazio: 'T.Padrão Vazio',
+      tr_excede_hd: 'Temp. Reparo>20%HD',
+      tr_muito_baixo: 'Temp. Reparo Baixo',
+      tempo_padrao_vazio: 'Temp. Padrão Vazio',
     };
     return labels[flag] ?? flag;
   }
