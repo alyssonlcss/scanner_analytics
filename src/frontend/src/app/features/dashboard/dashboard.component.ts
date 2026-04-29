@@ -4494,7 +4494,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Scorecard table
     if (report.teamScorecard.length > 0) {
       content.push(
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0] },
         { text: 'Scorecard por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 6] },
         { text: 'Todos os KPIs por equipe. Azul = meta atingida, vermelho = abaixo da meta.', fontSize: 7.5, color: GRAY, margin: [0, 0, 0, 8] },
         {
@@ -4571,7 +4571,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Action plan
     if (report.specialAnalysis.actionPlan.length > 0) {
       content.push(
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0] },
         { text: 'Plano de Acao por Equipe', style: 'sectionHeader', margin: [0, 16, 0, 8] },
       );
       const plans = report.specialAnalysis.actionPlan;
