@@ -4119,7 +4119,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
         const osDiaList = report.specialAnalysis.osDiaAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        if (osDiaList.length > 0) content.push(drillHead('Análise Detalhada — OS Dia'));
+        const osDiaDrillHead = osDiaList.length > 0 ? drillHead('Análise Detalhada — OS Dia') : null;
         osDiaList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `OS/Dia ${fmt(analysis.osDiaValue)}`,
@@ -4178,20 +4178,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           }
           const osDiaBarColor = isAbove(kpi, analysis.osDiaValue) ? BLUE : RED;
           const osDiaHdr = cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue));
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), osDiaHdr], keepWithNext: true });
+          const osDiaBlock = indentBlock(teamItems, osDiaBarColor, 8);
+          if (analysisIdx === 0 && osDiaDrillHead) {
+            content.push({ stack: [osDiaDrillHead, osDiaHdr, osDiaBlock], unbreakable: true });
           } else {
-            osDiaHdr.keepWithNext = true;
-            content.push(osDiaHdr);
+            content.push({ stack: [cardDivider(), osDiaHdr, osDiaBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, osDiaBarColor, 8));
         });
       }
 
       // Eficiência drill-down
       if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis?.length) {
         const efList = kpi.evidenceAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || (a.summary?.countTempoPadraoVazio ?? 0) > 0);
-        if (efList.length > 0) content.push(drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)'));
+        const efDrillHead = efList.length > 0 ? drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)') : null;
         efList.forEach((analysis: any, analysisIdx: number) => {
           const isTop = analysis.analysisType === 'top_performer';
           const teamBarColor = isTop ? BLUE : RED;
@@ -4229,20 +4228,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             teamItems.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
           }
           const efHdr = cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), efHdr], keepWithNext: true });
+          const efBlock = indentBlock(teamItems, teamBarColor, 8);
+          if (analysisIdx === 0 && efDrillHead) {
+            content.push({ stack: [efDrillHead, efHdr, efBlock], unbreakable: true });
           } else {
-            efHdr.keepWithNext = true;
-            content.push(efHdr);
+            content.push({ stack: [cardDivider(), efHdr, efBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, teamBarColor, 8));
         });
       }
 
       // Utilização drill-down
       if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
         const utilList = report.specialAnalysis.utilizacaoAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        if (utilList.length > 0) content.push(drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)'));
+        const utilDrillHead = utilList.length > 0 ? drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)') : null;
         utilList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Utilização: ${analysis.utilizacaoValue}%`,
@@ -4296,20 +4294,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           const utilizacaoBarColor = (analysis.utilizacaoValue ?? 0) >= (analysis.metaTarget ?? 0) ? BLUE : RED;
           const utilHdr = cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), utilHdr], keepWithNext: true });
+          const utilBlock = indentBlock(teamItems, utilizacaoBarColor, 8);
+          if (analysisIdx === 0 && utilDrillHead) {
+            content.push({ stack: [utilDrillHead, utilHdr, utilBlock], unbreakable: true });
           } else {
-            utilHdr.keepWithNext = true;
-            content.push(utilHdr);
+            content.push({ stack: [cardDivider(), utilHdr, utilBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, utilizacaoBarColor, 8));
         });
       }
 
       // TME IMP drill-down
       if (kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis?.length) {
         const tmeList = kpi.tmeImpAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0);
-        if (tmeList.length > 0) content.push(drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)'));
+        const tmeDrillHead = tmeList.length > 0 ? drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)') : null;
         tmeList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
@@ -4340,20 +4337,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           const tmeBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
           const tmeHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), tmeHdr], keepWithNext: true });
+          const tmeBlock = indentBlock(teamItems, tmeBarColor, 8);
+          if (analysisIdx === 0 && tmeDrillHead) {
+            content.push({ stack: [tmeDrillHead, tmeHdr, tmeBlock], unbreakable: true });
           } else {
-            tmeHdr.keepWithNext = true;
-            content.push(tmeHdr);
+            content.push({ stack: [cardDivider(), tmeHdr, tmeBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, tmeBarColor, 8));
         });
       }
 
       // 1º Login drill-down
       if (kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis?.length) {
         const loginList = kpi.primeiroLoginAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        if (loginList.length > 0) content.push(drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)'));
+        const loginDrillHead = loginList.length > 0 ? drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)') : null;
         loginList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
@@ -4387,20 +4383,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           const loginBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
           const loginHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), loginHdr], keepWithNext: true });
+          const loginBlock = indentBlock(teamItems, loginBarColor, 8);
+          if (analysisIdx === 0 && loginDrillHead) {
+            content.push({ stack: [loginDrillHead, loginHdr, loginBlock], unbreakable: true });
           } else {
-            loginHdr.keepWithNext = true;
-            content.push(loginHdr);
+            content.push({ stack: [cardDivider(), loginHdr, loginBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, loginBarColor, 8));
         });
       }
 
       // 1º Desloc. drill-down
       if (kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
         const deslocList = kpi.primeiroDeslocAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        if (deslocList.length > 0) content.push(drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)'));
+        const deslocDrillHead = deslocList.length > 0 ? drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)') : null;
         deslocList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
@@ -4439,20 +4434,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           const deslocBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
           const deslocHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), deslocHdr], keepWithNext: true });
+          const deslocBlock = indentBlock(teamItems, deslocBarColor, 8);
+          if (analysisIdx === 0 && deslocDrillHead) {
+            content.push({ stack: [deslocDrillHead, deslocHdr, deslocBlock], unbreakable: true });
           } else {
-            deslocHdr.keepWithNext = true;
-            content.push(deslocHdr);
+            content.push({ stack: [cardDivider(), deslocHdr, deslocBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, deslocBarColor, 8));
         });
       }
 
       // Retorno Base drill-down
       if (kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis?.length) {
         const retornoList = kpi.retornoBaseAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        if (retornoList.length > 0) content.push(drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)'));
+        const retornoDrillHead = retornoList.length > 0 ? drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)') : null;
         retornoList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
@@ -4486,13 +4480,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           });
           const retornoBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
           const retornoHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
-          if (analysisIdx > 0) {
-            content.push({ stack: [cardDivider(), retornoHdr], keepWithNext: true });
+          const retornoBlock = indentBlock(teamItems, retornoBarColor, 8);
+          if (analysisIdx === 0 && retornoDrillHead) {
+            content.push({ stack: [retornoDrillHead, retornoHdr, retornoBlock], unbreakable: true });
           } else {
-            retornoHdr.keepWithNext = true;
-            content.push(retornoHdr);
+            content.push({ stack: [cardDivider(), retornoHdr, retornoBlock], unbreakable: true });
           }
-          content.push(indentBlock(teamItems, retornoBarColor, 8));
         });
       }
       content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0] });
