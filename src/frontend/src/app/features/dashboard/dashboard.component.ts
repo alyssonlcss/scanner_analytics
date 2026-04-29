@@ -288,7 +288,7 @@ type SavedFilterState = {
 
                 <div class="export-modal-options" [class.export-modal-options--disabled]="exportLoading()">
                   <button class="export-option-card" (click)="exportWithMode('current')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">📄</span>
+                    <span class="export-option-icon">❐</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Atual</span>
                       <span class="export-option-sub">Gera PDF com todos os dados e análises do relatório atual.</span>
@@ -296,7 +296,7 @@ type SavedFilterState = {
                     <span class="export-option-arrow">→</span>
                   </button>
                   <button class="export-option-card" (click)="exportWithMode('proprias')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">🏢</span>
+                    <span class="export-option-icon">☖</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Próprias</span>
                       <span class="export-option-sub">4 arquivos por base com dados completos — equipes próprias (ITJ, ITK, TRR, ACU).</span>
@@ -304,7 +304,7 @@ type SavedFilterState = {
                     <span class="export-option-arrow">→</span>
                   </button>
                   <button class="export-option-card" (click)="exportWithMode('parceiras')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">🤝</span>
+                    <span class="export-option-icon">❤</span>
                     <div class="export-option-body">
                       <span class="export-option-title">Relatório Parceiras</span>
                       <span class="export-option-sub">4 arquivos por base com dados completos — equipes parceiras (ITE, IPK, IPT, ACA).</span>
@@ -409,7 +409,7 @@ type SavedFilterState = {
                   </div>
                 </div>
                 <div class="kpi-chart-block">
-                  <div class="kpi-chart-group-label kpi-group-good" *ngIf="kpi.topTeams.length > 0">🏆 Top Performers</div>
+                  <div class="kpi-chart-group-label kpi-group-good" *ngIf="kpi.topTeams.length > 0">★ Top Performers</div>
                   <div class="kpi-cr kpi-cr--good" *ngFor="let t of kpi.topTeams; let i = index">
                     <span class="kpi-cr-pos">{{ i + 1 }}</span>
                     <span class="kpi-cr-team">{{ t.team }}</span>
@@ -442,7 +442,7 @@ type SavedFilterState = {
                 <!-- OS/Dia drill-down (3 abaixo do padrão) -->
                 <ng-container *ngIf="kpi.kpi === 'OS Dia'">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — 3 Abaixo do Padrão
+                    ◎ Análise Detalhada — 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <ng-container *ngIf="report.specialAnalysis.osDiaAnalysis && report.specialAnalysis.osDiaAnalysis.length > 0; else noOsDiaAnalysis">
@@ -462,7 +462,7 @@ type SavedFilterState = {
                           Temp. Desloc.: <strong>{{ analysis.summary.countTlExceeds }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          Temp. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          Temp. Partida Alto: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -476,7 +476,7 @@ type SavedFilterState = {
                           <!-- Ociosidade -->
                           <ng-container *ngIf="analysis.idleAnalysis">
                             <div class="osdia-idle-header">
-                              <span class="osdia-idle-icon">⚠️</span>
+                              <span class="osdia-idle-icon">⚠</span>
                               <strong>Ociosidade elevada — {{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}% da jornada sem trabalho registrado</strong>
                             </div>
                             <div class="osdia-idle-metrics">
@@ -598,7 +598,7 @@ type SavedFilterState = {
                 </ng-container>
                 <!-- Eficiência drill-down (evidências de incidências) -->
                 <ng-container *ngIf="kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis && kpi.evidenceAnalysis.length > 0">                  <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Top 3 e 3 Abaixo do Padrão
+                    ◎ Análise Detalhada — Top 3 e 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
@@ -624,7 +624,7 @@ type SavedFilterState = {
                       <ng-container *ngIf="analysis.flaggedOrders.length > 0 || (analysis.tempoPadraoVazioOrders && analysis.tempoPadraoVazioOrders.length > 0); else noEficienciaEvidence">
                         <div class="osdia-idle-notice">
                           <div class="osdia-idle-header">
-                            <span class="osdia-idle-icon">⚠️</span>
+                            <span class="osdia-idle-icon">⚠</span>
                             <strong>Alertas detectados</strong>
                           </div>
 
@@ -703,7 +703,7 @@ type SavedFilterState = {
                 <!-- Eficiência: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === 'Eficiência' && (!kpi.evidenceAnalysis || kpi.evidenceAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Top 3 e 3 Abaixo do Padrão
+                    ◎ Análise Detalhada — Top 3 e 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.4 - CE M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -711,7 +711,7 @@ type SavedFilterState = {
                 <!-- Utilização drill-down (3 abaixo do padrão) -->
                 <ng-container *ngIf="kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis && report.specialAnalysis.utilizacaoAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — 3 Abaixo do Padrão
+                    ◎ Análise Detalhada — 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <div class="rpt-osdia-grid">
@@ -724,7 +724,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
                         <span class="rpt-osdia-chip">Meta <strong>{{ analysis.metaTarget }}%</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countTempPrepAlto > 0">
-                          Temp. Partida≥10min: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
+                          Temp. Partida Alto: <strong>{{ analysis.summary.countTempPrepAlto }}</strong>
                         </span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemOsAlto > 0">
                           SemOS≥10min: <strong>{{ analysis.summary.countSemOsAlto }}</strong>
@@ -741,7 +741,7 @@ type SavedFilterState = {
                           <!-- Ociosidade -->
                           <ng-container *ngIf="analysis.idleAnalysis">
                             <div class="osdia-idle-header">
-                              <span class="osdia-idle-icon">⚠️</span>
+                              <span class="osdia-idle-icon">⚠</span>
                               <strong>Ociosidade elevada — {{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}% da jornada sem trabalho registrado</strong>
                             </div>
                             <div class="osdia-idle-metrics">
@@ -854,7 +854,7 @@ type SavedFilterState = {
                 <!-- Utilização: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === 'Utilização' && (!report.specialAnalysis.utilizacaoAnalysis || report.specialAnalysis.utilizacaoAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — 3 Abaixo do Padrão
+                    ◎ Análise Detalhada — 3 Abaixo do Padrão
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -862,7 +862,7 @@ type SavedFilterState = {
                 <!-- TME IMP drill-down -->
                 <ng-container *ngIf="kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis && kpi.tmeImpAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Ordens com TME IMP Elevado
+                    ◎ Análise Detalhada — Ordens com TME IMP Elevado
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Ordens onde o tempo improdutivo (TR Ordem Imp SS) superou 1,5× a média da equipe ou a meta de 20 min. O TME IMP mede o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva — quanto maior esse tempo, mais prejudica a pontuação da equipe.</p>
@@ -938,7 +938,7 @@ type SavedFilterState = {
                 <!-- TME IMP: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === 'TME IMP' && (!kpi.tmeImpAnalysis || kpi.tmeImpAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Ordens com TME IMP Elevado
+                    ◎ Análise Detalhada — Ordens com TME IMP Elevado
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -946,7 +946,7 @@ type SavedFilterState = {
                 <!-- 1º Login drill-down -->
                 <ng-container *ngIf="kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis && kpi.primeiroLoginAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com 1º Login Acima da Meta
+                    ◎ Análise Detalhada — Dias com 1º Login Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o primeiro login corrigido superou a meta de 8 min. Atrasos no login atrasam o primeiro despacho, comprimem a jornada e reduzem o número de OS possíveis.</p>
@@ -999,7 +999,7 @@ type SavedFilterState = {
                 <!-- 1º Login: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === '1º Login' && (!kpi.primeiroLoginAnalysis || kpi.primeiroLoginAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com 1º Login Acima da Meta
+                    ◎ Análise Detalhada — Dias com 1º Login Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -1007,7 +1007,7 @@ type SavedFilterState = {
                 <!-- 1º Desloc. drill-down -->
                 <ng-container *ngIf="kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis && kpi.primeiroDeslocAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com 1º Desloc. Acima da Meta
+                    ◎ Análise Detalhada — Dias com 1º Desloc. Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o tempo entre o primeiro despacho e o primeiro "A Caminho" superou a meta de 25 min. Um 1º Desloc. alto indica que a equipe demora a sair em campo após o primeiro despacho.</p>
@@ -1079,7 +1079,7 @@ type SavedFilterState = {
                 <!-- 1º Desloc.: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === '1º Desloc.' && (!kpi.primeiroDeslocAnalysis || kpi.primeiroDeslocAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com 1º Desloc. Acima da Meta
+                    ◎ Análise Detalhada — Dias com 1º Desloc. Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -1087,7 +1087,7 @@ type SavedFilterState = {
                 <!-- Retorno Base drill-down -->
                 <ng-container *ngIf="kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis && kpi.retornoBaseAnalysis.length > 0">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com Retorno Base Acima da Meta
+                    ◎ Análise Detalhada — Dias com Retorno Base Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="rpt-section-desc">Dias em que o retorno à base superou a meta de 40 min. Este tempo é descontado no cálculo de Utilização, impactando diretamente a nota da equipe.</p>
@@ -1140,7 +1140,7 @@ type SavedFilterState = {
                 <!-- Retorno Base: all teams at meta -->
                 <ng-container *ngIf="kpi.kpi === 'Retorno Base' && (!kpi.retornoBaseAnalysis || kpi.retornoBaseAnalysis.length === 0)">
                   <div class="kpi-osdia-drill-head">
-                    🔍 Análise Detalhada — Dias com Retorno Base Acima da Meta
+                    ◎ Análise Detalhada — Dias com Retorno Base Acima da Meta
                     <span class="rpt-osdia-src-inline">Fonte: Scanner 4.0 CE - M300</span>
                   </div>
                   <p class="kpi-meta-ok">✅ Todas as equipes atingiram a meta esperada.</p>
@@ -1150,7 +1150,7 @@ type SavedFilterState = {
 
             <!-- Scorecard por Equipe -->
             <section class="rpt-section anim-el" *ngIf="report.teamScorecard && report.teamScorecard.length > 0">
-              <h2 class="rpt-section-title">🏅 Scorecard por Equipe</h2>
+              <h2 class="rpt-section-title">★ Scorecard por Equipe</h2>
               <p class="rpt-section-desc">Todos os KPIs de cada equipe em uma visão única. Verde = meta atingida, vermelho = abaixo da meta.</p>
               <div class="scorecard-scroll-wrap">
                 <table class="scorecard-table">
@@ -1233,7 +1233,7 @@ type SavedFilterState = {
             </section>
             <!-- Plano de Ação -->
             <section class="rpt-section anim-el" *ngIf="report.specialAnalysis.actionPlan.length > 0">
-              <h2 class="rpt-section-title">📋 Plano de Ação por Equipe</h2>
+              <h2 class="rpt-section-title">▤ Plano de Ação por Equipe</h2>
               <div class="rpt-action-grid">
                 <div class="rpt-action-card" *ngFor="let plan of report.specialAnalysis.actionPlan">
                   <h3 class="rpt-action-team">{{ plan.team }}</h3>
@@ -4160,7 +4160,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
           if (analysis.summary?.countTrExceeds > 0) chips.push(`Temp. Reparo>20% HD: ${analysis.summary.countTrExceeds}`);
           if (analysis.summary?.countTlExceeds > 0) chips.push(`Temp. Desloc.: ${analysis.summary.countTlExceeds}`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida Alto: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4198,10 +4198,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
-                ev.sem_os_details.forEach((d: any) => {
+                ev.sem_os_details.forEach((d: any, semIdx: number) => {
                   const semLabel = this.semOsDetailLabel(d);
                   const semBody = this.semOsDetailBody(d);
-                  orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                  orderItems.push({ text: [{ text: `${semIdx + 1}. `, color: RED, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4283,7 +4283,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           ];
           if (analysis.jornadasAbaixoMeta > 0) chips.push(`Jornadas < meta: ${analysis.jornadasAbaixoMeta}/${analysis.totalJornadas}`);
           if (analysis.idleDays > 0) chips.push(`Ocioso: ${analysis.idleDays} dias`);
-          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida\u226510min: ${analysis.summary.countTempPrepAlto}`);
+          if (analysis.summary?.countTempPrepAlto > 0) chips.push(`Temp. Partida Alto: ${analysis.summary.countTempPrepAlto}`);
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
@@ -4317,10 +4317,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
-              ev.sem_os_details.forEach((d: any) => {
+              ev.sem_os_details.forEach((d: any, semIdx: number) => {
                 const semLabel = this.semOsDetailLabel(d);
                 const semBody = this.semOsDetailBody(d);
-                orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                orderItems.push({ text: [{ text: `${semIdx + 1}. `, color: RED, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4691,7 +4691,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const labels: Record<string, string> = {
       tr_excede_hd:       'Temp. Reparo>20%HD',
       tl_excede_hd:       'Temp. Desloc.',
-      temp_prep_alto:     'Temp. Partida≥10min',
+      temp_prep_alto:     'Temp. Partida Alto',
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;

@@ -1462,13 +1462,13 @@ export class PostDownloadReportService {
               : firstOs.length > 0 ? `${firstOs.length} na 1ª OS do dia — demora desde o início de calendário até o primeiro deslocamento`
               : `${betweenOs.length} entre ordens — demora após receber um novo despacho`;
             issues.push(
-              `TempPrep≥10min: ${tempPrepOrders.length} OS com tempo de preparação elevado (média ${avgTp} min — ${ctx}).` +
+              `Temp. Partida elevado: ${tempPrepOrders.length} OS com tempo de preparação elevado (média ${avgTp} min — ${ctx}).` +
               kpiCtx('Utilização'),
             );
             recommendations.push(
-              `TempPrep≥10min — Ao receber o despacho, acionar imediatamente o status "A Caminho" sem aguardar na base.` +
-              (firstOs.length > 0 ? ` Para a 1ª OS do dia, verificar se o Login foi feito antes da janela de despacho e se o técnico já estava pronto para sair.` : '') +
-              ` Reforçar no próximo alinhamento que TempPrep alto é descontado diretamente na Utilização.`,
+              `Temp. Partida elevado — Ao receber o despacho, acionar imediatamente o status "A Caminho" sem aguardar na base.` +
+              (firstOs.length > 0 ? ` Para a 1ª OS do dia, o limite é de 25 min (Início Calendário → A Caminho); para as demais ordens o limite é de 10 min (Lib. Anterior → A Caminho).` : '') +
+              ` Reforçar no próximo alinhamento que Temp. Partida alto é descontado diretamente na Utilização.`,
             );
           }
 
@@ -1977,7 +1977,7 @@ export class PostDownloadReportService {
     const OS_DIA_META = 4.4;
     const OS_DIA_PCT_THRESHOLD = 0.20;
     const TEMP_PREP_THRESHOLD_MIN      = 10; // demais OS: Lib.Anterior → A Caminho
-    const TEMP_PREP_THRESHOLD_FIRST_MIN = 10; // 1ª OS da jornada: Início Calendário → A Caminho
+    const TEMP_PREP_THRESHOLD_FIRST_MIN = 25; // 1ª OS da jornada: Início Calendário → A Caminho
     const SEM_OS_THRESHOLD_MIN = 10;
 
     // 1. Determine under-performing teams from ranking (average OS/Dia < meta)
@@ -2971,7 +2971,7 @@ export class PostDownloadReportService {
     const IDLE_THRESHOLD_PCT = 15;
     const OS_DIA_PCT_THRESHOLD = 0.20;
     const TEMP_PREP_THRESHOLD_MIN = 10;
-    const TEMP_PREP_THRESHOLD_FIRST_MIN = 10;
+    const TEMP_PREP_THRESHOLD_FIRST_MIN = 25;
     const SEM_OS_THRESHOLD_MIN = 10;
 
     const utilizacaoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'));
