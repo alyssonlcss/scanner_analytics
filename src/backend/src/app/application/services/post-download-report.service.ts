@@ -155,6 +155,8 @@ interface OsDiaOrderEvidence {
     min: number;
     from?: string;
     to?: string;
+    global_avg_min?: number;
+    above_avg_pct?: number;
     interval_discounted?: boolean;
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
@@ -256,6 +258,8 @@ interface UtilizacaoOrderEvidence {
     min: number;
     from?: string;
     to?: string;
+    global_avg_min?: number;
+    above_avg_pct?: number;
     interval_discounted?: boolean;
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
@@ -3011,6 +3015,56 @@ export class PostDownloadReportService {
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) return [];
 
+    // Baseline for sub-flag "Desl. Intervalo": global average without team-level filtering.
+    const globalIntervaloDeslocValues: number[] = [];
+    if (inicioIntervaloCol && fimIntervaloCol) {
+      const allGrouped = new Map<string, CsvRow[]>();
+      for (const row of deslocRows) {
+        const team = String(row[teamCol] ?? '').trim();
+        const date = String(row[dateCol] ?? '').trim();
+        if (!team || !date) continue;
+        const key = `${team}::${date}`;
+        const rows = allGrouped.get(key) ?? [];
+        rows.push(row);
+        allGrouped.set(key, rows);
+      }
+
+      for (const rows of allGrouped.values()) {
+        const orderedRows = [...rows].sort((a, b) => {
+          const left = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          const right = parseDateTimeBr(String(b[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          return left - right;
+        });
+
+        for (let i = 1; i < orderedRows.length; i++) {
+          const row = orderedRows[i];
+          const prevRow = orderedRows[i - 1];
+          const prevLiberadaDate = liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
+          const aCaminhoDate = parseDateTimeBr(String(row[caminhoCol] ?? ''));
+          const inicioIntervaloRaw = String(row[inicioIntervaloCol] ?? '').trim();
+          const fimIntervaloRaw = String(row[fimIntervaloCol] ?? '').trim();
+          const inicioIntervaloDate = inicioIntervaloRaw ? parseDateTimeBr(inicioIntervaloRaw) : null;
+          const fimIntervaloDate = fimIntervaloRaw ? parseDateTimeBr(fimIntervaloRaw) : null;
+
+          const hasIntervaloDeslocamento = Boolean(
+            prevLiberadaDate && aCaminhoDate &&
+            inicioIntervaloDate && fimIntervaloDate &&
+            inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
+            fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
+          );
+          if (!hasIntervaloDeslocamento || !inicioIntervaloDate || !prevLiberadaDate) continue;
+
+          const intMin = minutesBetween(inicioIntervaloDate, prevLiberadaDate);
+          if (Number.isFinite(intMin) && intMin > 0) {
+            globalIntervaloDeslocValues.push(intMin);
+          }
+        }
+      }
+    }
+    const globalAvgIntervaloDeslocMin = globalIntervaloDeslocValues.length > 0
+      ? round2(globalIntervaloDeslocValues.reduce((sum, v) => sum + v, 0) / globalIntervaloDeslocValues.length)
+      : 0;
+
     // Group by team+date, underperforming teams only
     const grouped = new Map<string, { team: string; date: string; rows: CsvRow[] }>();
     for (const row of deslocRows) {
@@ -3233,7 +3287,16 @@ export class PostDownloadReportService {
           inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
           fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
         );
-        if (hasIntervaloDeslocamento) flags.push('sem_os_alto');
+        const intervaloDeslocMin = hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate
+          ? round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate))
+          : null;
+        const intervaloDeslocAboveGlobalAvg = Boolean(
+          intervaloDeslocMin !== null &&
+          Number.isFinite(intervaloDeslocMin) &&
+          globalAvgIntervaloDeslocMin > 0 &&
+          intervaloDeslocMin > globalAvgIntervaloDeslocMin,
+        );
+        if (intervaloDeslocAboveGlobalAvg) flags.push('sem_os_alto');
 
         const uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
         if (uniqueFlags.length === 0) continue;
@@ -3269,13 +3332,17 @@ export class PostDownloadReportService {
             });
           }
         }
-        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate) {
-          const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
+        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null) {
+          const overPct = globalAvgIntervaloDeslocMin > 0
+            ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
+            : undefined;
           semOsDetails.push({
             type: 'intervalo_deslocamento',
-            min:  intMin,
+            min:  intervaloDeslocMin,
             from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
             to:   inicioIntervaloRaw || undefined,
+            global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
+            above_avg_pct: overPct,
           });
         }
 

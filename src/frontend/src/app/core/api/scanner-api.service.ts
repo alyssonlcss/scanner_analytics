@@ -96,6 +96,8 @@ export interface OsDiaOrderEvidence {
     min: number;
     from?: string;
     to?: string;
+    global_avg_min?: number;
+    above_avg_pct?: number;
     interval_discounted?: boolean;
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;

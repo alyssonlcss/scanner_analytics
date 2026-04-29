@@ -4806,6 +4806,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       case 'fim_jornada':
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
       case 'intervalo_deslocamento':
+        if (Number.isFinite(d?.global_avg_min) && Number.isFinite(d?.above_avg_pct) && d.global_avg_min > 0) {
+          return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nf(d.above_avg_pct, 0, 1)}% acima da média geral (${this.nf(d.global_avg_min)} min).`;
+        }
         return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
