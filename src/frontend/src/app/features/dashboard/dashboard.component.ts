@@ -573,10 +573,10 @@ type SavedFilterState = {
                                   <strong>Tempo de Deslocamento alto:</strong> {{ osDiaAlertBody('tl_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
+                                  <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
                                   </ol>
@@ -832,10 +832,10 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>TempPrep/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
-                                  <strong>SemOrdem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
+                                  <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details">{{ semOsDetailText(d) }}</li>
                                   </ol>
@@ -1059,7 +1059,7 @@ type SavedFilterState = {
                               <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento muito lento:</strong> {{ deslocAlertBody('desloc_muito_lento', ev, analysis) }}
+                              <strong>Tempo de Partida:</strong> {{ deslocAlertBody('desloc_muito_lento', ev, analysis) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
                               <strong>Deslocamento lento:</strong> {{ deslocAlertBody('desloc_lento', ev, analysis) }}
@@ -3723,7 +3723,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
     const docDef = this.buildPdfDocDef(section);
-    const safeName = `${section.title} - ${section.subtitle}`
+
+    // Build date-range suffix for the filename
+    const monthAbbrevToNum: Record<string, string> = {
+      jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',
+      jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
+    };
+    const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
+    const activeMonths = (monthFilter?.value ?? [])
+      .filter((m) => m !== ALL_OPTION)
+      .map((m) => ({ abbr: m, num: monthAbbrevToNum[m] ?? '??' }))
+      .sort((a, b) => parseInt(a.num) - parseInt(b.num));
+
+    const range = this.resolvedDayRange();
+    const pad = (n: number): string => String(n).padStart(2, '0');
+
+    let dateSuffix = '';
+    if (activeMonths.length > 0) {
+      const startDate = `${pad(range.min)}-${activeMonths[0].num}`;
+      const endDate = `${pad(range.max)}-${activeMonths[activeMonths.length - 1].num}`;
+      dateSuffix = ` ${startDate === endDate ? startDate : `${startDate} ao ${endDate}`}`;
+    }
+
+    const safeName = `${section.title} - ${section.subtitle}${dateSuffix}`
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^\w\s\-]/g, '').trim();
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
@@ -4163,9 +4185,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               }
               if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${this.osDiaAlertBody('tr_excede_hd', ev)}`));
               if (ev.flags?.includes('tl_excede_hd')) orderItems.push(alertItem(`Tempo de Deslocamento alto: ${this.osDiaAlertBody('tl_excede_hd', ev)}`));
-              if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`TempPrep/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
+              if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
-                orderItems.push(alertItem(`SemOrdem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
+                orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
                 ev.sem_os_details.forEach((d: any) => {
                   orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
                 });
@@ -4280,9 +4302,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.inicio_intervalo) {
               orderItems.push(tl('Intervalo', ev.inicio_intervalo, ev.fim_intervalo || '\u2014'));
             }
-            if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`TempPrep/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
+            if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
-              orderItems.push(alertItem(`SemOrdem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
+              orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
               ev.sem_os_details.forEach((d: any) => {
                 orderItems.push({ text: `\u25b8  ${this.semOsDetailText(d)}`, fontSize: 6.5, color: GRAY, margin: [0, 0, 0, 1] });
               });
@@ -4413,7 +4435,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             dayItems.push(tl('Jornada', `Inicio Cal.: ${ev.inicio_calendario || '\u2014'}`, `Log In: ${ev.log_in_corrigido || '\u2014'}`));
             dayItems.push(tl('1\u00aa OS', `Despachada: ${ev.hora_primeiro_despacho || '\u2014'}`, `A Caminho: ${ev.hora_primeiro_deslocamento || '\u2014'}`));
             if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${this.deslocAlertBody('despacho_tardio', ev, analysis)}`));
-            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Deslocamento muito lento: ${this.deslocAlertBody('desloc_muito_lento', ev, analysis)}`));
+            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${this.deslocAlertBody('desloc_muito_lento', ev, analysis)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${this.deslocAlertBody('desloc_lento', ev, analysis)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${this.deslocAlertBody('sem_desloc_registrado', ev, analysis)}`));
             teamItems.push({ stack: [
