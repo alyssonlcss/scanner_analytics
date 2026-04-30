@@ -3731,6 +3731,46 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
   }
 
+  /**
+   * Renders a single emoji to a PNG data URL via Canvas so pdfmake (Roboto) can display it.
+   * Returns empty string if the environment has no canvas support.
+   */
+  private renderEmojiDataUrl(emoji: string, pxSize: number): string {
+    try {
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      const s = Math.round(pxSize * dpr * 1.6);
+      const canvas = document.createElement('canvas');
+      canvas.width = s;
+      canvas.height = s;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
+      ctx.font = `${Math.round(s * 0.72)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(emoji, s / 2, s / 2);
+      return canvas.toDataURL('image/png');
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Strips / replaces emoji characters that Roboto cannot render so pdfmake text never shows
+   * corrupted glyphs.  Full-colour emoji (U+1F000+) are removed; Misc Symbols that ARE in
+   * Roboto (⚠ U+26A0, ✓ U+2713, etc.) are kept or substituted cleanly.
+   */
+  private stripEmojiForPdf(text: string): string {
+    return text
+      // Known emoji → nearest Roboto glyph
+      .replace(/✅/g, '\u2713')          // ✓
+      .replace(/⚠️/g, '\u26A0')         // ⚠  (strip variation selector)
+      .replace(/[\uFE0F]/g, '')          // strip all remaining variation selectors
+      .replace(/[\u{1F000}-\u{1FAFF}]/gu, '') // full emoji block
+      .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // regional indicators
+      .replace(/\u200D/g, '')            // ZWJ
+      .replace(/ {2,}/g, ' ');
+  }
+
   private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
     const docDef = this.buildPdfDocDef(section);
 
@@ -4063,7 +4103,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       });
 
       const chipRow = (chips: string[]): any => ({
-        text: chips.join('  ·  '),
+        text: this.stripEmojiForPdf(chips.join('  \u00B7  ')),
         fontSize: 7,
         color: GRAY,
         margin: [0, 0, 0, 2],
@@ -4108,9 +4148,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       });
 
       const alertItem = (text: string): any => {
-        const sep = text.indexOf(': ');
-        const label = sep > -1 ? text.slice(0, sep) : text;
-        const body = sep > -1 ? text.slice(sep + 2) : '';
+        const cleaned = this.stripEmojiForPdf(text);
+        const sep = cleaned.indexOf(': ');
+        const label = sep > -1 ? cleaned.slice(0, sep) : cleaned;
+        const body = sep > -1 ? cleaned.slice(sep + 2) : '';
         return {
           text: [
             { text: '! ', bold: true, color: RED },
@@ -4146,7 +4187,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         margin: [0, 2, 0, 2],
       });
 
-      const drillHead = (text: string): any => ({ text, bold: true, fontSize: 8.5, color: DARK, margin: [0, 8, 0, 4], background: BG, keepWithNext: true });
+      const drillHead = (text: string, emoji = '\uD83D\uDD0D' /* 🔍 */): any => {
+        const emojiUrl = emoji ? this.renderEmojiDataUrl(emoji, 9) : '';
+        if (emojiUrl) {
+          return {
+            columns: [
+              { image: emojiUrl, width: 9, height: 9, margin: [0, 0, 4, 0] },
+              { text, bold: true, fontSize: 8.5, color: DARK, width: '*' },
+            ],
+            margin: [0, 8, 0, 4],
+            background: BG,
+            keepWithNext: true,
+          };
+        }
+        return { text, bold: true, fontSize: 8.5, color: DARK, margin: [0, 8, 0, 4], background: BG, keepWithNext: true };
+      };
 
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
