@@ -4319,7 +4319,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 ev.sem_os_details.forEach((d: any, di: number) => {
                   const semLabel = this.semOsDetailLabel(d);
                   const semBody = this.semOsDetailBody(d);
-                  orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                  orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4441,7 +4441,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               ev.sem_os_details.forEach((d: any, di: number) => {
                 const semLabel = this.semOsDetailLabel(d);
                 const semBody = this.semOsDetailBody(d);
-                orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
