@@ -3315,7 +3315,7 @@ type SavedFilterState = {
 
       .osdia-sem-os-list {
         margin: 2px 0 0 6px;
-        padding: 0;
+        padding: 0 0 0 18px;
         list-style: decimal;
         font-size: 0.74rem;
         color: var(--text);
@@ -3762,12 +3762,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private stripEmojiForPdf(text: string): string {
     return text
       // Known emoji → nearest Roboto glyph
-      .replace(/✅/g, '\u2713')          // ✓
-      .replace(/⚠️/g, '\u26A0')         // ⚠  (strip variation selector)
-      .replace(/[\uFE0F]/g, '')          // strip all remaining variation selectors
+      .replace(/\u2705/g, '\u2713')           // ✅ → ✓
+      .replace(/\u26A0\uFE0F/g, '\u26A0')     // ⚠️ → ⚠
+      .replace(/\u2191/g, '(+)')              // ↑ not in Roboto
+      .replace(/\u2193/g, '(-)')              // ↓ not in Roboto
+      .replace(/[\uFE0F]/g, '')               // strip remaining variation selectors
       .replace(/[\u{1F000}-\u{1FAFF}]/gu, '') // full emoji block
       .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // regional indicators
-      .replace(/\u200D/g, '')            // ZWJ
+      .replace(/\u200D/g, '')                 // ZWJ
       .replace(/ {2,}/g, ' ');
   }
 
@@ -3923,8 +3925,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 3] },
         {
           columns: [
-            { text: dirUp ? '↑ Maior é melhor' : '↓ Menor é melhor', fontSize: 7.5, bold: true, color: dirUp ? '#15803d' : RED },
-            { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Média: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: GRAY },
+            { text: dirUp ? '(+) Maior e melhor' : '(-) Menor e melhor', fontSize: 7.5, bold: true, color: dirUp ? '#15803d' : RED },
+            { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Media: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: GRAY },
           ],
           margin: [0, 0, 0, 10],
         },
@@ -4242,7 +4244,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
             teamItems.push({
-              text: `Ociosidade elevada — ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
+              text: `\u26A0 Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
               fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2],
             });
             teamItems.push(chipRow([
@@ -4275,10 +4277,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
-                ev.sem_os_details.forEach((d: any) => {
+                ev.sem_os_details.forEach((d: any, di: number) => {
                   const semLabel = this.semOsDetailLabel(d);
                   const semBody = this.semOsDetailBody(d);
-                  orderItems.push({ text: [{ text: '\u203A  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                  orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4394,10 +4396,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${this.osDiaAlertBody('temp_prep_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${this.osDiaAlertBody('sem_os_alto', ev)}`));
-              ev.sem_os_details.forEach((d: any) => {
+              ev.sem_os_details.forEach((d: any, di: number) => {
                 const semLabel = this.semOsDetailLabel(d);
                 const semBody = this.semOsDetailBody(d);
-                orderItems.push({ text: [{ text: '\u203A  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
