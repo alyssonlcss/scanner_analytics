@@ -3950,7 +3950,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               kpiChartItems.push({ text: 'Top Performers', fontSize: 7.5, bold: true, color: BLUE, margin: [0, 6, 0, 2] });
             }
           } else if (t.group === 'opp') {
-            kpiChartItems.push({ text: '\u26A0  Oportunidade', fontSize: 7.5, bold: true, color: RED, margin: [0, 6, 0, 2] });
+            const oppWarnUrl = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            if (oppWarnUrl) {
+              kpiChartItems.push({ columns: [{ image: oppWarnUrl, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: 'Oportunidade', bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 6, 0, 2] });
+            } else {
+              kpiChartItems.push({ text: '! Oportunidade', fontSize: 7.5, bold: true, color: RED, margin: [0, 6, 0, 2] });
+            }
           }
           _prevGroup = t.group;
         }
@@ -4176,12 +4181,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const sep = cleaned.indexOf(': ');
         const label = sep > -1 ? cleaned.slice(0, sep) : cleaned;
         const body = sep > -1 ? cleaned.slice(sep + 2) : '';
+        const warnUrl = this.renderEmojiDataUrl('\u26A0\uFE0F', 7);
+        const labelRuns: any[] = [
+          { text: label + (body ? ': ' : ''), bold: true, color: RED },
+          ...(body ? [{ text: body, color: DARK }] : []),
+        ];
+        if (warnUrl) {
+          return {
+            columns: [
+              { image: warnUrl, width: 7, height: 7, margin: [0, 0, 3, 0] },
+              { text: labelRuns, fontSize: 7, width: '*' },
+            ],
+            margin: [0, 1, 0, 2],
+          };
+        }
         return {
-          text: [
-            { text: '\u26A0 ', bold: true, color: RED },
-            { text: label + (body ? ': ' : ''), bold: true, color: RED },
-            ...(body ? [{ text: body, color: DARK }] : []),
-          ],
+          text: [{ text: '! ', bold: true, color: RED }, ...labelRuns],
           fontSize: 7,
           margin: [0, 1, 0, 2],
         };
@@ -4243,10 +4258,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
-            teamItems.push({
-              text: `\u26A0 Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
-              fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2],
-            });
+            const idleWarnUrl1 = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            const idleText1 = `Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`;
+            if (idleWarnUrl1) {
+              teamItems.push({ columns: [{ image: idleWarnUrl1, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: idleText1, bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 2, 0, 2] });
+            } else {
+              teamItems.push({ text: `! ${idleText1}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
+            }
             teamItems.push(chipRow([
               `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
               `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
@@ -4366,10 +4384,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
-            teamItems.push({
-              text: `\u26A0 Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
-              fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2],
-            });
+            const idleWarnUrl2 = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            const idleText2 = `Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`;
+            if (idleWarnUrl2) {
+              teamItems.push({ columns: [{ image: idleWarnUrl2, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: idleText2, bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 2, 0, 2] });
+            } else {
+              teamItems.push({ text: `! ${idleText2}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
+            }
             teamItems.push(chipRow([
               `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
               `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
