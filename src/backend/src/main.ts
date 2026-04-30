@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { createServer } from './app/presentation/http/create-server.js';
 
 const server = await createServer();

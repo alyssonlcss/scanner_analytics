@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { readFile, writeFile } from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { join } from 'node:path';

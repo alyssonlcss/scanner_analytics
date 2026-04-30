@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';

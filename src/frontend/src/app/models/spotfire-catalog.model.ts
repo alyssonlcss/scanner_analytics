@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 export type SpotfireFilterKind = 'list' | 'range' | 'text' | 'toggle-group' | 'unknown';
 
 export interface SpotfireFilterOption {

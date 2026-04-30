@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { config as loadEnvironment } from 'dotenv';
 import { z } from 'zod';
 

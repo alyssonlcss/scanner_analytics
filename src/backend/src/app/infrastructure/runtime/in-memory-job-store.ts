@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import type { ScannerJob } from '../../domain/entities/scanner-job.js';
 import type { ScannerJobStorePort } from '../../domain/ports/scanner-job-store.port.js';
 

@@ -1,4 +1,6 @@
-﻿import { CommonModule } from '@angular/common';
+﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
+import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, NgZone, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { forkJoin } from 'rxjs';
@@ -257,6 +259,7 @@ type SavedFilterState = {
               <div class="rpt-hero-left">
                 <h1 class="rpt-hero-title">Relatório Analítico</h1>
                 <span class="rpt-hero-meta">Gerado em {{ report.generatedAt | date:'dd/MM/yyyy HH:mm' }}</span>
+                <span class="rpt-hero-author">Autor: Alysson Pinheiro &mdash; Analista de Dados</span>
               </div>
 
               <button class="rpt-export-btn" (click)="openExportModal()">Exportar PDF</button>
@@ -2004,6 +2007,14 @@ type SavedFilterState = {
         font-size: 0.74rem;
         color: var(--muted);
         font-weight: 500;
+      }
+
+      .rpt-hero-author {
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-style: italic;
+        margin-top: 2px;
+        display: block;
       }
 
       .rpt-hero-totals {
@@ -3875,7 +3886,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       { text: 'Relatório Analítico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
       { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
       subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
-      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 28] },
+      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] },
+      { text: 'Autor: Alysson Pinheiro — Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
     ];
 
 

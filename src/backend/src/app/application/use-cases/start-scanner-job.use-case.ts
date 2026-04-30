@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { randomUUID } from 'node:crypto';
 
 import type { ScannerJob } from '../../domain/entities/scanner-job.js';

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
