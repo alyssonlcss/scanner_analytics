@@ -3754,6 +3754,27 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  /** Renders a Unicode symbol (non-emoji) as a colored PNG for pdfmake. */
+  private renderSymbolDataUrl(symbol: string, pxSize: number, color: string): string {
+    try {
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      const s = Math.round(pxSize * dpr * 1.6);
+      const canvas = document.createElement('canvas');
+      canvas.width = s;
+      canvas.height = s;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
+      ctx.fillStyle = color;
+      ctx.font = `bold ${Math.round(s * 0.78)}px "Segoe UI Symbol", "Arial Unicode MS", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(symbol, s / 2, s / 2);
+      return canvas.toDataURL('image/png');
+    } catch {
+      return '';
+    }
+  }
+
   /**
    * Strips / replaces emoji characters that Roboto cannot render so pdfmake text never shows
    * corrupted glyphs.  Full-colour emoji (U+1F000+) are removed; Misc Symbols that ARE in
@@ -3950,7 +3971,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               kpiChartItems.push({ text: 'Top Performers', fontSize: 7.5, bold: true, color: BLUE, margin: [0, 6, 0, 2] });
             }
           } else if (t.group === 'opp') {
-            const oppWarnUrl = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            const oppWarnUrl = this.renderSymbolDataUrl('\u26A0', 8, RED);
             if (oppWarnUrl) {
               kpiChartItems.push({ columns: [{ image: oppWarnUrl, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: 'Oportunidade', bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 6, 0, 2] });
             } else {
@@ -4181,7 +4202,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const sep = cleaned.indexOf(': ');
         const label = sep > -1 ? cleaned.slice(0, sep) : cleaned;
         const body = sep > -1 ? cleaned.slice(sep + 2) : '';
-        const warnUrl = this.renderEmojiDataUrl('\u26A0\uFE0F', 7);
+        const warnUrl = this.renderSymbolDataUrl('\u26A0', 7, RED);
         const labelRuns: any[] = [
           { text: label + (body ? ': ' : ''), bold: true, color: RED },
           ...(body ? [{ text: body, color: DARK }] : []),
@@ -4258,7 +4279,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
-            const idleWarnUrl1 = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            const idleWarnUrl1 = this.renderSymbolDataUrl('\u26A0', 8, RED);
             const idleText1 = `Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`;
             if (idleWarnUrl1) {
               teamItems.push({ columns: [{ image: idleWarnUrl1, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: idleText1, bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 2, 0, 2] });
@@ -4384,7 +4405,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (analysis.summary?.countSemOsAlto > 0) chips.push(`SemOS\u226510min: ${analysis.summary.countSemOsAlto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
-            const idleWarnUrl2 = this.renderEmojiDataUrl('\u26A0\uFE0F', 8);
+            const idleWarnUrl2 = this.renderSymbolDataUrl('\u26A0', 8, RED);
             const idleText2 = `Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`;
             if (idleWarnUrl2) {
               teamItems.push({ columns: [{ image: idleWarnUrl2, width: 8, height: 8, margin: [0, 0, 4, 0] }, { text: idleText2, bold: true, fontSize: 7.5, color: RED, width: '*' }], margin: [0, 2, 0, 2] });
