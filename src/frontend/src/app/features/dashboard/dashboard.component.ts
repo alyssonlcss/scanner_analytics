@@ -259,6 +259,7 @@ type SavedFilterState = {
               <div class="rpt-hero-left">
                 <h1 class="rpt-hero-title">Relatório Analítico</h1>
                 <span class="rpt-hero-meta">Gerado em {{ report.generatedAt | date:'dd/MM/yyyy HH:mm' }}</span>
+                <span *ngIf="periodRangeLabel()" class="rpt-hero-meta">Período de referência: {{ periodRangeLabel() }}</span>
                 <span class="rpt-hero-author">Autor: Alysson Pinheiro &mdash; Analista de Dados</span>
               </div>
 
@@ -3449,6 +3450,28 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const days = this.dayOptionsFromSelection(year, month);
     return days[days.length - 1] ?? 31;
   });
+  protected readonly periodRangeLabel = computed(() => {
+    const monthAbbrevToNum: Record<string, string> = {
+      jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',
+      jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
+    };
+    const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
+    const yearFilter  = this.periodFilters().find((f) => f.key === 'ano');
+    const activeMonths = (monthFilter?.value ?? [])
+      .filter((m) => m !== ALL_OPTION)
+      .map((m) => ({ abbr: m, num: monthAbbrevToNum[m] ?? '??' }))
+      .sort((a, b) => parseInt(a.num) - parseInt(b.num));
+    const activeYears = (yearFilter?.value ?? []).filter((y) => y !== ALL_OPTION).sort();
+    if (activeMonths.length === 0) return '';
+    const range = this.resolvedDayRange();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const firstYear = activeYears[0] ?? String(new Date().getFullYear());
+    const lastYear  = activeYears[activeYears.length - 1] ?? firstYear;
+    const startFull = `${pad(range.min)}/${activeMonths[0].num}/${firstYear}`;
+    const endFull   = `${pad(range.max)}/${activeMonths[activeMonths.length - 1].num}/${lastYear}`;
+    return startFull === endFull ? startFull : `${startFull} a ${endFull}`;
+  });
+
   protected readonly dayRangeStart = computed(() => {
     const limit = this.dayLimit();
     return limit > 1 ? ((this.resolvedDayRange().min - 1) / (limit - 1)) * 100 : 0;
@@ -3806,28 +3829,38 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
-    const docDef = this.buildPdfDocDef(section);
-
-    // Build date-range suffix for the filename
+    // Build date-range suffix for the filename and cover label
     const monthAbbrevToNum: Record<string, string> = {
       jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',
       jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
     };
     const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
+    const yearFilter  = this.periodFilters().find((f) => f.key === 'ano');
     const activeMonths = (monthFilter?.value ?? [])
       .filter((m) => m !== ALL_OPTION)
       .map((m) => ({ abbr: m, num: monthAbbrevToNum[m] ?? '??' }))
       .sort((a, b) => parseInt(a.num) - parseInt(b.num));
+    const activeYears = (yearFilter?.value ?? []).filter((y) => y !== ALL_OPTION).sort();
 
     const range = this.resolvedDayRange();
     const pad = (n: number): string => String(n).padStart(2, '0');
 
     let dateSuffix = '';
+    let dateRangeLabel = '';
     if (activeMonths.length > 0) {
-      const startDate = `${pad(range.min)}-${activeMonths[0].num}`;
-      const endDate = `${pad(range.max)}-${activeMonths[activeMonths.length - 1].num}`;
+      const firstMonth = activeMonths[0].num;
+      const lastMonth  = activeMonths[activeMonths.length - 1].num;
+      const firstYear  = activeYears[0] ?? String(new Date().getFullYear());
+      const lastYear   = activeYears[activeYears.length - 1] ?? firstYear;
+      const startDate  = `${pad(range.min)}-${firstMonth}`;
+      const endDate    = `${pad(range.max)}-${lastMonth}`;
       dateSuffix = ` ${startDate === endDate ? startDate : `${startDate} ao ${endDate}`}`;
+      const startFull  = `${pad(range.min)}/${firstMonth}/${firstYear}`;
+      const endFull    = `${pad(range.max)}/${lastMonth}/${lastYear}`;
+      dateRangeLabel   = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
     }
+
+    const docDef = this.buildPdfDocDef({ ...section, dateRangeLabel });
 
     const safeName = `${section.title} - ${section.subtitle}${dateSuffix}`
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -3835,8 +3868,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
   }
 
-  private buildPdfDocDef(section: { report: GeneratedReport; title: string; subtitle: string }): any {
-    const { report, title, subtitle } = section;
+  private buildPdfDocDef(section: { report: GeneratedReport; title: string; subtitle: string; dateRangeLabel?: string }): any {
+    const { report, title, subtitle, dateRangeLabel } = section;
 
     const KPI_CFG_PDF: Record<string, { worst: number; best: number; dir: 'h' | 'l'; meta: number }> = {
       'OS Dia':       { worst: 1.0,  best: 5.5,  dir: 'h', meta: 4.4 },
@@ -3886,7 +3919,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       { text: 'Relatório Analítico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
       { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
       subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
-      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] },
+      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 2] },
+      dateRangeLabel ? { text: `Período de referência: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
       { text: 'Autor: Alysson Pinheiro — Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
     ];
 
