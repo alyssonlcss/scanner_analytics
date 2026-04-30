@@ -3930,7 +3930,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         },
       ];
 
+      let _prevGroup = '';
       allTeams.forEach((t) => {
+        // ── Group separator labels ──────────────────────────────────────────
+        if (t.group !== _prevGroup) {
+          if (t.group === 'top') {
+            const trophyUrl = this.renderEmojiDataUrl('\uD83C\uDFC6', 8); // 🏆
+            if (trophyUrl) {
+              kpiChartItems.push({
+                columns: [
+                  { image: trophyUrl, width: 8, height: 8, margin: [0, 0, 4, 0] },
+                  { text: 'Top Performers', fontSize: 7.5, bold: true, color: BLUE, width: '*' },
+                ],
+                margin: [0, 6, 0, 2],
+              });
+            } else {
+              kpiChartItems.push({ text: 'Top Performers', fontSize: 7.5, bold: true, color: BLUE, margin: [0, 6, 0, 2] });
+            }
+          } else if (t.group === 'opp') {
+            kpiChartItems.push({ text: '\u26A0  Oportunidade', fontSize: 7.5, bold: true, color: RED, margin: [0, 6, 0, 2] });
+          }
+          _prevGroup = t.group;
+        }
+        // ───────────────────────────────────────────────────────────────────
         const above = t.group === 'avg' ? null : isAbove(kpi, t.value);
         const pct = barPct(t.value, kpi.kpi);
         const mlPct = metaLinePct(kpi.kpi);
@@ -4154,7 +4176,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const body = sep > -1 ? cleaned.slice(sep + 2) : '';
         return {
           text: [
-            { text: '! ', bold: true, color: RED },
+            { text: '\u26A0 ', bold: true, color: RED },
             { text: label + (body ? ': ' : ''), bold: true, color: RED },
             ...(body ? [{ text: body, color: DARK }] : []),
           ],
@@ -4256,7 +4278,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 ev.sem_os_details.forEach((d: any) => {
                   const semLabel = this.semOsDetailLabel(d);
                   const semBody = this.semOsDetailBody(d);
-                  orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                  orderItems.push({ text: [{ text: '\u203A  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
@@ -4343,7 +4365,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.idleAnalysis) {
             teamItems.push({
-              text: `Ociosidade elevada — ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
+              text: `\u26A0 Ociosidade elevada \u2014 ${analysis.idleAnalysis.idlePct?.toFixed(1)}% da jornada sem trabalho registrado`,
               fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2],
             });
             teamItems.push(chipRow([
@@ -4375,7 +4397,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               ev.sem_os_details.forEach((d: any) => {
                 const semLabel = this.semOsDetailLabel(d);
                 const semBody = this.semOsDetailBody(d);
-                orderItems.push({ text: [{ text: '\u25b8  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
+                orderItems.push({ text: [{ text: '\u203A  ' + semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [0, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
