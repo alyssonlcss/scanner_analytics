@@ -3787,10 +3787,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         next: (result) => {
           this.exportLoading.set(false);
           this.exportModalOpen.set(false);
-          const subtitle = [
-            filters.teams?.join(', ') || filters.bases?.join(', ') || 'Todas as Bases',
-            filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
-          ].join(' · ');
+          const hasTeams = filters.teams && filters.teams.length > 0;
+          const subtitle = hasTeams
+            ? filters.teams!.join(', ')
+            : [
+                filters.bases?.join(', ') || 'Todas as Bases',
+                filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
+              ].join(' · ');
           this.openPdfWindow({ report: result.generatedReport, title: 'Relatório Atual', subtitle });
         },
         error: () => {
