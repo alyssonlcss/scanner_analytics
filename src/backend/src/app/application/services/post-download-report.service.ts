@@ -130,6 +130,7 @@ interface TempSemOsRow {
 
 interface OsDiaOrderEvidence {
   source: string;
+  date_ref?: string;
   nr_ordem: string;
   classe: string;
   causa: string;
@@ -197,6 +198,7 @@ interface OsDiaTeamAnalysis {
 
 interface EficienciaOrderEvidence {
   nr_ordem: string;
+  date_ref?: string;
   classe: string;
   causa: string;
   despachada: string;
@@ -235,6 +237,7 @@ interface EficienciaTeamAnalysis {
 
 interface UtilizacaoOrderEvidence {
   nr_ordem: string;
+  date_ref?: string;
   classe: string;
   causa: string;
   despachada: string;
@@ -2345,6 +2348,7 @@ export class PostDownloadReportService {
 
         evidences.push({
           source:           'Scanner 4.4 - CE M300',
+          date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
           nr_ordem:          nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim()         : '',
           classe:            classeCol  ? String(row[classeCol]  ?? '').trim()         : '',
           causa:             causaCol   ? String(row[causaCol]   ?? '').trim()         : '',
@@ -2418,6 +2422,7 @@ export class PostDownloadReportService {
           const prevRow = i > 0 ? ordered[i - 1] : null;
           evidences.push({
             source:           'Scanner 4.4 - CE M300',
+            date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
             nr_ordem:          lastNrOrdem,
             classe:            classeCol  ? String(row[classeCol]  ?? '').trim() : '',
             causa:             causaCol   ? String(row[causaCol]   ?? '').trim() : '',
@@ -2861,6 +2866,7 @@ export class PostDownloadReportService {
 
           if (orderFlags.length > 0) {
             flaggedOrders.push({
+              date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
               nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
               classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
               causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
@@ -2882,6 +2888,7 @@ export class PostDownloadReportService {
             trMin !== null && Number.isFinite(trMin) && trMin > 0;
           if (isTpVazio) {
             tempoPadraoVazioOrders.push({
+              date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
               nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
               classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
               causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
@@ -3351,6 +3358,7 @@ export class PostDownloadReportService {
         const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
 
         evidences.push({
+          date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
           nr_ordem:          nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim()         : '',
           classe:            classeCol  ? String(row[classeCol]  ?? '').trim()         : '',
           causa:             causaCol   ? String(row[causaCol]   ?? '').trim()         : '',
@@ -3420,6 +3428,7 @@ export class PostDownloadReportService {
           const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
           const prevRow = i > 0 ? ordered[i - 1] : null;
           evidences.push({
+            date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
             nr_ordem:          lastNrOrdem,
             classe:            classeCol ? String(row[classeCol] ?? '').trim() : '',
             causa:             causaCol  ? String(row[causaCol]  ?? '').trim() : '',

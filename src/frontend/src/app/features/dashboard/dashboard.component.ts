@@ -508,7 +508,7 @@ type SavedFilterState = {
                             <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
                               <!-- Header: ordem + alertas -->
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                               </div>
                               <!-- Causa -->
@@ -657,7 +657,7 @@ type SavedFilterState = {
                           <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
                             <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ eficienciaFlagLabel(f) }}</span>
                               </div>
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
@@ -773,7 +773,7 @@ type SavedFilterState = {
                             <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
                               <!-- Header: ordem + alertas -->
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                               </div>
                               <!-- Causa -->
@@ -902,8 +902,7 @@ type SavedFilterState = {
                       <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0; else noTmeImpEvidence">
                         <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
                           <div class="osdia-ev-header">
-                            <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
-                            <span class="rpt-osdia-flag rpt-osdia-flag--date" *ngIf="ev.date_ref">{{ ev.date_ref }}</span>
+                            <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ tmeImpFlagLabel(f) }}</span>
                           </div>
                           <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
@@ -4348,7 +4347,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       // Order header: OS number + flag chips with pipe separator on the same line.
       const orderHead = (nr_ordem: string, flags: string[], labelFn: (f: string) => string, extra?: string): any => ({
         text: [
-          { text: `OS ${nr_ordem}${extra ? '   ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
+          { text: `OS ${nr_ordem}${extra ? ' | ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
           { text: '    ', fontSize: 7 },
           ...flags.flatMap((f, i) => [
             ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
@@ -4483,7 +4482,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
                 });
               }
-              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
+              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f), ev.date_ref || undefined)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
               teamItems.push({ stack: orderBlock, unbreakable: true });
               if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
@@ -4532,7 +4531,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${this.eficienciaAlertBody('deslocamento_curto', ev, analysis)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${this.eficienciaAlertBody('tr_excede_hd', ev, analysis)}`));
             if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${this.eficienciaAlertBody('tempo_padrao_vazio', ev, analysis)}`));
-            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.eficienciaFlagLabel(f))];
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.eficienciaFlagLabel(f), ev.date_ref || undefined)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
@@ -4605,7 +4604,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
-            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f))];
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.osDiaFlagLabel(f), ev.date_ref || undefined)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());

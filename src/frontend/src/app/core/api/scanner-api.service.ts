@@ -71,6 +71,7 @@ export interface ReportActionPlan {
 
 export interface OsDiaOrderEvidence {
   source: string;
+  date_ref?: string;
   nr_ordem: string;
   classe: string;
   causa: string;
@@ -138,6 +139,7 @@ export interface OsDiaTeamAnalysis {
 
 export interface EficienciaOrderEvidence {
   nr_ordem: string;
+  date_ref?: string;
   classe: string;
   causa: string;
   despachada: string;
@@ -176,6 +178,7 @@ export interface EficienciaTeamAnalysis {
 
 export interface UtilizacaoOrderEvidence {
   nr_ordem: string;
+  date_ref?: string;
   classe: string;
   causa: string;
   despachada: string;
