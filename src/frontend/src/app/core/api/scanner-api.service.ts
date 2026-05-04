@@ -396,7 +396,8 @@ export interface ExecutiveSummary {
   }>;
   topActionIssues: string[];
   idleHighlight: string | null;
-  heWithIdleCount: number;
+  retornoBaseAlertCount: number;
+  tmeImpAlertCount: number;
 }
 
 export interface GeneratedReport {

@@ -394,8 +394,11 @@ type SavedFilterState = {
                     <div class="exec-badge exec-badge--yellow" *ngIf="es.idleHighlight">
                       <span>⏳</span><span>{{ es.idleHighlight }}</span>
                     </div>
-                    <div class="exec-badge exec-badge--red" *ngIf="es.heWithIdleCount > 0">
-                      <span>⚠</span><span>{{ es.heWithIdleCount }} equipe(s) com H.E. e ociosidade simultânea</span>
+                    <div class="exec-badge exec-badge--red" *ngIf="es.retornoBaseAlertCount > 0">
+                      <span>⚠</span><span>{{ es.retornoBaseAlertCount }} eq. Retorno Base > meta</span>
+                    </div>
+                    <div class="exec-badge exec-badge--red" *ngIf="es.tmeImpAlertCount > 0">
+                      <span>⚠</span><span>{{ es.tmeImpAlertCount }} eq. TME IMP > meta</span>
                     </div>
                   </div>
                 </div>
@@ -497,7 +500,7 @@ type SavedFilterState = {
                             </div>
                             <div class="osdia-idle-metrics">
                               <span class="osdia-idle-chip osdia-idle-chip--hd">HD Médio/dia <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
-                              <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--prep">Temp. Partida Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem Médio/dia <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
@@ -762,7 +765,7 @@ type SavedFilterState = {
                             </div>
                             <div class="osdia-idle-metrics">
                               <span class="osdia-idle-chip osdia-idle-chip--hd">HD Médio/dia <strong>{{ analysis.hdTotalMin | number:'1.0-0' }} min</strong></span>
-                              <span class="osdia-idle-chip osdia-idle-chip--prep">TempPrep Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
+                              <span class="osdia-idle-chip osdia-idle-chip--prep">Temp. Partida Médio/dia <strong>{{ analysis.tempPrepTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--sem">SemOrdem Médio/dia <strong>{{ analysis.semOrdemTotalMin | number:'1.0-0' }} min</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--idle">Ocioso Médio/dia <strong>{{ analysis.idleAnalysis.idleMin | number:'1.0-0' }} min ({{ analysis.idleAnalysis.idlePct | number:'1.1-1' }}%) — limite: 10%</strong></span>
                               <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
@@ -2478,9 +2481,10 @@ type SavedFilterState = {
       .exec-badges {
         display: flex;
         gap: 6px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         flex: 1;
         min-width: 0;
+        overflow: hidden;
       }
 
       .exec-badge {
@@ -2497,6 +2501,7 @@ type SavedFilterState = {
         box-sizing: border-box;
         text-align: left;
         max-width: 100%;
+        white-space: nowrap;
       }
 
       .exec-badge--yellow {
@@ -4090,6 +4095,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const shortLabel = (s: string): string => s.split(':')[0].trim();
         content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
       }
+      const alertBadges: string[] = [];
+      if (es.retornoBaseAlertCount > 0) alertBadges.push(`⚠ ${es.retornoBaseAlertCount} equipe(s) com Retorno a Base acima da meta`);
+      if (es.tmeImpAlertCount > 0) alertBadges.push(`⚠ ${es.tmeImpAlertCount} equipe(s) com TME IMP acima da meta`);
+      if (alertBadges.length > 0) {
+        content.push({ text: `ALERTAS: ${alertBadges.join('   ')}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 6, 0, 0] });
+      }
       content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 16, 0, 0], pageBreak: 'after' });
     }
 
@@ -4451,7 +4462,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             teamItems.push(chipRow([
               `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
               `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
               `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
               ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
@@ -4577,7 +4588,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             teamItems.push(chipRow([
               `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `TempPrep Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
               `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
               `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
               ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
