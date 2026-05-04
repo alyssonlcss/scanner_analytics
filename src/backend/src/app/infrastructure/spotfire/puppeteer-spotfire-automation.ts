@@ -212,7 +212,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           }, req);
 
           // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
-          if (req.periodSelection?.dayRange) {
+          if (req.periodSelection?.dayRange || req.periodSelection?.monthDayRanges) {
             await this.withSpotfireRecovery(page, async () => {
               await this.raceAbort(
                 this.applyDataReferenciaFilter(page, req.periodSelection!, req),
@@ -4469,8 +4469,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       return [];
     }
 
-    const minDay = periodSelection.dayRange?.min ?? 1;
-    const maxDay = periodSelection.dayRange?.max ?? 31;
     const dates: string[] = [];
 
     for (const yearStr of years) {
@@ -4478,8 +4476,14 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       if (Number.isNaN(year)) continue;
 
       for (const monthStr of months) {
-        const monthIndex = MONTH_OPTIONS.indexOf(monthStr.toLowerCase());
+        const monthKey = monthStr.toLowerCase();
+        const monthIndex = MONTH_OPTIONS.indexOf(monthKey);
         if (monthIndex === -1) continue;
+
+        // Per-month range takes precedence over the global dayRange
+        const range = periodSelection.monthDayRanges?.[monthKey] ?? periodSelection.dayRange;
+        const minDay = range?.min ?? 1;
+        const maxDay = range?.max ?? 31;
 
         for (let day = minDay; day <= maxDay; day += 1) {
           const d = new Date(year, monthIndex, day);
