@@ -107,6 +107,25 @@ type SavedFilterState = {
       <ng-container *ngIf="filtersVisible()">
         <header class="report-filter-bar" [class.report-filter-bar-hidden]="reportBarHidden()">
           <div class="report-filter-groups">
+            <div class="rf-chip" (click)="toggleDropdown('reportType', $event)">
+              <span class="rf-chip-label">Tipo de Relatório</span>
+              <span class="rf-chip-value">{{ reportTypeLabel() }}</span>
+              <svg class="rf-chip-arrow" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="rf-dropdown" *ngIf="openDropdownKey() === 'reportType'" (click)="$event.stopPropagation()">
+                <div class="rf-dropdown-list">
+                  <button *ngFor="let option of reportTypeOptions"
+                          class="rf-dropdown-option"
+                          [class.rf-dropdown-option-active]="reportType() === option.value"
+                          type="button"
+                          (click)="$event.stopPropagation(); updateReportType(option.value)">
+                    <span class="rf-opt-check" *ngIf="reportType() === option.value">
+                      <svg viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
             <div class="rf-chip" *ngFor="let filter of reportFilterStates(); trackBy: trackByReportFilterKey"
                  (click)="toggleDropdown(filter.key, $event)">
               <span class="rf-chip-label">{{ filter.title }}</span>
@@ -154,23 +173,6 @@ type SavedFilterState = {
           </div>
 
           <div class="drawer-body">
-            <article class="drawer-card">
-              <div class="drawer-card-head">
-                <h3>Tipo de Relatório</h3>
-              </div>
-
-              <span class="select-caption">Valor ativo</span>
-              <div class="option-list" role="listbox" aria-label="Tipo de Relatório">
-                <button
-                  type="button"
-                  class="option-item"
-                  *ngFor="let option of reportTypeOptions"
-                  [class.option-item-active]="reportType() === option.value"
-                  (click)="updateReportType(option.value)">
-                  {{ option.label }}
-                </button>
-              </div>
-            </article>
 
             <article class="drawer-card drawer-card-period">
               <div class="drawer-card-head">
@@ -3433,7 +3435,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly reportType = signal<ReportTypeValue>('operacional');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
   protected readonly reportFilterStates = signal<ReportSelectFilterState[]>([]);
-  protected readonly openDropdownKey = signal<ReportFilterKey | null>(null);
+  protected readonly openDropdownKey = signal<string | null>(null);
   protected readonly dropdownSearch = signal('');
   protected readonly dayRange = signal({ min: 1, max: 31 });
   protected readonly resolvedDayRange = computed(() => {
@@ -3441,6 +3443,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return { min: Math.min(r.min, r.max), max: Math.max(r.min, r.max) };
   });
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
+  protected readonly reportTypeLabel = computed(() => {
+    const opt = this.reportTypeOptions.find((o) => o.value === this.reportType());
+    return opt ? opt.label : 'Operacional';
+  });
   protected readonly filtersVisible = computed(() => this.selectFilters().length > 0);
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
@@ -5108,7 +5114,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.toggleReportFilterOption(key, value);
   }
 
-  protected toggleDropdown(key: ReportFilterKey, event: Event): void {
+  protected toggleDropdown(key: string, event: Event): void {
     event.stopPropagation();
     if (this.openDropdownKey() === key) {
       this.openDropdownKey.set(null);
