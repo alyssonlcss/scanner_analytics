@@ -15,7 +15,7 @@ import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
-type ReportTypeValue = 'operacional';
+type ReportTypeValue = 'operacional' | 'analitico';
 type ReportFilterKey = 'reportBase' | 'reportTipoEquipe' | 'reportEquipe';
 
 type SelectFilterState = {
@@ -70,6 +70,10 @@ const REPORT_TYPE_OPTIONS: ReportTypeOption[] = [
   {
     value: 'operacional',
     label: 'Operacional',
+  },
+  {
+    value: 'analitico',
+    label: 'Analítico',
   },
 ];
 
@@ -344,6 +348,9 @@ type SavedFilterState = {
                 </div>
               </ng-container>
             </div>
+
+            <!-- ======= MODO OPERACIONAL ======= -->
+            <ng-container *ngIf="reportType() === 'operacional'">
 
             <!-- TOC Scroll Spy sidebar -->
             <app-toc-nav [kpis]="report.kpis" />
@@ -1264,6 +1271,199 @@ type SavedFilterState = {
                 </div>
               </div>
             </section>
+
+            </ng-container><!-- /operacional -->
+
+            <!-- ======= MODO ANALÍTICO ======= -->
+            <ng-container *ngIf="reportType() === 'analitico'">
+
+              <!-- TOC sidebar — mesmo sistema do modo operacional -->
+              <app-toc-nav [kpis]="report.kpis" />
+
+              <!-- Gráfico multi-linha por KPI -->
+              <section class="analytic-kpi-section anim-el" [id]="'kpi-' + i" *ngFor="let kpi of report.kpis; let i = index">
+                <ng-container *ngIf="analyticChartData(kpi) as cd">
+                <div class="analytic-kpi-header">
+                  <div class="analytic-kpi-title-row">
+                    <h2 class="analytic-kpi-title">{{ kpi.kpi }}</h2>
+                    <span class="analytic-kpi-dir-badge"
+                          [class.analytic-kpi-dir-badge--up]="kpi.direction === 'higher-is-better'"
+                          [class.analytic-kpi-dir-badge--down]="kpi.direction !== 'higher-is-better'">
+                      {{ kpi.direction === 'higher-is-better' ? '↑ Maior é melhor' : '↓ Menor é melhor' }}
+                    </span>
+                  </div>
+                  <div class="analytic-kpi-meta-row">
+                    <div class="analytic-kpi-chips">
+                      <span class="analytic-kpi-chip">Meta <strong>{{ kpi.metaTarget }}</strong></span>
+                      <span class="analytic-kpi-chip">Média <strong>{{ kpi.average }}</strong></span>
+                      <span class="analytic-kpi-chip">Acima da meta <strong>{{ kpi.topTeams.length }}/{{ kpi.scores.length }}</strong></span>
+                    </div>
+                    <!-- Gaveta de equipes (popover) -->
+                    <div class="ac-drawer" [class.ac-drawer--open]="analyticLegendOpen()[i]">
+                      <button type="button" class="ac-drawer-toggle" (click)="toggleAnalyticLegend(i)">
+                        <svg class="ac-drawer-toggle-icon" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span class="ac-drawer-toggle-label">Equipes</span>
+                        <span class="ac-drawer-count">{{ cd.lines.length }}</span>
+                      </button>
+                      <div class="ac-drawer-body">
+                        <div class="ac-drawer-search-wrap">
+                          <svg class="ac-drawer-search-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none">
+                            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.4"/>
+                            <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                          </svg>
+                          <input class="ac-drawer-search"
+                                 type="text"
+                                 placeholder="Buscar equipe..."
+                                 [value]="analyticSearch()[i] ?? ''"
+                                 (input)="setAnalyticSearch(i, $any($event.target).value)" />
+                        </div>
+                        <div class="ac-legend-scroll">
+                          <div class="ac-legend">
+                            <button *ngFor="let line of filterAnalyticLines(cd.lines, i)"
+                                    type="button"
+                                    class="ac-legend-item"
+                                    [class.ac-legend-item--active]="analyticSelectedTeam() === line.team"
+                                    [class.ac-legend-item--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
+                                    [style.--lc]="line.color"
+                                    (click)="toggleAnalyticTeam(line.team)">
+                              <span class="ac-legend-dot"></span>
+                              <span class="ac-legend-name">{{ line.team }}</span>
+                              <span class="ac-legend-val"
+                                    [class.ac-legend-val--above]="line.above"
+                                    [class.ac-legend-val--below]="!line.above">{{ line.displayValue }}</span>
+                            </button>
+                            <p class="ac-legend-empty" *ngIf="filterAnalyticLines(cd.lines, i).length === 0">Nenhuma equipe encontrada.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                  <!-- SVG chart -->
+                  <div class="analytic-chart-wrap">
+                    <svg class="analytic-chart-svg" [attr.viewBox]="cd.viewBox" preserveAspectRatio="xMidYMid meet">
+                      <!-- Grid + Y axis -->
+                      <ng-container *ngFor="let tick of cd.yTicks">
+                        <line [attr.x1]="cd.padLeft" [attr.y1]="tick.y" [attr.x2]="cd.chartRight" [attr.y2]="tick.y" class="ac-grid" />
+                        <text [attr.x]="cd.padLeft - 6" [attr.y]="tick.y + 4" class="ac-y-label" text-anchor="end">{{ tick.label }}</text>
+                      </ng-container>
+                      <!-- X axis day labels -->
+                      <ng-container *ngFor="let day of cd.days">
+                        <text [attr.x]="day.x" [attr.y]="cd.labelBaseY" class="ac-x-label" text-anchor="middle">{{ day.label }}</text>
+                      </ng-container>
+                      <!-- Meta line dashed -->
+                      <line [attr.x1]="cd.padLeft" [attr.y1]="cd.metaY" [attr.x2]="cd.chartRight" [attr.y2]="cd.metaY" class="ac-meta-line" />
+                      <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.metaY + 4" class="ac-meta-label">Meta</text>
+                      <!-- One polyline + dots per team -->
+                      <ng-container *ngFor="let line of cd.lines">
+                        <polyline
+                          [attr.points]="line.polyline"
+                          class="ac-line"
+                          [attr.stroke]="line.color"
+                          [class.ac-line--active]="analyticSelectedTeam() === line.team"
+                          [class.ac-line--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
+                          (click)="toggleAnalyticTeam(line.team)" />
+                        <!-- invisible wider hit area -->
+                        <polyline
+                          [attr.points]="line.polyline"
+                          class="ac-line-hit"
+                          (click)="toggleAnalyticTeam(line.team)" />
+                        <ng-container *ngFor="let pt of line.points">
+                          <circle
+                            [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 5 : 3.5"
+                            [attr.fill]="line.color"
+                            [class.ac-pt]="true"
+                            [class.ac-pt--flagged]="pt.flagged"
+                            [class.ac-pt--active]="analyticSelectedTeam() === line.team"
+                            [class.ac-pt--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
+                            (click)="selectAnalyticPoint(line.team, pt.dayIndex, $event)">
+                            <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ line.displayValue }}{{ pt.flagged ? ' ⚠' : '' }}</title>
+                          </circle>
+                        </ng-container>
+                      </ng-container>
+                    </svg>
+                  </div>
+
+                  <!-- Painel de desvios da equipe selecionada -->
+                  <div class="ac-deviation-panel" *ngIf="analyticSelectedTeam() !== null">
+                    <ng-container *ngFor="let line of cd.lines">
+                      <ng-container *ngIf="line.team === analyticSelectedTeam()">
+                        <div class="ac-dev-header">
+                          <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
+                          <span class="ac-dev-kpi-val" [class.ac-dev-kpi-val--above]="line.above" [class.ac-dev-kpi-val--below]="!line.above">
+                            {{ kpi.kpi }}: <strong>{{ line.displayValue }}</strong>
+                          </span>
+                          <span class="ac-dev-meta">Meta: {{ kpi.metaTarget }}</span>
+                          <button type="button" class="ac-dev-close" (click)="toggleAnalyticTeam(line.team)" aria-label="Fechar">✕</button>
+                        </div>
+                        <ng-container *ngIf="line.deviations.length > 0; else noDeviations">
+                          <div class="ac-dev-list">
+                            <div class="ac-dev-item" *ngFor="let dev of line.deviations">
+                              <div class="ac-dev-item-head">
+                                <span class="ac-dev-day">Dia {{ dev.dateRef }}</span>
+                                <span class="ac-dev-flag" *ngFor="let f of dev.flags">{{ f }}</span>
+                              </div>
+                              <div class="ac-dev-item-detail" *ngIf="dev.detail">{{ dev.detail }}</div>
+                            </div>
+                          </div>
+                        </ng-container>
+                        <ng-template #noDeviations>
+                          <p class="ac-dev-ok">✅ Nenhum desvio registrado para esta equipe neste KPI.</p>
+                        </ng-template>
+                      </ng-container>
+                    </ng-container>
+                  </div>
+                </ng-container>
+              </section>
+
+              <!-- Ranking gerencial -->
+              <section class="analytic-ranking anim-el" *ngIf="report.teamScorecard && report.teamScorecard.length > 0">
+                <h2 class="analytic-section-title">Ranking Gerencial de Equipes</h2>
+                <p class="analytic-section-desc">Consolidação de todos os KPIs por equipe no período. Status derivado do número de indicadores abaixo da meta.</p>
+                <div class="analytic-table-wrap">
+                  <table class="analytic-table">
+                    <thead>
+                      <tr>
+                        <th class="an-th an-th-rank">Rank</th>
+                        <th class="an-th an-th-team">Equipe / Supervisor</th>
+                        <th class="an-th">Dias</th>
+                        <th class="an-th">Score</th>
+                        <th class="an-th">KPIs &lt; Meta</th>
+                        <th class="an-th">Status Gerencial</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="an-row"
+                          *ngFor="let row of report.teamScorecard"
+                          [class.an-row--ok]="row.kpisBelowMeta === 0"
+                          [class.an-row--warn]="row.kpisBelowMeta > 0 && row.kpisBelowMeta <= 2"
+                          [class.an-row--critical]="row.kpisBelowMeta >= 3">
+                        <td class="an-td an-td-center">{{ row.classificacao ?? '—' }}</td>
+                        <td class="an-td an-td-team">{{ row.team }}</td>
+                        <td class="an-td an-td-center">{{ row.diasTrabalhados ?? '—' }}</td>
+                        <td class="an-td an-td-center an-td-score"
+                            [class.an-score--good]="row.score >= 6"
+                            [class.an-score--mid]="row.score >= 4 && row.score < 6"
+                            [class.an-score--bad]="row.score < 4">
+                          {{ row.score }}/7
+                        </td>
+                        <td class="an-td an-td-center">{{ row.kpisBelowMeta }}</td>
+                        <td class="an-td">
+                          <span class="an-status"
+                                [class.an-status--ok]="row.kpisBelowMeta === 0"
+                                [class.an-status--warn]="row.kpisBelowMeta > 0 && row.kpisBelowMeta <= 2"
+                                [class.an-status--critical]="row.kpisBelowMeta >= 3">
+                            {{ row.kpisBelowMeta === 0 ? '▲ Estável' : row.kpisBelowMeta <= 2 ? '▬ Oscilante' : '▼ Crítico' }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+            </ng-container><!-- /analitico -->
 
           </ng-container>
 
@@ -3401,6 +3601,520 @@ type SavedFilterState = {
         .kpi-cr-team { display: none; }
       }
 
+      /* ======================================
+         ANALYTIC VIEW
+         ====================================== */
+
+      .analytic-kpi-section {
+        background: var(--glass);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px 22px 18px;
+        margin-bottom: 24px;
+        backdrop-filter: blur(8px);
+      }
+
+      .analytic-kpi-header {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .analytic-kpi-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .analytic-kpi-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+        margin: 0;
+      }
+
+      .analytic-kpi-dir-badge {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 9px;
+        border-radius: 20px;
+        letter-spacing: .03em;
+      }
+
+      .analytic-kpi-dir-badge--up   { background: var(--green-bg); color: var(--green); }
+      .analytic-kpi-dir-badge--down { background: var(--red-bg);   color: var(--accent); }
+
+      .analytic-kpi-meta-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        position: relative;
+      }
+
+      .analytic-kpi-chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .analytic-kpi-chip {
+        font-size: 12px;
+        color: var(--muted-strong);
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 3px 10px;
+      }
+
+      /* ── Drawer de equipes (popover) ── */
+      .ac-drawer {
+        position: relative;
+        flex-shrink: 0;
+        width: 200px;
+      }
+
+      .ac-drawer-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 5px 10px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: inherit;
+        color: var(--muted-strong);
+        transition: background .12s, border-color .12s, border-radius .12s;
+        user-select: none;
+      }
+
+      .ac-drawer-toggle:hover { background: var(--glass-hover); border-color: var(--muted); }
+
+      .ac-drawer--open .ac-drawer-toggle {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-bottom-color: transparent;
+      }
+
+      .ac-drawer-toggle-label { flex: 1; text-align: left; color: var(--text); }
+
+      .ac-drawer-toggle-icon {
+        width: 9px;
+        height: 5px;
+        flex-shrink: 0;
+        transition: transform .18s ease;
+        color: var(--muted);
+      }
+
+      .ac-drawer--open .ac-drawer-toggle-icon { transform: rotate(180deg); }
+
+      .ac-drawer-count {
+        font-size: 10px;
+        background: var(--border);
+        border-radius: 20px;
+        padding: 1px 6px;
+        font-weight: 700;
+        color: var(--muted-strong);
+        line-height: 1.4;
+      }
+
+      .ac-drawer-body {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+        z-index: 200;
+        background: var(--bg-2);
+        border: 1px solid var(--accent);
+        border-top: none;
+        border-radius: 0 0 7px 7px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.12);
+        padding: 7px 7px 8px;
+      }
+
+      .ac-drawer--open .ac-drawer-body { display: block; }
+
+      /* ── Search ── */
+      .ac-drawer-search-wrap {
+        position: relative;
+        margin-bottom: 6px;
+      }
+
+      .ac-drawer-search-icon {
+        position: absolute;
+        left: 7px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 11px;
+        height: 11px;
+        color: var(--muted);
+        pointer-events: none;
+      }
+
+      .ac-drawer-search {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 4px 7px 4px 23px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 11px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color .15s;
+      }
+
+      .ac-drawer-search::placeholder { color: var(--muted); }
+      .ac-drawer-search:focus { border-color: var(--accent); }
+
+      /* ── Scrollable list ── */
+      .ac-legend-scroll {
+        max-height: calc(7 * 28px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+
+      .ac-legend-empty {
+        font-size: 11px;
+        color: var(--muted);
+        padding: 4px 2px 0;
+        margin: 0;
+      }
+
+      /* ── Legend rows ── */
+      .ac-legend {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .ac-legend-item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 5px;
+        border: none;
+        border-left: 3px solid var(--lc, #888);
+        padding: 4px 8px;
+        height: 27px;
+        gap: 7px;
+        background: transparent;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: inherit;
+        color: var(--text);
+        transition: opacity .15s, background .15s;
+      }
+
+      .ac-legend-item:hover         { background: rgba(0,0,0,.05); }
+      .ac-legend-item--active       { background: color-mix(in srgb, var(--lc, #888) 12%, transparent); }
+      .ac-legend-item--faded        { opacity: .28; }
+
+      .ac-legend-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--lc, #888);
+        flex-shrink: 0;
+      }
+
+      .ac-legend-name {
+        flex: 1;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+      }
+
+      .ac-legend-val {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 5px;
+        border-radius: 10px;
+      }
+
+      .ac-legend-val--above { background: var(--green-bg);  color: var(--green); }
+      .ac-legend-val--below { background: var(--red-bg);    color: var(--accent); }
+
+      /* ── SVG ── */
+      .analytic-chart-wrap {
+        width: 100%;
+        overflow-x: auto;
+      }
+
+      .analytic-chart-svg {
+        display: block;
+        width: 100%;
+        min-width: 420px;
+        height: auto;
+      }
+
+      .ac-grid {
+        stroke: var(--border);
+        stroke-width: 1;
+        fill: none;
+      }
+
+      .ac-y-label, .ac-x-label {
+        font-size: 9px;
+        fill: var(--muted-strong);
+        font-family: inherit;
+      }
+
+      .ac-meta-line {
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-dasharray: 5 3;
+        fill: none;
+      }
+
+      .ac-meta-label {
+        font-size: 9px;
+        fill: var(--accent);
+        font-weight: 700;
+        font-family: inherit;
+      }
+
+      .ac-line {
+        fill: none;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        cursor: pointer;
+        transition: opacity .15s, stroke-width .15s;
+      }
+
+      .ac-line--active { stroke-width: 3; }
+      .ac-line--faded  { opacity: .18; }
+
+      .ac-line-hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        cursor: pointer;
+      }
+
+      .ac-pt {
+        stroke: white;
+        stroke-width: 1.5;
+        cursor: pointer;
+        transition: opacity .15s, r .1s;
+      }
+
+      .ac-pt--flagged {
+        stroke: white;
+        stroke-width: 2;
+        filter: drop-shadow(0 0 3px currentColor);
+      }
+
+      .ac-pt--faded { opacity: .18; }
+
+      /* ── Deviation panel ── */
+      .ac-deviation-panel {
+        margin-top: 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--surface-strong);
+      }
+
+      .ac-dev-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+
+      .ac-dev-team {
+        font-weight: 700;
+        font-size: 13px;
+        border-left: 4px solid;
+        padding-left: 8px;
+      }
+
+      .ac-dev-kpi-val {
+        font-size: 13px;
+        color: var(--muted-strong);
+      }
+
+      .ac-dev-kpi-val--above strong { color: var(--green); }
+      .ac-dev-kpi-val--below strong { color: var(--accent); }
+
+      .ac-dev-meta {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .ac-dev-close {
+        margin-left: auto;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: var(--muted);
+        padding: 2px 6px;
+        border-radius: 6px;
+        transition: background .12s;
+      }
+
+      .ac-dev-close:hover { background: var(--border); }
+
+      .ac-dev-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .ac-dev-item {
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .ac-dev-item:last-child { border-bottom: none; }
+
+      .ac-dev-item-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 3px;
+      }
+
+      .ac-dev-day {
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      .ac-dev-flag {
+        font-size: 10px;
+        font-weight: 700;
+        background: var(--red-bg);
+        color: var(--accent);
+        border-radius: 8px;
+        padding: 1px 7px;
+      }
+
+      .ac-dev-item-detail {
+        font-size: 11px;
+        color: var(--muted-strong);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .ac-dev-ok {
+        padding: 12px 14px;
+        font-size: 13px;
+        color: var(--green);
+        margin: 0;
+      }
+
+      /* Ranking table */
+      .analytic-ranking { margin-bottom: 32px; }
+
+      .analytic-section-title {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text);
+        margin: 0 0 4px;
+      }
+
+      .analytic-section-desc {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 14px;
+      }
+
+      .analytic-table-wrap {
+        overflow-x: auto;
+        border-radius: 12px;
+        box-shadow: 0 1px 8px rgba(0,0,0,.06);
+        border: 1px solid var(--border);
+      }
+
+      .analytic-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      .an-th {
+        background: rgba(255,255,255,.55);
+        padding: 10px 14px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: var(--muted-strong);
+        white-space: nowrap;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+
+      .an-th-rank  { width: 54px; text-align: center; }
+      .an-th-team  { min-width: 160px; }
+
+      .an-row {
+        border-bottom: 1px solid var(--border);
+        transition: background .12s;
+      }
+
+      .an-row:last-child { border-bottom: none; }
+      .an-row:hover { background: var(--glass-hover); }
+
+      .an-row--ok       { border-left: 3px solid var(--green); }
+      .an-row--warn     { border-left: 3px solid #d97706; }
+      .an-row--critical { border-left: 3px solid var(--accent); }
+
+      .an-td {
+        padding: 10px 14px;
+        color: var(--text);
+        background: transparent;
+      }
+
+      .an-td-center { text-align: center; }
+      .an-td-team   { font-weight: 600; }
+      .an-td-score  { font-weight: 700; }
+
+      .an-score--good { color: var(--green); }
+      .an-score--mid  { color: #d97706; }
+      .an-score--bad  { color: var(--accent); }
+
+      .an-status {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .an-status--ok       { background: var(--green-bg);      color: var(--green); }
+      .an-status--warn     { background: rgba(217,119,6,.1);   color: #b45309; }
+      .an-status--critical { background: var(--red-bg);        color: var(--accent); }
+
+      /* ====================================== */
+
       @media print {
         .filter-drawer, .filter-fab, .report-filter-bar,
         .rpt-export-btn, .drawer-backdrop,
@@ -4951,6 +5665,225 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.reportType.set(value as ReportTypeValue);
     this.saveToStorage();
+  }
+
+  // ─── Analytic mode state ───────────────────────────────────────────────────
+  protected readonly analyticSelectedTeam = signal<string | null>(null);
+  protected readonly analyticLegendOpen = signal<Record<number, boolean>>({});
+  protected readonly analyticSearch = signal<Record<number, string>>({});
+
+  protected toggleAnalyticLegend(index: number): void {
+    this.analyticLegendOpen.update((cur) => ({ ...cur, [index]: !cur[index] }));
+  }
+
+  protected setAnalyticSearch(index: number, value: string): void {
+    this.analyticSearch.update((cur) => ({ ...cur, [index]: value }));
+  }
+
+  protected filterAnalyticLines(
+    lines: Array<{ team: string; color: string; above: boolean; displayValue: string; polyline: string; points: Array<{ x: number; y: number; dayIndex: number; dayLabel: string; flagged: boolean }>; deviations: Array<{ dateRef: string; flags: string[]; detail: string }> }>,
+    index: number,
+  ) {
+    const q = (this.analyticSearch()[index] ?? '').trim().toLowerCase();
+    return q ? lines.filter((l) => l.team.toLowerCase().includes(q)) : lines;
+  }
+
+  protected toggleAnalyticTeam(team: string): void {
+    this.analyticSelectedTeam.update((cur) => (cur === team ? null : team));
+  }
+
+  protected selectAnalyticPoint(team: string, _dayIndex: number, ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.analyticSelectedTeam.update((cur) => (cur === team ? null : team));
+  }
+
+  private static readonly CHART_COLORS = [
+    '#2563eb', '#c0122d', '#16a34a', '#d97706', '#7c3aed',
+    '#0891b2', '#db2777', '#65a30d', '#ea580c', '#6366f1',
+    '#0d9488', '#b45309', '#9333ea', '#0284c7', '#dc2626',
+    '#059669', '#d97706', '#4f46e5',
+  ];
+
+  protected analyticChartData(kpi: GeneratedReport['kpis'][number]): {
+    lines: Array<{
+      team: string;
+      color: string;
+      above: boolean;
+      displayValue: string;
+      polyline: string;
+      points: Array<{ x: number; y: number; dayIndex: number; dayLabel: string; flagged: boolean }>;
+      deviations: Array<{ dateRef: string; flags: string[]; detail: string }>;
+    }>;
+    days: Array<{ x: number; label: string }>;
+    metaY: number;
+    yTicks: Array<{ y: number; label: string }>;
+    padLeft: number;
+    chartRight: number;
+    labelBaseY: number;
+    viewBox: string;
+  } {
+    const padLeft = 46, padRight = 52, padTop = 22, padBottom = 44;
+    const svgW = 680, svgH = 230;
+    const chartW = svgW - padLeft - padRight;
+    const chartH = svgH - padTop - padBottom;
+    const chartRight = padLeft + chartW;
+    const labelBaseY = svgH - padBottom + 14;
+
+    const colors = DashboardComponent.CHART_COLORS;
+    const fmt = (v: number) => (v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1));
+    const aboveFn = (v: number) =>
+      kpi.direction === 'higher-is-better' ? v >= kpi.metaTarget : v <= kpi.metaTarget;
+
+    // ── Build flag-to-label map ───────────────────────────────────────────────
+    const flagLabel = (f: string): string => ({
+      tr_excede_hd:        'T.Reparo>HD',
+      tl_excede_hd:        'T.Desloc.',
+      temp_prep_alto:      'T.Partida≥10min',
+      sem_os_alto:         'SemOS≥10min',
+      deslocamento_curto:  'Desloc.Curto',
+      tr_excede_hd_ef:     'T.Reparo>HD',
+      tempo_padrao_vazio:  'TP Vazio',
+      tr_muito_baixo:      'T.Reparo Baixo',
+      tme_muito_alto:      'TME Alto',
+      sem_deslocamento:    'Sem Desloc.',
+      sem_execucao:        'Sem Exec.',
+      login_tardio:        'Login Tardio',
+      login_muito_tardio:  'Login Muito Tardio',
+      desloc_lento:        'Desloc.Lento',
+      desloc_muito_lento:  'Desloc.Muito Lento',
+      sem_desloc_registrado: 'Sem Desloc.',
+      despacho_tardio:     'Desp.Tardio',
+      retorno_alto:        'Retorno Alto',
+      retorno_muito_alto:  'Retorno Muito Alto',
+    }[f] ?? f);
+
+    // ── Extract per-team deviation events keyed by dateRef ───────────────────
+    type DevEvent = { dateRef: string; flags: string[]; detail: string };
+
+    const buildDevMap = (team: string): Map<string, DevEvent> => {
+      const map = new Map<string, DevEvent>();
+      const add = (dateRef: string, flags: string[], detail?: string) => {
+        const key = dateRef;
+        const existing = map.get(key);
+        if (existing) {
+          for (const f of flags) if (!existing.flags.includes(f)) existing.flags.push(f);
+          if (detail && !existing.detail.includes(detail)) existing.detail += ' · ' + detail;
+        } else {
+          map.set(key, { dateRef, flags: [...flags], detail: detail ?? '' });
+        }
+      };
+
+      // OS Dia
+      const osDia = kpi.kpi === 'OS Dia'
+        ? (kpi as GeneratedReport['kpis'][number] & { evidenceAnalysis?: never }).scores // not used directly
+        : null;
+      void osDia;
+
+      const specialAnalysisMap: Record<string, Array<{ team: string; flaggedOrders?: Array<{ date_ref?: string; flags: string[]; nr_ordem?: string; classe?: string; causa?: string }>; flaggedDays?: Array<{ date_ref?: string; flags: string[] }> }>> = {};
+
+      // Map kpi.kpi → specialAnalysis field
+      if (kpi.evidenceAnalysis)       specialAnalysisMap['Eficiência']      = kpi.evidenceAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.tmeImpAnalysis)         specialAnalysisMap['TME IMP']         = kpi.tmeImpAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.primeiroLoginAnalysis)  specialAnalysisMap['1º Login']        = kpi.primeiroLoginAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.primeiroDeslocAnalysis) specialAnalysisMap['1º Deslocamento'] = kpi.primeiroDeslocAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.retornoBaseAnalysis)    specialAnalysisMap['Retorno Base']    = kpi.retornoBaseAnalysis as ReturnType<typeof Object.values>[0];
+
+      const teamAnalysisList = specialAnalysisMap[kpi.kpi] ?? [];
+      const teamEntry = teamAnalysisList.find((a) => a.team === team);
+
+      if (teamEntry) {
+        (teamEntry.flaggedOrders ?? []).forEach((o) => {
+          if (o.date_ref) {
+            const detail = [o.nr_ordem, o.classe, o.causa].filter(Boolean).join(' — ');
+            add(o.date_ref, o.flags.map(flagLabel), detail);
+          }
+        });
+        (teamEntry.flaggedDays ?? []).forEach((d) => {
+          if (d.date_ref) add(d.date_ref, d.flags.map(flagLabel));
+        });
+      }
+      return map;
+    };
+
+    // ── Collect all unique sorted days across all teams ───────────────────────
+    const allDaySet = new Set<string>();
+    for (const score of kpi.scores) {
+      const m = buildDevMap(score.team);
+      for (const k of m.keys()) allDaySet.add(k);
+    }
+
+    // Sort days by parsing dd/MM or dd/MM/yyyy formats
+    const parseDay = (s: string): number => {
+      const parts = s.split('/');
+      const d = parseInt(parts[0] ?? '0', 10);
+      const m2 = parseInt(parts[1] ?? '1', 10);
+      const y = parseInt(parts[2] ?? '2000', 10);
+      return y * 10000 + m2 * 100 + d;
+    };
+
+    let sortedDays = [...allDaySet].sort((a, b) => parseDay(a) - parseDay(b));
+    // If no per-day data, fall back to using team rank positions as fake "days"
+    const noDayData = sortedDays.length === 0;
+    if (noDayData) {
+      sortedDays = kpi.scores
+        .sort((a, b) => kpi.direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue)
+        .map((_, i) => String(i + 1));
+    }
+
+    const D = sortedDays.length;
+    const toX = (i: number) => padLeft + (D > 1 ? (i / (D - 1)) * chartW : chartW / 2);
+
+    // ── Y scale across all team values + meta ─────────────────────────────────
+    const allVals = [...kpi.scores.map((s) => s.rawValue), kpi.metaTarget];
+    let minVal = Math.min(...allVals);
+    let maxVal = Math.max(...allVals);
+    const buf = Math.max((maxVal - minVal) * 0.18, 0.1);
+    minVal = Math.max(0, minVal - buf);
+    maxVal = maxVal + buf;
+    const toY = (v: number) => padTop + chartH * (1 - (v - minVal) / (maxVal - minVal));
+
+    // ── Build one line per team ───────────────────────────────────────────────
+    const lines = kpi.scores.map((score, si) => {
+      const color = colors[si % colors.length];
+      const devMap = buildDevMap(score.team);
+      const teamY = Math.round(toY(score.rawValue) * 10) / 10;
+
+      const points = sortedDays.map((day, di) => ({
+        x: Math.round(toX(di) * 10) / 10,
+        y: teamY,
+        dayIndex: di,
+        dayLabel: day,
+        flagged: devMap.has(day),
+      }));
+
+      const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
+      const deviations: DevEvent[] = [...devMap.values()].sort((a, b) => parseDay(a.dateRef) - parseDay(b.dateRef));
+
+      return {
+        team: score.team,
+        color,
+        above: aboveFn(score.rawValue),
+        displayValue: fmt(score.rawValue),
+        polyline,
+        points,
+        deviations,
+      };
+    });
+
+    // ── Day axis labels (cap at 20 visible to avoid clutter) ─────────────────
+    const maxLabels = 20;
+    const step = D <= maxLabels ? 1 : Math.ceil(D / maxLabels);
+    const days = sortedDays
+      .map((d, i) => ({ x: Math.round(toX(i) * 10) / 10, label: noDayData ? `Eq.${d}` : d, index: i }))
+      .filter((_, i) => i % step === 0);
+
+    const metaY = Math.round(toY(kpi.metaTarget) * 10) / 10;
+    const yTicks = [0, 1, 2, 3, 4].map((i) => {
+      const v = minVal + ((maxVal - minVal) / 4) * i;
+      return { y: Math.round(toY(v) * 10) / 10, label: fmt(Math.round(v * 10) / 10) };
+    });
+
+    return { lines, days, metaY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}` };
   }
 
   protected trackByFilterKey(_index: number, filter: SelectFilterState): string {
