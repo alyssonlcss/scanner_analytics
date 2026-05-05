@@ -3674,16 +3674,16 @@ type SavedFilterState = {
       .ac-drawer {
         position: relative;
         flex-shrink: 0;
-        width: 200px;
+        width: 160px;
       }
 
       .ac-drawer-toggle {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 5px;
         width: 100%;
         box-sizing: border-box;
-        padding: 5px 10px;
+        padding: 4px 8px;
         background: var(--bg-2);
         border: 1px solid var(--border);
         border-radius: 7px;
@@ -3694,6 +3694,7 @@ type SavedFilterState = {
         color: var(--muted-strong);
         transition: background .12s, border-color .12s, border-radius .12s;
         user-select: none;
+        white-space: nowrap;
       }
 
       .ac-drawer-toggle:hover { background: var(--glass-hover); border-color: var(--muted); }
@@ -3722,7 +3723,7 @@ type SavedFilterState = {
         font-size: 10px;
         background: var(--border);
         border-radius: 20px;
-        padding: 1px 6px;
+        padding: 1px 5px;
         font-weight: 700;
         color: var(--muted-strong);
         line-height: 1.4;
@@ -3740,7 +3741,7 @@ type SavedFilterState = {
         border-top: none;
         border-radius: 0 0 7px 7px;
         box-shadow: 0 8px 24px rgba(0,0,0,.12);
-        padding: 7px 7px 8px;
+        padding: 6px 6px 7px;
       }
 
       .ac-drawer--open .ac-drawer-body { display: block; }
@@ -3748,16 +3749,16 @@ type SavedFilterState = {
       /* ── Search ── */
       .ac-drawer-search-wrap {
         position: relative;
-        margin-bottom: 6px;
+        margin-bottom: 5px;
       }
 
       .ac-drawer-search-icon {
         position: absolute;
-        left: 7px;
+        left: 6px;
         top: 50%;
         transform: translateY(-50%);
-        width: 11px;
-        height: 11px;
+        width: 10px;
+        height: 10px;
         color: var(--muted);
         pointer-events: none;
       }
@@ -3765,7 +3766,7 @@ type SavedFilterState = {
       .ac-drawer-search {
         width: 100%;
         box-sizing: border-box;
-        padding: 4px 7px 4px 23px;
+        padding: 3px 6px 3px 20px;
         border: 1px solid var(--border);
         border-radius: 5px;
         background: var(--bg);
@@ -3781,7 +3782,7 @@ type SavedFilterState = {
 
       /* ── Scrollable list ── */
       .ac-legend-scroll {
-        max-height: calc(7 * 28px);
+        max-height: calc(7 * 24px);
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
@@ -3791,7 +3792,7 @@ type SavedFilterState = {
       .ac-legend-empty {
         font-size: 11px;
         color: var(--muted);
-        padding: 4px 2px 0;
+        padding: 3px 2px 0;
         margin: 0;
       }
 
@@ -3807,12 +3808,12 @@ type SavedFilterState = {
         align-items: center;
         width: 100%;
         box-sizing: border-box;
-        border-radius: 5px;
+        border-radius: 4px;
         border: none;
-        border-left: 3px solid var(--lc, #888);
-        padding: 4px 8px;
-        height: 27px;
-        gap: 7px;
+        border-left: 2.5px solid var(--lc, #888);
+        padding: 3px 6px;
+        height: 23px;
+        gap: 5px;
         background: transparent;
         cursor: pointer;
         font-size: 11px;
@@ -3826,15 +3827,14 @@ type SavedFilterState = {
       .ac-legend-item--faded        { opacity: .28; }
 
       .ac-legend-dot {
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         border-radius: 50%;
         background: var(--lc, #888);
         flex-shrink: 0;
       }
 
       .ac-legend-name {
-        flex: 1;
         font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -3845,7 +3845,7 @@ type SavedFilterState = {
       .ac-legend-val {
         font-size: 10px;
         font-weight: 700;
-        padding: 1px 5px;
+        padding: 1px 4px;
         border-radius: 10px;
       }
 
