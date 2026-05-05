@@ -1297,6 +1297,9 @@ type SavedFilterState = {
                       <span class="analytic-kpi-chip">Meta <strong>{{ kpi.metaTarget }}</strong></span>
                       <span class="analytic-kpi-chip">Média <strong>{{ kpi.average }}</strong></span>
                       <span class="analytic-kpi-chip">Acima da meta <strong>{{ kpi.topTeams.length }}/{{ kpi.scores.length }}</strong></span>
+                      <span class="analytic-kpi-chip analytic-kpi-chip--trend" *ngIf="kpi.dailyTrend && kpi.dailyTrend.length > 0">
+                        <span class="ac-trend-legend-dot"></span>Tendência diária
+                      </span>
                     </div>
                     <!-- Gaveta de equipes (popover) -->
                     <div class="ac-drawer" [class.ac-drawer--open]="analyticLegendOpen()[i]">
@@ -1355,7 +1358,19 @@ type SavedFilterState = {
                       <!-- Meta line dashed -->
                       <line [attr.x1]="cd.padLeft" [attr.y1]="cd.metaY" [attr.x2]="cd.chartRight" [attr.y2]="cd.metaY" class="ac-meta-line" />
                       <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.metaY + 4" class="ac-meta-label">Meta</text>
-                      <!-- One polyline + dots per team -->
+                      <!-- Overall average horizontal line -->
+                      <line [attr.x1]="cd.padLeft" [attr.y1]="cd.avgY" [attr.x2]="cd.chartRight" [attr.y2]="cd.avgY" class="ac-avg-line" />
+                      <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.avgY + 4" class="ac-avg-label">Méd.</text>
+                      <!-- Daily trend line (global average per day from Tab_Completa) -->
+                      <ng-container *ngIf="cd.trendLine">
+                        <polyline [attr.points]="cd.trendLine.polyline" class="ac-trend-line" />
+                        <ng-container *ngFor="let pt of cd.trendLine.points">
+                          <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="4" class="ac-trend-dot">
+                            <title>{{ pt.label }}: {{ pt.value }}</title>
+                          </circle>
+                        </ng-container>
+                      </ng-container>
+                      <!-- One polyline + dots per team (faded behind trend line) -->
                       <ng-container *ngFor="let line of cd.lines">
                         <polyline
                           [attr.points]="line.polyline"
@@ -1378,7 +1393,7 @@ type SavedFilterState = {
                             [class.ac-pt--active]="analyticSelectedTeam() === line.team"
                             [class.ac-pt--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
                             (click)="selectAnalyticPoint(line.team, pt.dayIndex, $event)">
-                            <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ line.displayValue }}{{ pt.flagged ? ' ⚠' : '' }}</title>
+                            <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
                           </circle>
                         </ng-container>
                       </ng-container>
@@ -3670,6 +3685,24 @@ type SavedFilterState = {
         padding: 3px 10px;
       }
 
+      .analytic-kpi-chip--trend {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: #1d6dcc;
+        border-color: #1d6dcc44;
+        background: #1d6dcc10;
+      }
+
+      .ac-trend-legend-dot {
+        display: inline-block;
+        width: 12px;
+        height: 3px;
+        background: #1d6dcc;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+
       /* ── Drawer de equipes (popover) ── */
       .ac-drawer {
         position: relative;
@@ -3889,6 +3922,35 @@ type SavedFilterState = {
         fill: var(--accent);
         font-weight: 700;
         font-family: inherit;
+      }
+
+      .ac-avg-line {
+        stroke: var(--muted-strong);
+        stroke-width: 1.2;
+        stroke-dasharray: 3 3;
+        fill: none;
+      }
+
+      .ac-avg-label {
+        font-size: 9px;
+        fill: var(--muted-strong);
+        font-weight: 600;
+        font-family: inherit;
+      }
+
+      /* Daily trend line — bold coloured line showing global average per day */
+      .ac-trend-line {
+        fill: none;
+        stroke: #1d6dcc;
+        stroke-width: 2.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+
+      .ac-trend-dot {
+        fill: #1d6dcc;
+        stroke: white;
+        stroke-width: 1.5;
       }
 
       .ac-line {
@@ -5711,16 +5773,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       above: boolean;
       displayValue: string;
       polyline: string;
-      points: Array<{ x: number; y: number; dayIndex: number; dayLabel: string; flagged: boolean }>;
+      points: Array<{ x: number; y: number; dayIndex: number; dayLabel: string; flagged: boolean; displayVal: string }>;
       deviations: Array<{ dateRef: string; flags: string[]; detail: string }>;
     }>;
     days: Array<{ x: number; label: string }>;
     metaY: number;
+    avgY: number;
     yTicks: Array<{ y: number; label: string }>;
     padLeft: number;
     chartRight: number;
     labelBaseY: number;
     viewBox: string;
+    trendLine: { polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> } | null;
   } {
     const padLeft = 46, padRight = 52, padTop = 22, padBottom = 44;
     const svgW = 680, svgH = 230;
@@ -5805,14 +5869,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return map;
     };
 
-    // ── Collect all unique sorted days across all teams ───────────────────────
-    const allDaySet = new Set<string>();
-    for (const score of kpi.scores) {
-      const m = buildDevMap(score.team);
-      for (const k of m.keys()) allDaySet.add(k);
-    }
-
-    // Sort days by parsing dd/MM or dd/MM/yyyy formats
+    // ── Determine X-axis days: prefer dailyTrend dates, fall back to deviation dates ──
     const parseDay = (s: string): number => {
       const parts = s.split('/');
       const d = parseInt(parts[0] ?? '0', 10);
@@ -5821,8 +5878,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return y * 10000 + m2 * 100 + d;
     };
 
-    let sortedDays = [...allDaySet].sort((a, b) => parseDay(a) - parseDay(b));
-    // If no per-day data, fall back to using team rank positions as fake "days"
+    const hasDailyTrend = Array.isArray(kpi.dailyTrend) && kpi.dailyTrend.length > 0;
+
+    let sortedDays: string[];
+    if (hasDailyTrend) {
+      // Use the dates from dailyTrend (already sorted chronologically by backend)
+      sortedDays = kpi.dailyTrend!.map((pt) => pt.date);
+    } else {
+      // Fallback: collect dates from per-team deviation events
+      const allDaySet = new Set<string>();
+      for (const score of kpi.scores) {
+        const m = buildDevMap(score.team);
+        for (const k of m.keys()) allDaySet.add(k);
+      }
+      sortedDays = [...allDaySet].sort((a, b) => parseDay(a) - parseDay(b));
+    }
+
+    // If still no date data, fall back to rank positions as fake "days"
     const noDayData = sortedDays.length === 0;
     if (noDayData) {
       sortedDays = kpi.scores
@@ -5833,8 +5905,30 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const D = sortedDays.length;
     const toX = (i: number) => padLeft + (D > 1 ? (i / (D - 1)) * chartW : chartW / 2);
 
-    // ── Y scale across all team values + meta ─────────────────────────────────
-    const allVals = [...kpi.scores.map((s) => s.rawValue), kpi.metaTarget];
+    // ── Build per-team daily lookup (for non-flat team lines) ─────────────────
+    const perTeamDailyMap = new Map<string, Map<string, number>>();
+    if (kpi.perTeamDailyData) {
+      for (const teamData of kpi.perTeamDailyData) {
+        const dateMap = new Map<string, number>();
+        for (const dp of teamData.dailyPoints) {
+          dateMap.set(dp.date, dp.value);
+        }
+        perTeamDailyMap.set(teamData.team, dateMap);
+      }
+    }
+
+    // ── Y scale: include team values, meta, average, trend values, and per-day values ──
+    const trendValues = hasDailyTrend ? kpi.dailyTrend!.map((pt) => pt.avgValue) : [];
+    const perTeamValues = kpi.perTeamDailyData
+      ? kpi.perTeamDailyData.flatMap((t) => t.dailyPoints.map((p) => p.value))
+      : [];
+    const allVals = [
+      ...kpi.scores.map((s) => s.rawValue),
+      kpi.metaTarget,
+      kpi.average,
+      ...trendValues,
+      ...perTeamValues,
+    ];
     let minVal = Math.min(...allVals);
     let maxVal = Math.max(...allVals);
     const buf = Math.max((maxVal - minVal) * 0.18, 0.1);
@@ -5842,19 +5936,28 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     maxVal = maxVal + buf;
     const toY = (v: number) => padTop + chartH * (1 - (v - minVal) / (maxVal - minVal));
 
-    // ── Build one line per team ───────────────────────────────────────────────
+    // ── Build per-team lines (varying Y per day if perTeamDailyData available) ──
     const lines = kpi.scores.map((score, si) => {
       const color = colors[si % colors.length];
       const devMap = buildDevMap(score.team);
       const teamY = Math.round(toY(score.rawValue) * 10) / 10;
+      const dailyMap = perTeamDailyMap.get(score.team) ?? null;
 
-      const points = sortedDays.map((day, di) => ({
-        x: Math.round(toX(di) * 10) / 10,
-        y: teamY,
-        dayIndex: di,
-        dayLabel: day,
-        flagged: devMap.has(day),
-      }));
+      const points = sortedDays.map((day, di) => {
+        const dailyVal = dailyMap?.get(day) ?? null;
+        const pointY = dailyVal !== null ? Math.round(toY(dailyVal) * 10) / 10 : teamY;
+        const flagged = dailyVal !== null
+          ? (kpi.direction === 'higher-is-better' ? dailyVal < kpi.metaTarget : dailyVal > kpi.metaTarget)
+          : devMap.has(day);
+        return {
+          x: Math.round(toX(di) * 10) / 10,
+          y: pointY,
+          dayIndex: di,
+          dayLabel: day,
+          flagged,
+          displayVal: dailyVal !== null ? fmt(dailyVal) : fmt(score.rawValue),
+        };
+      });
 
       const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
       const deviations: DevEvent[] = [...devMap.values()].sort((a, b) => parseDay(a.dateRef) - parseDay(b.dateRef));
@@ -5870,6 +5973,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       };
     });
 
+    // ── Build daily trend line (global average per day) ───────────────────────
+    let trendLine: { polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> } | null = null;
+    if (hasDailyTrend) {
+      const trendPoints = kpi.dailyTrend!.map((pt, i) => ({
+        x: Math.round(toX(i) * 10) / 10,
+        y: Math.round(toY(pt.avgValue) * 10) / 10,
+        label: pt.date,
+        value: pt.avgValue,
+      }));
+      trendLine = {
+        polyline: trendPoints.map((p) => `${p.x},${p.y}`).join(' '),
+        points: trendPoints,
+      };
+    }
+
     // ── Day axis labels (cap at 20 visible to avoid clutter) ─────────────────
     const maxLabels = 20;
     const step = D <= maxLabels ? 1 : Math.ceil(D / maxLabels);
@@ -5877,13 +5995,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       .map((d, i) => ({ x: Math.round(toX(i) * 10) / 10, label: noDayData ? `Eq.${d}` : d, index: i }))
       .filter((_, i) => i % step === 0);
 
-    const metaY = Math.round(toY(kpi.metaTarget) * 10) / 10;
+    const metaY  = Math.round(toY(kpi.metaTarget) * 10) / 10;
+    const avgY   = Math.round(toY(kpi.average) * 10) / 10;
     const yTicks = [0, 1, 2, 3, 4].map((i) => {
       const v = minVal + ((maxVal - minVal) / 4) * i;
       return { y: Math.round(toY(v) * 10) / 10, label: fmt(Math.round(v * 10) / 10) };
     });
 
-    return { lines, days, metaY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}` };
+    return { lines, days, metaY, avgY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}`, trendLine };
   }
 
   protected trackByFilterKey(_index: number, filter: SelectFilterState): string {

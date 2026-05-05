@@ -43,6 +43,9 @@ export interface ReportKpiInsight {
   scores: ReportKpiTeamScore[];
   average: number;
   metaTarget: number;
+  dailyTrend?: Array<{ date: string; avgValue: number }>;
+  /** Per-team per-day counts for OS Dia (enables non-flat team lines in the analytic chart). */
+  perTeamDailyData?: Array<{ team: string; dailyPoints: Array<{ date: string; value: number }> }>;
   evidenceAnalysis?: EficienciaTeamAnalysis[];
   tmeImpAnalysis?: TmeImpTeamAnalysis[];
   primeiroLoginAnalysis?: PrimeiroLoginTeamAnalysis[];
