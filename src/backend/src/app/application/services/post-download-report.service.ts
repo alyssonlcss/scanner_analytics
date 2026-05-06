@@ -529,6 +529,8 @@ const KPI_DESLOC_DAILY_CONFIG: Record<string, {
   scale?: number;       // multiplier applied after ratio (e.g. 100 → percentage)
   /** When set, count distinct values of this column per team per date instead of reading a value column. */
   countBy?: string[];
+  /** When true + aliases2 set, values are fixed per (date, team) — deduplicate to first row before ratio. */
+  dedup?: boolean;
 }> = {
   'OS Dia':       { aliases: [], countBy: ['Nr_Ordem', 'Nr Ordem', 'NR_ORDEM', 'Numero OS', 'Número OS'] },
   '1º Login':     { aliases: ['1º Login Corrigido', '1o Login Corrigido', '1º Login', '1o Login'] },
@@ -536,7 +538,7 @@ const KPI_DESLOC_DAILY_CONFIG: Record<string, {
   'Retorno Base': { aliases: ['Retorno a base', 'Retorno a Base', 'Retorno Base'] },
   'TME IMP':      { aliases: ['TR Ordem Imp SS equipe', 'TR Ordem Imp SS'] },
   'Eficiência':   { aliases: ['TEMPO_PADRAO_TOTAL_CAL'], aliases2: ['TR_TOTAL_CAL'], scale: 100 },
-  'Utilização':   { aliases: ['HP Total'], aliases2: ['HD Total'], scale: 100 },
+  'Utilização':   { aliases: ['HT total', 'HT Total'], aliases2: ['HD Total'], scale: 100, dedup: true },
 };
 
 export class PostDownloadReportService {
@@ -614,6 +616,19 @@ export class PostDownloadReportService {
       if (perTeamEficiencia.length > 0) eficienciaKpiChart.perTeamDailyData = perTeamEficiencia;
     }
 
+    // For Utilização: HT total / HD Total are fixed per (date, team) — populate perTeamDailyData
+    // so the analytic chart draws each team's actual utilização varying per reference date.
+    const utilizacaoKpiChart = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'));
+    if (utilizacaoKpiChart) {
+      const perTeamUtilizacao = this.buildPerTeamDailyRatio(
+        filtered.deslocamentos,
+        ['HT total', 'HT Total'],
+        ['HD Total'],
+        100,
+      );
+      if (perTeamUtilizacao.length > 0) utilizacaoKpiChart.perTeamDailyData = perTeamUtilizacao;
+    }
+
     const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
     const tempSemOs = this.calculateTempPrepSemOs(filtered.deslocamentos, retornoBaseAvg);
     const teamMetrics = this.buildTeamMetrics(tempSemOs);
@@ -655,6 +670,18 @@ export class PostDownloadReportService {
     // Attach to KPI insights
     const tmeKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('TME IMP'));
     if (tmeKpi && tmeImpAnalysis.length > 0) tmeKpi.tmeImpAnalysis = tmeImpAnalysis;
+    // Override TME IMP per-team daily data and global trend with per-OS Improdutivo computation
+    if (tmeKpi) {
+      const tmeImpDaily = this.buildPerTeamDailyTmeImp(filtered.deslocamentos);
+      if (tmeImpDaily.globalTrend.length > 0) {
+        tmeKpi.dailyTrend = tmeImpDaily.globalTrend;
+        // Only include teams that had at least one Improdutiva (TR > 0).
+        // Teams without any Improdutiva must not appear in the chart.
+        tmeKpi.perTeamDailyData = tmeImpDaily.perTeam;
+      } else if (tmeImpDaily.perTeam.length > 0) {
+        tmeKpi.perTeamDailyData = tmeImpDaily.perTeam;
+      }
+    }
     const loginKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Login'));
     if (loginKpi && primeiroLoginAnalysis.length > 0) loginKpi.primeiroLoginAnalysis = primeiroLoginAnalysis;
     const deslocKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Desloc.'));
@@ -1371,6 +1398,42 @@ export class PostDownloadReportService {
     if (config.aliases2 && !value2Col) return [];
 
     if (config.aliases2 && value2Col) {
+      if (config.dedup) {
+        // Dedup-ratio mode: HT/HD are fixed per (date, team) — take the first row per team-day
+        // then compute ratio from that single pair of values.
+        const dateTeamMap = new Map<string, Map<string, CsvRow>>();
+        for (const row of deslocRows) {
+          const date = String(row[dateCol] ?? '').trim();
+          const team = String(row[teamCol] ?? '').trim();
+          if (!date || !team) continue;
+          const teamMap = dateTeamMap.get(date) ?? new Map<string, CsvRow>();
+          if (!teamMap.has(team)) teamMap.set(team, row);
+          dateTeamMap.set(date, teamMap);
+        }
+
+        const sortedDates = [...dateTeamMap.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
+        const result: DailyTrendPoint[] = [];
+
+        for (const fullDate of sortedDates) {
+          const teamMap = dateTeamMap.get(fullDate)!;
+          const values: number[] = [];
+          for (const row of teamMap.values()) {
+            const num = parseNumber(String(row[valueCol] ?? ''));
+            const den = parseNumber(String(row[value2Col] ?? ''));
+            if (num !== null && den !== null && den > 0 && Number.isFinite(num) && Number.isFinite(den)) {
+              values.push((num / den) * (config.scale ?? 1));
+            }
+          }
+          if (values.length > 0) {
+            const avg = values.reduce((s, v) => s + v, 0) / values.length;
+            const ddMm = `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`;
+            result.push({ date: ddMm, avgValue: round2(avg) });
+          }
+        }
+
+        return result;
+      }
+
       // Ratio mode: sum(numerator) / sum(denominator) per (date, team), then average across teams per date.
       // This ensures correctness for row-level columns (e.g. tempo_padrao / TR Ordem) where values
       // must be accumulated across all orders before dividing.
@@ -1569,6 +1632,123 @@ export class PostDownloadReportService {
     // Sort teams alphabetically for deterministic output
     result.sort((a, b) => a.team.localeCompare(b.team, 'pt-BR'));
     return result;
+  }
+
+  /**
+   * Computes per-team daily TME IMP values:
+   *   value(team, date) = avg(TR Ordem) for rows where status == "Improdutivo" AND TR Ordem > 20.
+   * Only teams that have at least one qualifying row on any day are included.
+   * Days where the team has no qualifying rows receive value = 0.
+   * Also returns a global daily trend (avg across qualifying teams per date, ignoring 0s).
+   */
+  private buildPerTeamDailyTmeImp(
+    deslocRows: CsvRow[],
+  ): {
+    perTeam: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }>;
+    globalTrend: DailyTrendPoint[];
+  } {
+    if (deslocRows.length === 0) return { perTeam: [], globalTrend: [] };
+
+    const acc = createAccessor(deslocRows[0]);
+    const teamCol   = acc.resolve(['Equipe']);
+    const dateCol   = acc.resolve(['Data Referência', 'Data Referencia']);
+    const statusCol = acc.resolve(['status', 'Status']);
+    const trCol     = acc.resolve(['TR Ordem', 'TR_Ordem']);
+
+    if (!teamCol || !dateCol || !statusCol || !trCol) return { perTeam: [], globalTrend: [] };
+
+    const parseFullDate = (s: string): number => {
+      const parts = s.split('/');
+      const d = parseInt(parts[0] ?? '0', 10);
+      const m = parseInt(parts[1] ?? '1', 10);
+      const y = parseInt(parts[2] ?? '2000', 10);
+      return y * 10000 + m * 100 + d;
+    };
+
+    // Collect all dates each team appears on (to fill in 0s for days without Improdutivo)
+    const teamAllDates = new Map<string, Set<string>>();
+    // Qualifying rows: team → date → [TR Ordem values]
+    const teamDateTrs  = new Map<string, Map<string, number[]>>();
+
+    for (const row of deslocRows) {
+      const date   = String(row[dateCol]   ?? '').trim();
+      const team   = String(row[teamCol]   ?? '').trim();
+      const status = String(row[statusCol] ?? '').trim();
+      const trRaw  = parseNumber(String(row[trCol] ?? ''));
+
+      if (!date || !team) continue;
+
+      const allDates = teamAllDates.get(team) ?? new Set<string>();
+      allDates.add(date);
+      teamAllDates.set(team, allDates);
+
+      if (status === 'Improdutivo' && trRaw !== null && trRaw > 0) {
+        const dateMap = teamDateTrs.get(team) ?? new Map<string, number[]>();
+        const vals    = dateMap.get(date) ?? [];
+        vals.push(trRaw);
+        dateMap.set(date, vals);
+        teamDateTrs.set(team, dateMap);
+      }
+    }
+
+    // Build per-team result — only teams with at least one qualifying row
+    const perTeam: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }> = [];
+    for (const [team, impDateMap] of teamDateTrs) {
+      const allDates   = teamAllDates.get(team) ?? new Set<string>();
+      const sortedDates = [...allDates].sort((a, b) => parseFullDate(a) - parseFullDate(b));
+      const dailyPoints: PerTeamDailyPoint[] = sortedDates.map((fullDate) => {
+        const vals  = impDateMap.get(fullDate);
+        const value = vals && vals.length > 0
+          ? round2(vals.reduce((s, v) => s + v, 0) / vals.length)
+          : 0;
+        return { date: `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`, value };
+      });
+      perTeam.push({ team, dailyPoints });
+    }
+    perTeam.sort((a, b) => a.team.localeCompare(b.team, 'pt-BR'));
+
+    // Build global daily trend: per date, average of qualifying (non-zero) team values
+    const dateTeamValues = new Map<string, number[]>();
+    for (const { dailyPoints } of perTeam) {
+      for (const pt of dailyPoints) {
+        if (pt.value > 0) {
+          const vals = dateTeamValues.get(pt.date) ?? [];
+          vals.push(pt.value);
+          dateTeamValues.set(pt.date, vals);
+        }
+      }
+    }
+    // Sort dates dd/mm chronologically using full-date sort from perTeam (already ordered)
+    const allDdMm = [...dateTeamValues.keys()].sort((a, b) => {
+      const [da, ma] = a.split('/').map(Number);
+      const [db, mb] = b.split('/').map(Number);
+      return (ma! * 100 + da!) - (mb! * 100 + db!);
+    });
+    const globalTrend: DailyTrendPoint[] = allDdMm.map((ddMm) => {
+      const vals = dateTeamValues.get(ddMm)!;
+      return { date: ddMm, avgValue: round2(vals.reduce((s, v) => s + v, 0) / vals.length) };
+    });
+
+    // Ensure every team has an entry for every globalTrend date.
+    // Teams that have no CSV rows for a given date won't have that date in their dailyPoints;
+    // without this fill, the chart falls back to the team's flat ranking value instead of 0.
+    const trendDateSet = new Set(allDdMm);
+    for (const entry of perTeam) {
+      const existing = new Set(entry.dailyPoints.map((p) => p.date));
+      for (const ddMm of trendDateSet) {
+        if (!existing.has(ddMm)) {
+          entry.dailyPoints.push({ date: ddMm, value: 0 });
+        }
+      }
+      // Re-sort chronologically after filling gaps
+      entry.dailyPoints.sort((a, b) => {
+        const [da, ma] = a.date.split('/').map(Number);
+        const [db, mb] = b.date.split('/').map(Number);
+        return (ma! * 100 + da!) - (mb! * 100 + db!);
+      });
+    }
+
+    return { perTeam, globalTrend };
   }
 
   private buildDeviationInsights(rows: CsvRow[]): { mostRecurring: DeviationInsight[]; teamBreakdown: DeviationByTeam[] } {

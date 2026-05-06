@@ -3689,16 +3689,16 @@ type SavedFilterState = {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        color: #1d6dcc;
-        border-color: #1d6dcc44;
-        background: #1d6dcc10;
+        color: #111;
+        border-color: #11111144;
+        background: #11111110;
       }
 
       .ac-trend-legend-dot {
         display: inline-block;
         width: 12px;
         height: 3px;
-        background: #1d6dcc;
+        background: #111;
         border-radius: 2px;
         flex-shrink: 0;
       }
@@ -3941,14 +3941,14 @@ type SavedFilterState = {
       /* Daily trend line — bold coloured line showing global average per day */
       .ac-trend-line {
         fill: none;
-        stroke: #1d6dcc;
+        stroke: #111;
         stroke-width: 2.5;
         stroke-linejoin: round;
         stroke-linecap: round;
       }
 
       .ac-trend-dot {
-        fill: #1d6dcc;
+        fill: #111;
         stroke: white;
         stroke-width: 1.5;
       }
@@ -5944,7 +5944,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const dailyMap = perTeamDailyMap.get(score.team) ?? null;
 
       const points = sortedDays.map((day, di) => {
-        const dailyVal = dailyMap?.get(day) ?? null;
+        // If the KPI has perTeamDailyData, it is the authoritative source for daily values:
+        //   - team in map → use its value (0 for days explicitly set to 0, e.g. no Improdutivo OS)
+        //   - team NOT in map → use 0 (no qualifying data on any day for this team)
+        // If the KPI has no perTeamDailyData, fall back to the flat ranking value (teamY).
+        const dailyVal = kpi.perTeamDailyData
+          ? (dailyMap !== null ? (dailyMap.get(day) ?? 0) : 0)
+          : (dailyMap !== null ? (dailyMap.get(day) ?? null) : null);
         const pointY = dailyVal !== null ? Math.round(toY(dailyVal) * 10) / 10 : teamY;
         const flagged = dailyVal !== null
           ? (kpi.direction === 'higher-is-better' ? dailyVal < kpi.metaTarget : dailyVal > kpi.metaTarget)
