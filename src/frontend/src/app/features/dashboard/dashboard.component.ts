@@ -6367,6 +6367,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const chartH = svgH - padTop - padBottom;
     const chartRight = padLeft + chartW;
     const labelBaseY = svgH - padBottom + 14;
+    const innerPadX = 24; // horizontal inset so lines don't touch the left/right axes
 
     const colors = DashboardComponent.CHART_COLORS;
     const fmt = (v: number) => (v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1));
@@ -6478,7 +6479,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     const D = sortedDays.length;
-    const toX = (i: number) => padLeft + (D > 1 ? (i / (D - 1)) * chartW : chartW / 2);
+    const toX = (i: number) => padLeft + innerPadX + (D > 1 ? (i / (D - 1)) * (chartW - 2 * innerPadX) : (chartW - 2 * innerPadX) / 2);
 
     // ── Build per-team daily lookup (for non-flat team lines) ─────────────────
     const perTeamDailyMap = new Map<string, Map<string, number>>();
