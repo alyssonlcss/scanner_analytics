@@ -482,6 +482,13 @@ interface ExecutiveSummary {
   tmeImpAlertCount: number;
 }
 
+/**
+ * KPIs whose column value is fixed per (team × Data Referência) in the ranking/detail CSV.
+ * When iterating ranking rows, only the FIRST row per (team, date) pair is counted to avoid
+ * inflating the average when multiple OS rows repeat the same jornada-level value.
+ */
+const KPI_DEDUP_BY_DATE = new Set(['1º Login', '1º Desloc.', 'Retorno Base']);
+
 const KPI_DIRECTIONS: Record<string, 'higher-is-better' | 'lower-is-better'> = {
   'OS Dia': 'higher-is-better',
   'Eficiência': 'higher-is-better',
@@ -497,7 +504,7 @@ const KPI_ALIASES: Record<string, string[]> = {
   'Eficiência': ['Eficiencia', 'Eficiência'],
   'Utilização': ['Utilização', 'Utilizacao'],
   'TME IMP': ['TMR Improd.', 'TMR Improd', 'TME IMP', 'TME_IMP'],
-  '1º Login': ['1º Login', '1o Login', 'Primeiro Login'],
+  '1º Login': ['1º Login Corrigido', '1o Login Corrigido', '1º Login', '1o Login', 'Primeiro Login'],
   '1º Desloc.': ['1º Desloc', '1º Desloc.', '1o Desloc'],
   'Retorno Base': ['Retorno a Base', 'Retorno Base', 'Retorno à Base'],
 };
@@ -684,10 +691,34 @@ export class PostDownloadReportService {
     }
     const loginKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Login'));
     if (loginKpi && primeiroLoginAnalysis.length > 0) loginKpi.primeiroLoginAnalysis = primeiroLoginAnalysis;
+    // Populate per-team daily chart data for 1º Login (jornada-level: one value per team × date)
+    if (loginKpi) {
+      const perTeamLogin = this.buildPerTeamDailyValue(
+        filtered.deslocamentos,
+        ['1º Login Corrigido', '1o Login Corrigido', '1º Login', '1o Login'],
+      );
+      if (perTeamLogin.length > 0) loginKpi.perTeamDailyData = perTeamLogin;
+    }
     const deslocKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('1º Desloc.'));
     if (deslocKpi && primeiroDeslocAnalysis.length > 0) deslocKpi.primeiroDeslocAnalysis = primeiroDeslocAnalysis;
+    // Populate per-team daily chart data for 1º Desloc (jornada-level: one value per team × date)
+    if (deslocKpi) {
+      const perTeamDesloc = this.buildPerTeamDailyValue(
+        filtered.deslocamentos,
+        ['1º Desloc', '1o Desloc'],
+      );
+      if (perTeamDesloc.length > 0) deslocKpi.perTeamDailyData = perTeamDesloc;
+    }
     const retornoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'));
     if (retornoKpi && retornoBaseAnalysis.length > 0) retornoKpi.retornoBaseAnalysis = retornoBaseAnalysis;
+    // Populate per-team daily chart data for Retorno Base (jornada-level: one value per team × date)
+    if (retornoKpi) {
+      const perTeamRetorno = this.buildPerTeamDailyValue(
+        filtered.deslocamentos,
+        ['Retorno a base', 'Retorno a Base', 'Retorno Base'],
+      );
+      if (perTeamRetorno.length > 0) retornoKpi.perTeamDailyData = perTeamRetorno;
+    }
 
     const teamScorecard = this.buildTeamScorecard(filtered.ranking, kpis);
     const executiveSummary = this.buildExecutiveSummary(
@@ -1256,6 +1287,7 @@ export class PostDownloadReportService {
     if (!teamCol) {
       return [];
     }
+    const dateCol = accessor.resolve(['Data Referência', 'Data Referencia']);
 
     const insights: KpiInsight[] = [];
 
@@ -1266,6 +1298,8 @@ export class PostDownloadReportService {
       }
 
       const teamTotals = new Map<string, { sum: number; count: number }>();
+      const dedupByDate = KPI_DEDUP_BY_DATE.has(kpi);
+      const seenTeamDate = dedupByDate ? new Set<string>() : null;
 
       for (const row of rows) {
         const team = String(row[teamCol] ?? '').trim();
@@ -1273,6 +1307,13 @@ export class PostDownloadReportService {
 
         if (!team || value === null || !Number.isFinite(value)) {
           continue;
+        }
+
+        if (seenTeamDate !== null && dateCol) {
+          const date = String(row[dateCol] ?? '').trim();
+          const key = `${team}|${date}`;
+          if (seenTeamDate.has(key)) continue;
+          seenTeamDate.add(key);
         }
 
         const current = teamTotals.get(team) ?? { sum: 0, count: 0 };
@@ -1507,6 +1548,63 @@ export class PostDownloadReportService {
       }
     }
 
+    return result;
+  }
+
+  /**
+   * Computes per-team daily values for a jornada-level column (one value per team × Data Referência).
+   * Deduplicates by (team, date) taking the first row, then reads the numeric value.
+   * Used for KPIs like 1º Login Corrigido, 1º Desloc, Retorno Base that repeat the same
+   * number across all OS rows of the same day.
+   */
+  private buildPerTeamDailyValue(
+    deslocRows: CsvRow[],
+    candidates: string[],
+  ): Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }> {
+    if (deslocRows.length === 0) return [];
+
+    const acc = createAccessor(deslocRows[0]);
+    const teamCol  = acc.resolve(['Equipe']);
+    const dateCol  = acc.resolve(['Data Referência', 'Data Referencia']);
+    const valueCol = acc.resolve(candidates);
+
+    if (!teamCol || !dateCol || !valueCol) return [];
+
+    const parseFullDate = (s: string): number => {
+      const parts = s.split('/');
+      const d = parseInt(parts[0] ?? '0', 10);
+      const m = parseInt(parts[1] ?? '1', 10);
+      const y = parseInt(parts[2] ?? '2000', 10);
+      return y * 10000 + m * 100 + d;
+    };
+
+    // team → date (dd/mm/yyyy) → first-row value (dedup: jornada-level, same for all OS of the day)
+    const teamDateMap = new Map<string, Map<string, number>>();
+    for (const row of deslocRows) {
+      const date  = String(row[dateCol] ?? '').trim();
+      const team  = String(row[teamCol] ?? '').trim();
+      if (!date || !team) continue;
+      const dateMap = teamDateMap.get(team) ?? new Map<string, number>();
+      if (!dateMap.has(date)) {
+        const v = parseNumber(String(row[valueCol] ?? ''));
+        if (v !== null && Number.isFinite(v) && v >= 0) dateMap.set(date, v);
+      }
+      teamDateMap.set(team, dateMap);
+    }
+
+    const result: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }> = [];
+
+    for (const [team, dateMap] of teamDateMap) {
+      if (dateMap.size === 0) continue;
+      const sortedDates = [...dateMap.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
+      const dailyPoints: PerTeamDailyPoint[] = sortedDates.map((fullDate) => ({
+        date: `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`,
+        value: round2(dateMap.get(fullDate)!),
+      }));
+      result.push({ team, dailyPoints });
+    }
+
+    result.sort((a, b) => a.team.localeCompare(b.team, 'pt-BR'));
     return result;
   }
 
@@ -4209,6 +4307,34 @@ export class PostDownloadReportService {
     const primeiroLoginCorCol = deslocAcc.resolve(['1º Login Corrigido', '1o Login Corrigido']);
     const primeiroLoginCol   = deslocAcc.resolve(['1º Login', '1o Login']);
 
+    // Resolves the login-delay in minutes for a given row.
+    // Priority: pre-computed numeric column → time-difference fallback (Log In Corrigido − Inicio Calendário).
+    const resolveLoginMin = (row: CsvRow): number | null => {
+      if (primeiroLoginCorCol) {
+        const v = parseNumber(String(row[primeiroLoginCorCol] ?? ''));
+        if (v !== null && Number.isFinite(v)) return v;
+      }
+      if (primeiroLoginCol) {
+        const v = parseNumber(String(row[primeiroLoginCol] ?? ''));
+        if (v !== null && Number.isFinite(v)) return v;
+      }
+      // Fallback: compute from the login TIME minus the jornada start TIME.
+      if (!inicioCalCol || !logInCorrigidoCol) return null;
+      const dateRef   = dateCol ? String(row[dateCol] ?? '').trim() : '';
+      const inicioCal = String(row[inicioCalCol] ?? '').trim();
+      const logInCor  = String(row[logInCorrigidoCol] ?? '').trim();
+      if (!inicioCal || !logInCor) return null;
+      const mkDate = (t: string) => {
+        if (t.includes('/')) return parseDateTimeBr(t);
+        return parseDateTimeBr(dateRef ? `${dateRef} ${t}` : `01/01/2000 ${t}`);
+      };
+      const inicioDate = mkDate(inicioCal);
+      const loginDate  = mkDate(logInCor);
+      if (!inicioDate || !loginDate) return null;
+      const diff = minutesBetween(loginDate, inicioDate);
+      return Number.isFinite(diff) && diff >= 0 ? round2(diff) : 0;
+    };
+
     if (!teamCol) return [];
 
     const distinctDates = dateCol ? this.countDistinctDates(deslocRows, dateCol) : 0;
@@ -4222,9 +4348,7 @@ export class PostDownloadReportService {
       const key = `${team}|${date}`;
       if (seenGlobal.has(key)) continue;
       seenGlobal.add(key);
-      const loginMin = primeiroLoginCorCol
-        ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
-        : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+      const loginMin = resolveLoginMin(row);
       if (loginMin !== null && Number.isFinite(loginMin) && loginMin >= 0) globalLoginValues.push(loginMin);
     }
     const globalAvgLogin = globalLoginValues.length > 0
@@ -4250,9 +4374,7 @@ export class PostDownloadReportService {
 
       const teamLoginValues: number[] = [];
       for (const row of jornadaRows) {
-        const v = primeiroLoginCorCol
-          ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
-          : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+        const v = resolveLoginMin(row);
         if (v !== null && Number.isFinite(v) && v >= 0) teamLoginValues.push(v);
       }
       const teamAvgLogin = teamLoginValues.length > 0
@@ -4265,9 +4387,7 @@ export class PostDownloadReportService {
       let countLoginMuitoTardio = 0;
 
       for (const row of jornadaRows) {
-        const loginMin = primeiroLoginCorCol
-          ? parseNumber(String(row[primeiroLoginCorCol] ?? ''))
-          : primeiroLoginCol ? parseNumber(String(row[primeiroLoginCol] ?? '')) : null;
+        const loginMin = resolveLoginMin(row);
         if (loginMin === null || !Number.isFinite(loginMin)) continue;
 
         const flags: PrimeiroLoginDayEvidence['flags'] = [];
