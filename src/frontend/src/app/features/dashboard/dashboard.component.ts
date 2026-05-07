@@ -1285,7 +1285,14 @@ type SavedFilterState = {
                 <ng-container *ngIf="analyticChartData(kpi) as cd">
                 <div class="analytic-kpi-header">
                   <div class="analytic-kpi-title-row">
-                    <h2 class="analytic-kpi-title">{{ kpi.kpi }}</h2>
+                    <h2 class="analytic-kpi-title">
+                      <ng-container *ngIf="getAnalyticSelectedTeam(i) === null">{{ kpi.kpi }}</ng-container>
+                      <ng-container *ngIf="getAnalyticSelectedTeam(i) !== null">
+                        <button class="ac-breadcrumb-back" type="button" (click)="clearAnalyticTeam(i)">{{ kpi.kpi }}</button>
+                        <span class="ac-breadcrumb-sep">›</span>
+                        <span class="ac-breadcrumb-team">{{ getAnalyticSelectedTeam(i) }}</span>
+                      </ng-container>
+                    </h2>
                     <span class="analytic-kpi-dir-badge"
                           [class.analytic-kpi-dir-badge--up]="kpi.direction === 'higher-is-better'"
                           [class.analytic-kpi-dir-badge--down]="kpi.direction !== 'higher-is-better'">
@@ -1301,49 +1308,11 @@ type SavedFilterState = {
                         <span class="ac-trend-legend-dot"></span>Tendência diária
                       </span>
                     </div>
-                    <!-- Gaveta de equipes (popover) -->
-                    <div class="ac-drawer" [class.ac-drawer--open]="analyticLegendOpen()[i]">
-                      <button type="button" class="ac-drawer-toggle" (click)="toggleAnalyticLegend(i)">
-                        <svg class="ac-drawer-toggle-icon" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        <span class="ac-drawer-toggle-label">Equipes</span>
-                        <span class="ac-drawer-count">{{ cd.lines.length }}</span>
-                      </button>
-                      <div class="ac-drawer-body">
-                        <div class="ac-drawer-search-wrap">
-                          <svg class="ac-drawer-search-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none">
-                            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.4"/>
-                            <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                          </svg>
-                          <input class="ac-drawer-search"
-                                 type="text"
-                                 placeholder="Buscar equipe..."
-                                 [value]="analyticSearch()[i] ?? ''"
-                                 (input)="setAnalyticSearch(i, $any($event.target).value)" />
-                        </div>
-                        <div class="ac-legend-scroll">
-                          <div class="ac-legend">
-                            <button *ngFor="let line of filterAnalyticLines(cd.lines, i)"
-                                    type="button"
-                                    class="ac-legend-item"
-                                    [class.ac-legend-item--active]="analyticSelectedTeam() === line.team"
-                                    [class.ac-legend-item--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
-                                    [style.--lc]="line.color"
-                                    (click)="toggleAnalyticTeam(line.team)">
-                              <span class="ac-legend-dot"></span>
-                              <span class="ac-legend-name">{{ line.team }}</span>
-                              <span class="ac-legend-val"
-                                    [class.ac-legend-val--above]="line.above"
-                                    [class.ac-legend-val--below]="!line.above">{{ line.displayValue }}</span>
-                            </button>
-                            <p class="ac-legend-empty" *ngIf="filterAnalyticLines(cd.lines, i).length === 0">Nenhuma equipe encontrada.</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
 
-                  <!-- SVG chart -->
+                  <!-- Chart + persistent legend sidebar -->
+                  <div class="ac-chart-row">
                   <div class="analytic-chart-wrap">
                     <svg class="analytic-chart-svg" [attr.viewBox]="cd.viewBox" preserveAspectRatio="xMidYMid meet">
                       <!-- Grid + Y axis -->
@@ -1371,28 +1340,28 @@ type SavedFilterState = {
                         </ng-container>
                       </ng-container>
                       <!-- One polyline + dots per team (faded behind trend line) -->
-                      <ng-container *ngFor="let line of cd.lines">
+                      <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
                         <polyline
                           [attr.points]="line.polyline"
                           class="ac-line"
                           [attr.stroke]="line.color"
-                          [class.ac-line--active]="analyticSelectedTeam() === line.team"
-                          [class.ac-line--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
-                          (click)="toggleAnalyticTeam(line.team)" />
+                          [class.ac-line--active]="getAnalyticSelectedTeam(i) === line.team"
+                          [class.ac-line--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
+                          (click)="toggleAnalyticTeam(line.team, i)" />
                         <!-- invisible wider hit area -->
                         <polyline
                           [attr.points]="line.polyline"
                           class="ac-line-hit"
-                          (click)="toggleAnalyticTeam(line.team)" />
-                        <ng-container *ngFor="let pt of line.points">
+                          (click)="toggleAnalyticTeam(line.team, i)" />
+                        <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
                           <circle
                             [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 5 : 3.5"
                             [attr.fill]="line.color"
                             [class.ac-pt]="true"
                             [class.ac-pt--flagged]="pt.flagged"
-                            [class.ac-pt--active]="analyticSelectedTeam() === line.team"
-                            [class.ac-pt--faded]="analyticSelectedTeam() !== null && analyticSelectedTeam() !== line.team"
-                            (click)="selectAnalyticPoint(line.team, pt.dayIndex, $event)">
+                            [class.ac-pt--active]="getAnalyticSelectedTeam(i) === line.team"
+                            [class.ac-pt--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
+                            (click)="selectAnalyticPoint(line.team, pt.dayIndex, i, $event)">
                             <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
                           </circle>
                         </ng-container>
@@ -1400,19 +1369,117 @@ type SavedFilterState = {
                     </svg>
                   </div>
 
+                  <!-- Persistent legend sidebar (always visible) -->
+                  <div class="ac-legend-panel">
+                    <!-- Pre-selection: team list with search -->
+                    <ng-container *ngIf="getAnalyticSelectedTeam(i) === null">
+                      <div class="ac-legend-panel-head">
+                        <span class="ac-legend-panel-title">Equipes</span>
+                        <span class="ac-legend-panel-count">{{ cd.lines.length }}</span>
+                      </div>
+                      <div class="ac-legend-search-wrap">
+                        <svg class="ac-drawer-search-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none">
+                          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.4"/>
+                          <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                        </svg>
+                        <input class="ac-drawer-search"
+                               type="text"
+                               placeholder="Buscar equipe..."
+                               [value]="analyticSearch()[i] ?? ''"
+                               (input)="setAnalyticSearch(i, $any($event.target).value)" />
+                      </div>
+                      <div class="ac-legend-scroll">
+                        <div class="ac-legend">
+                          <button *ngFor="let line of filterAnalyticLines(cd.lines, i); trackBy: trackByTeam"
+                                  type="button"
+                                  class="ac-legend-item"
+                                  [class.ac-legend-item--active]="getAnalyticSelectedTeam(i) === line.team"
+                                  [class.ac-legend-item--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
+                                  [style.--lc]="line.color"
+                                  (click)="toggleAnalyticTeam(line.team, i)">
+                            <span class="ac-legend-dot"></span>
+                            <span class="ac-legend-name">{{ line.team }}</span>
+                            <span class="ac-legend-val"
+                                  [class.ac-legend-val--above]="line.above"
+                                  [class.ac-legend-val--below]="!line.above">{{ line.displayValue }}</span>
+                          </button>
+                          <p class="ac-legend-empty" *ngIf="filterAnalyticLines(cd.lines, i).length === 0">Nenhuma equipe encontrada.</p>
+                        </div>
+                      </div>
+                    </ng-container>
+                    <!-- Post-selection: flag legend for selected team -->
+                    <ng-container *ngIf="getAnalyticSelectedTeam(i) !== null">
+                      <div class="ac-legend-panel-head">
+                        <span class="ac-legend-panel-title">Legenda de Flags</span>
+                        <button class="ac-flag-back-btn" type="button" (click)="clearAnalyticTeam(i)">← Equipes</button>
+                      </div>
+                      <ng-container *ngIf="getTeamFlagSummary(kpi, getAnalyticSelectedTeam(i) ?? '', report) as flagSummary">
+                        <div class="ac-flag-list">
+                          <ng-container *ngFor="let fs of flagSummary">
+                            <div class="ac-flag-row" [style.--fc]="fs.color">
+                              <span class="ac-flag-row-dot"></span>
+                              <span class="ac-flag-row-label">{{ fs.label }}</span>
+                              <span class="ac-flag-row-count">{{ fs.count }}×</span>
+                              <span class="ac-flag-row-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
+                            </div>
+                            <ng-container *ngFor="let sf of fs.subFlags">
+                              <div class="ac-flag-row ac-flag-row--sub" [style.--fc]="sf.color">
+                                <span class="ac-flag-row-dot"></span>
+                                <span class="ac-flag-row-label">└ {{ sf.label }}</span>
+                                <span class="ac-flag-row-count">{{ sf.count }}×</span>
+                                <span class="ac-flag-row-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
+                              </div>
+                            </ng-container>
+                          </ng-container>
+                          <p class="ac-flag-empty" *ngIf="flagSummary.length === 0">✅ Nenhum desvio para esta equipe.</p>
+                        </div>
+                      </ng-container>
+                    </ng-container>
+                  </div>
+                  </div><!-- /ac-chart-row -->
+
                   <!-- Painel de desvios da equipe selecionada -->
-                  <div class="ac-deviation-panel" *ngIf="analyticSelectedTeam() !== null">
-                    <ng-container *ngFor="let line of cd.lines">
-                      <ng-container *ngIf="line.team === analyticSelectedTeam()">
+                  <div class="ac-deviation-panel" *ngIf="getAnalyticSelectedTeam(i) !== null">
+                    <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
+                      <ng-container *ngIf="line.team === getAnalyticSelectedTeam(i)">
                         <div class="ac-dev-header">
-                          <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
+                          <div class="ac-dev-context">
+                            <span class="ac-dev-context-label">Visão de Desvios</span>
+                            <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
+                          </div>
                           <span class="ac-dev-kpi-val" [class.ac-dev-kpi-val--above]="line.above" [class.ac-dev-kpi-val--below]="!line.above">
                             {{ kpi.kpi }}: <strong>{{ line.displayValue }}</strong>
                           </span>
                           <span class="ac-dev-meta">Meta: {{ kpi.metaTarget }}</span>
-                          <button type="button" class="ac-dev-close" (click)="toggleAnalyticTeam(line.team)" aria-label="Fechar">✕</button>
+                          <button type="button" class="ac-dev-close" (click)="clearAnalyticTeam(i)" aria-label="Fechar">✕</button>
                         </div>
+                        <!-- Flag summary rows -->
+                        <ng-container *ngIf="getTeamFlagSummary(kpi, line.team, report) as flagSummary">
+                          <div class="ac-dev-flags-section" *ngIf="flagSummary.length > 0">
+                            <h4 class="ac-dev-flags-title">Flags de Desvio Ativas</h4>
+                            <div class="ac-dev-flags-list">
+                              <ng-container *ngFor="let fs of flagSummary">
+                                <div class="ac-dev-flag-row" [style.--fc]="fs.color">
+                                  <span class="ac-dev-flag-dot"></span>
+                                  <span class="ac-dev-flag-name">{{ fs.label }}</span>
+                                  <span class="ac-dev-flag-count">{{ fs.count }}×</span>
+                                  <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
+                                </div>
+                                <ng-container *ngFor="let sf of fs.subFlags">
+                                  <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
+                                    <span class="ac-dev-flag-dot"></span>
+                                    <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
+                                    <span class="ac-dev-flag-count">{{ sf.count }}×</span>
+                                    <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
+                                  </div>
+                                </ng-container>
+                              </ng-container>
+                            </div>
+                          </div>
+                        </ng-container>
+                        <!-- Events list by day -->
                         <ng-container *ngIf="line.deviations.length > 0; else noDeviations">
+                          <div class="ac-dev-events-title">Ocorrências por Dia</div>
                           <div class="ac-dev-list">
                             <div class="ac-dev-item" *ngFor="let dev of line.deviations">
                               <div class="ac-dev-item-head">
@@ -3885,10 +3952,75 @@ type SavedFilterState = {
       .ac-legend-val--above { background: var(--green-bg);  color: var(--green); }
       .ac-legend-val--below { background: var(--red-bg);    color: var(--accent); }
 
+      /* ── Chart + legend row ── */
+      .ac-chart-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
       /* ── SVG ── */
       .analytic-chart-wrap {
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         overflow-x: auto;
+      }
+
+      /* ── Persistent legend panel ── */
+      .ac-legend-panel {
+        flex-shrink: 0;
+        width: 176px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        max-height: 230px;
+        overflow: hidden;
+      }
+
+      .ac-legend-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 5px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+
+      .ac-legend-panel-title {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted-strong);
+      }
+
+      .ac-legend-panel-count {
+        font-size: 9px;
+        background: var(--border);
+        border-radius: 20px;
+        padding: 1px 5px;
+        font-weight: 700;
+        color: var(--muted-strong);
+        line-height: 1.4;
+      }
+
+      .ac-legend-search-wrap {
+        position: relative;
+        flex-shrink: 0;
+      }
+
+      .ac-legend-panel .ac-legend-scroll {
+        flex: 1;
+        overflow-y: auto;
+      }
+
+      .ac-legend-panel .ac-flag-list {
+        overflow-y: auto;
+        flex: 1;
       }
 
       .analytic-chart-svg {
@@ -3970,6 +4102,7 @@ type SavedFilterState = {
         stroke: transparent;
         stroke-width: 14;
         cursor: pointer;
+        pointer-events: all;
       }
 
       .ac-pt {
@@ -4089,6 +4222,216 @@ type SavedFilterState = {
         font-size: 13px;
         color: var(--green);
         margin: 0;
+      }
+
+      /* ── Breadcrumb drill-down header ── */
+      .ac-breadcrumb-back {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--muted-strong);
+        padding: 0;
+        font-family: inherit;
+        text-decoration: underline dotted;
+        transition: color .15s;
+      }
+
+      .ac-breadcrumb-back:hover { color: var(--text); }
+
+      .ac-breadcrumb-sep {
+        font-size: 18px;
+        font-weight: 300;
+        color: var(--muted);
+        margin: 0 6px;
+      }
+
+      .ac-breadcrumb-team {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      /* ── Flag legend (drawer when team selected) ── */
+      .ac-flag-legend {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .ac-flag-back-btn {
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--accent);
+        padding: 4px 6px 6px;
+        font-family: inherit;
+        text-align: left;
+        transition: color .12s;
+      }
+
+      .ac-flag-back-btn:hover { color: var(--text); }
+
+      .ac-flag-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding-top: 2px;
+      }
+
+      .ac-flag-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 6px;
+        border-radius: 4px;
+        border-left: 3px solid var(--fc, #888);
+        font-size: 11px;
+      }
+
+      .ac-flag-row--sub {
+        margin-left: 10px;
+        border-left-width: 2px;
+        font-size: 10px;
+        opacity: .85;
+      }
+
+      .ac-flag-row-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--fc, #888);
+        flex-shrink: 0;
+      }
+
+      .ac-flag-row-label {
+        flex: 1;
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ac-flag-row-count {
+        font-weight: 700;
+        color: var(--fc, #888);
+        font-size: 10px;
+        background: color-mix(in srgb, var(--fc, #888) 12%, transparent);
+        border-radius: 8px;
+        padding: 1px 5px;
+      }
+
+      .ac-flag-row-min {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--text-2, #888);
+        opacity: 0.85;
+        white-space: nowrap;
+      }
+
+      .ac-flag-empty {
+        font-size: 11px;
+        color: var(--green);
+        padding: 4px 6px;
+        margin: 0;
+      }
+
+      /* ── Deviation panel: context label + flag summary section ── */
+      .ac-dev-context {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .ac-dev-context-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .1em;
+        color: var(--muted);
+      }
+
+      .ac-dev-flags-section {
+        padding: 10px 14px 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .ac-dev-flags-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--muted-strong);
+        margin: 0 0 6px;
+      }
+
+      .ac-dev-flags-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .ac-dev-flag-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        border-left: 3px solid var(--fc, #888);
+        background: color-mix(in srgb, var(--fc, #888) 6%, transparent);
+        font-size: 12px;
+      }
+
+      .ac-dev-flag-row--sub {
+        margin-left: 16px;
+        font-size: 11px;
+        border-left-width: 2px;
+        opacity: .88;
+      }
+
+      .ac-dev-flag-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--fc, #888);
+        flex-shrink: 0;
+      }
+
+      .ac-dev-flag-name {
+        flex: 1;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .ac-dev-flag-count {
+        font-weight: 700;
+        font-size: 11px;
+        color: var(--fc, #888);
+        background: color-mix(in srgb, var(--fc, #888) 12%, transparent);
+        border-radius: 10px;
+        padding: 1px 7px;
+      }
+
+      .ac-dev-flag-min {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-2, #888);
+        opacity: 0.85;
+        white-space: nowrap;
+      }
+
+      .ac-dev-events-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--muted-strong);
+        padding: 8px 14px 4px;
       }
 
       /* Ranking table */
@@ -5727,12 +6070,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.reportType.set(value as ReportTypeValue);
     this.saveToStorage();
+    // Re-observe newly rendered anim-el elements after Angular renders the switched mode.
+    setTimeout(() => this.setupAnimations(), 80);
   }
 
   // ─── Analytic mode state ───────────────────────────────────────────────────
-  protected readonly analyticSelectedTeam = signal<string | null>(null);
+  /** Per-KPI selected team (keyed by kpi section index so each KPI has its own independent selection). */
+  protected readonly analyticSelectedTeam = signal<Record<number, string | null>>({});
   protected readonly analyticLegendOpen = signal<Record<number, boolean>>({});
-  protected readonly analyticSearch = signal<Record<number, string>>({});
+  protected readonly analyticSearch = signal<Record<number, string>>({}); 
 
   protected toggleAnalyticLegend(index: number): void {
     this.analyticLegendOpen.update((cur) => ({ ...cur, [index]: !cur[index] }));
@@ -5750,13 +6096,185 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return q ? lines.filter((l) => l.team.toLowerCase().includes(q)) : lines;
   }
 
-  protected toggleAnalyticTeam(team: string): void {
-    this.analyticSelectedTeam.update((cur) => (cur === team ? null : team));
+  protected getAnalyticSelectedTeam(kpiIndex: number): string | null {
+    return this.analyticSelectedTeam()[kpiIndex] ?? null;
   }
 
-  protected selectAnalyticPoint(team: string, _dayIndex: number, ev: MouseEvent): void {
+  protected toggleAnalyticTeam(team: string, kpiIndex: number): void {
+    const wasSelected = (this.analyticSelectedTeam()[kpiIndex] ?? null) === team;
+    this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: wasSelected ? null : team }));
+    if (!wasSelected) {
+      this.analyticLegendOpen.update((cur) => ({ ...cur, [kpiIndex]: true }));
+    }
+  }
+
+  protected clearAnalyticTeam(kpiIndex: number): void {
+    this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: null }));
+  }
+
+  protected selectAnalyticPoint(team: string, _dayIndex: number, kpiIndex: number, ev: MouseEvent): void {
     ev.stopPropagation();
-    this.analyticSelectedTeam.update((cur) => (cur === team ? null : team));
+    const wasSelected = (this.analyticSelectedTeam()[kpiIndex] ?? null) === team;
+    this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: wasSelected ? null : team }));
+    if (!wasSelected) {
+      this.analyticLegendOpen.update((cur) => ({ ...cur, [kpiIndex]: true }));
+    }
+  }
+
+  protected getTeamFlagSummary(
+    kpi: GeneratedReport['kpis'][number],
+    team: string,
+    report: GeneratedReport,
+  ): Array<{
+    flag: string;
+    label: string;
+    color: string;
+    count: number;
+    totalMin: number;
+    subFlags: Array<{ type: string; label: string; color: string; count: number; totalMin: number }>;
+  }> {
+    if (!team) return [];
+    const flagData = new Map<string, { count: number; totalMin: number }>();
+    const semOsSubData = new Map<string, { count: number; totalMin: number }>();
+
+    const bump = (map: Map<string, { count: number; totalMin: number }>, key: string, min: number) => {
+      const prev = map.get(key) ?? { count: 0, totalMin: 0 };
+      map.set(key, { count: prev.count + 1, totalMin: prev.totalMin + min });
+    };
+
+    switch (kpi.kpi) {
+      case 'OS Dia': {
+        const entry = report.specialAnalysis.osDiaAnalysis.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tr_excede_hd') min = order.tr_ordem_min;
+              else if (f === 'tl_excede_hd') min = order.tl_ordem_min;
+              else if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
+              else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              bump(flagData, f, min);
+              if (f === 'sem_os_alto' && order.sem_os_details) {
+                for (const d of order.sem_os_details) {
+                  bump(semOsSubData, d.type, d.min ?? 0);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'Eficiência': {
+        const entry = kpi.evidenceAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tr_excede_hd' || f === 'tr_muito_baixo') min = order.tr_ordem_min;
+              else if (f === 'deslocamento_curto') min = order.tl_ordem_min;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case 'Utilização': {
+        const entry = report.specialAnalysis.utilizacaoAnalysis.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
+              else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              bump(flagData, f, min);
+              if (f === 'sem_os_alto' && order.sem_os_details) {
+                for (const d of order.sem_os_details) {
+                  bump(semOsSubData, d.type, d.min ?? 0);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'TME IMP': {
+        const entry = kpi.tmeImpAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tme_muito_alto') min = order.tme_imp_min;
+              else if (f === 'sem_deslocamento') min = order.tl_ordem_min;
+              else if (f === 'sem_execucao') min = order.tr_ordem_min;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case '1º Login': {
+        const entry = kpi.primeiroLoginAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const day of entry.flaggedDays) {
+            for (const f of day.flags) {
+              bump(flagData, f, day.primeiro_login_min ?? 0);
+            }
+          }
+        }
+        break;
+      }
+      case '1º Desloc.': {
+        const entry = kpi.primeiroDeslocAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const day of entry.flaggedDays) {
+            for (const f of day.flags) {
+              let min = 0;
+              if (f === 'desloc_lento' || f === 'desloc_muito_lento') min = day.primeiro_desloc_min ?? 0;
+              else if (f === 'despacho_tardio') min = day.despacho_apos_inicio_min ?? 0;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case 'Retorno Base': {
+        const entry = kpi.retornoBaseAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const day of entry.flaggedDays) {
+            for (const f of day.flags) {
+              bump(flagData, f, day.retorno_base_min ?? 0);
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    const colors = DashboardComponent.FLAG_COLORS;
+    const flagLabels = DashboardComponent.FLAG_LABELS;
+    const subColors = DashboardComponent.SEM_OS_SUB_COLORS;
+    const subLabels = DashboardComponent.SEM_OS_SUB_LABELS;
+
+    return [...flagData.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([flag, { count, totalMin }]) => ({
+        flag,
+        label: flagLabels[flag] ?? flag,
+        color: colors[flag] ?? '#888',
+        count,
+        totalMin,
+        subFlags: flag === 'sem_os_alto'
+          ? [...semOsSubData.entries()]
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([type, { count: cnt, totalMin: subMin }]) => ({
+                type,
+                label: subLabels[type] ?? type,
+                color: subColors[type] ?? '#c0122d',
+                count: cnt,
+                totalMin: subMin,
+              }))
+          : [],
+      }));
   }
 
   private static readonly CHART_COLORS = [
@@ -5765,6 +6283,63 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     '#0d9488', '#b45309', '#9333ea', '#0284c7', '#dc2626',
     '#059669', '#d97706', '#4f46e5',
   ];
+
+  // ─── Flag metadata for analytic drill-down ────────────────────────────────
+  private static readonly FLAG_LABELS: Record<string, string> = {
+    tr_excede_hd:          'Temp. Reparo > HD',
+    tl_excede_hd:          'Temp. Deslocamento Alto',
+    temp_prep_alto:        'Temp. Partida ≥ 10min',
+    sem_os_alto:           'Sem Ordem ≥ 10min',
+    deslocamento_curto:    'Deslocamento Curto',
+    tempo_padrao_vazio:    'Tempo Padrão Vazio',
+    tr_muito_baixo:        'Tempo de Reparo Baixo',
+    tme_muito_alto:        'TME IMP Elevado',
+    sem_deslocamento:      'Sem Deslocamento',
+    sem_execucao:          'Sem Execução',
+    login_tardio:          'Login Tardio',
+    login_muito_tardio:    'Login Muito Tardio',
+    desloc_lento:          'Deslocamento Lento',
+    desloc_muito_lento:    'Deslocamento Muito Lento',
+    sem_desloc_registrado: 'Sem Desloc. Registrado',
+    despacho_tardio:       'Despacho Tardio',
+    retorno_alto:          'Retorno Base Alto',
+    retorno_muito_alto:    'Retorno Muito Alto',
+  };
+
+  private static readonly FLAG_COLORS: Record<string, string> = {
+    tr_excede_hd:          '#d97706',
+    tl_excede_hd:          '#7c3aed',
+    temp_prep_alto:        '#2563eb',
+    sem_os_alto:           '#c0122d',
+    deslocamento_curto:    '#0891b2',
+    tempo_padrao_vazio:    '#6b7280',
+    tr_muito_baixo:        '#db2777',
+    tme_muito_alto:        '#dc2626',
+    sem_deslocamento:      '#0284c7',
+    sem_execucao:          '#374151',
+    login_tardio:          '#d97706',
+    login_muito_tardio:    '#c0122d',
+    desloc_lento:          '#7c3aed',
+    desloc_muito_lento:    '#5b21b6',
+    sem_desloc_registrado: '#6b7280',
+    despacho_tardio:       '#ea580c',
+    retorno_alto:          '#0d9488',
+    retorno_muito_alto:    '#0f766e',
+  };
+
+  private static readonly SEM_OS_SUB_COLORS: Record<string, string> = {
+    inicio_jornada:         '#ef4444',
+    entre_ordens:           '#b91c1c',
+    fim_jornada:            '#7f1d1d',
+    intervalo_deslocamento: '#f97316',
+  };
+
+  private static readonly SEM_OS_SUB_LABELS: Record<string, string> = {
+    inicio_jornada:         'Início da Jornada',
+    entre_ordens:           'Entre Ordens',
+    fim_jornada:            'Fim da Jornada',
+    intervalo_deslocamento: 'Desl. de Intervalo',
+  };
 
   protected analyticChartData(kpi: GeneratedReport['kpis'][number]): {
     lines: Array<{
@@ -6021,6 +6596,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected trackByOption(_index: number, option: string): string {
     return option;
+  }
+
+  protected trackByTeam(_index: number, line: { team: string }): string {
+    return line.team;
+  }
+
+  protected trackByDayIndex(_index: number, pt: { dayIndex: number }): number {
+    return pt.dayIndex;
   }
 
   protected objectKeys(obj: Record<string, unknown>): string[] {
