@@ -1484,7 +1484,7 @@ type SavedFilterState = {
                             <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
                           </div>
                           <span class="ac-dev-kpi-val" [class.ac-dev-kpi-val--above]="line.above" [class.ac-dev-kpi-val--below]="!line.above">
-                            {{ kpi.kpi }}: <strong>{{ line.displayValue }}</strong>
+                            {{ kpi.kpi }}: <strong>{{ (getAnalyticSelectedDay(i) !== null ? getDayKpiValue(cd.lines, line.team, getAnalyticSelectedDay(i)) : null) ?? line.displayValue }}</strong>
                           </span>
                           <span class="ac-dev-meta">Meta: {{ kpi.metaTarget }}</span>
                           <button *ngIf="getAnalyticSelectedDay(i) !== null" type="button" class="ac-dev-day-back" (click)="clearAnalyticDay(i)" aria-label="Voltar para média">← Média</button>
@@ -1519,22 +1519,35 @@ type SavedFilterState = {
                         </ng-container>
                         <!-- Modo ponto: desvios do dia específico -->
                         <ng-container *ngIf="getAnalyticSelectedDay(i) !== null">
-                          <ng-container *ngIf="getDeviationsForDay(line.deviations, getAnalyticSelectedDay(i)) as dayDevs">
-                            <ng-container *ngIf="dayDevs.length > 0; else noDayDeviations">
-                              <div class="ac-dev-events-title">Desvios — Dia {{ getAnalyticSelectedDay(i) }}</div>
-                              <div class="ac-dev-list">
-                                <div class="ac-dev-item" *ngFor="let dev of dayDevs">
-                                  <div class="ac-dev-item-head">
-                                    <span class="ac-dev-day">Dia {{ dev.dateRef }}</span>
-                                    <span class="ac-dev-flag" *ngFor="let f of dev.flags">{{ f }}</span>
+                          <ng-container *ngIf="getDayFlagSummary(kpi, line.team, getAnalyticSelectedDay(i), report) as dayFlags">
+                            <div class="ac-dev-flags-section" *ngIf="dayFlags.length > 0">
+                              <h4 class="ac-dev-flags-title">Desvios — Dia {{ getAnalyticSelectedDay(i) }}</h4>
+                              <div class="ac-dev-flags-list">
+                                <ng-container *ngFor="let fs of dayFlags">
+                                  <div class="ac-dev-flag-row" [style.--fc]="fs.color">
+                                    <span class="ac-dev-flag-dot"></span>
+                                    <span class="ac-dev-flag-name">{{ fs.label }}</span>
+                                    <span class="ac-dev-flag-count">{{ fs.count }}×</span>
+                                    <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
                                   </div>
-                                  <div class="ac-dev-item-detail" *ngIf="dev.detail">{{ dev.detail }}</div>
+                                  <ng-container *ngFor="let sf of fs.subFlags">
+                                    <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
+                                      <span class="ac-dev-flag-dot"></span>
+                                      <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
+                                      <span class="ac-dev-flag-count">{{ sf.count }}×</span>
+                                      <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
+                                    </div>
+                                  </ng-container>
+                                </ng-container>
+                                <div class="ac-dev-flag-row ac-dev-day-total" *ngIf="getDayDeviationTotal(dayFlags) > 0">
+                                  <span class="ac-dev-flag-dot" style="visibility:hidden"></span>
+                                  <span class="ac-dev-flag-name"><strong>Total desvios</strong></span>
+                                  <span class="ac-dev-flag-count"></span>
+                                  <span class="ac-dev-flag-min"><strong>{{ getDayDeviationTotal(dayFlags) | number:'1.0-0' }} min</strong></span>
                                 </div>
                               </div>
-                            </ng-container>
-                            <ng-template #noDayDeviations>
-                              <p class="ac-dev-ok">✅ Nenhum desvio registrado neste dia.</p>
-                            </ng-template>
+                            </div>
+                            <p class="ac-dev-ok" *ngIf="dayFlags.length === 0">✅ Nenhum desvio registrado neste dia.</p>
                           </ng-container>
                         </ng-container>
                       </ng-container>
@@ -6215,7 +6228,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     day: string | null,
   ): Array<{ dateRef: string; flags: string[]; detail: string }> {
     if (!day) return deviations;
-    return deviations.filter((d) => d.dateRef === day);
+    return deviations.filter((d) => {
+      if (d.dateRef === day) return true;
+      // dayLabel may be dd/mm (from dailyTrend) while dateRef is dd/mm/yyyy — match prefix
+      if (d.dateRef.startsWith(day + '/')) return true;
+      // inverse: dateRef is dd/mm and dayLabel is dd/mm/yyyy
+      if (day.startsWith(d.dateRef + '/')) return true;
+      return false;
+    });
   }
 
   protected getTeamFlagSummary(
@@ -6372,6 +6392,195 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               }))
           : [],
       }));
+  }
+
+  protected getDayFlagSummary(
+    kpi: GeneratedReport['kpis'][number],
+    team: string,
+    day: string | null,
+    report: GeneratedReport,
+  ): Array<{
+    flag: string;
+    label: string;
+    color: string;
+    count: number;
+    totalMin: number;
+    subFlags: Array<{ type: string; label: string; color: string; count: number; totalMin: number }>;
+  }> {
+    if (!team || !day) return [];
+
+    const matchesDay = (dateRef: string | undefined): boolean => {
+      if (!dateRef) return false;
+      if (dateRef === day) return true;
+      if (dateRef.startsWith(day + '/')) return true;
+      if (day.startsWith(dateRef + '/')) return true;
+      return false;
+    };
+
+    const flagData = new Map<string, { count: number; totalMin: number }>();
+    const semOsSubData = new Map<string, { count: number; totalMin: number }>();
+
+    const bump = (map: Map<string, { count: number; totalMin: number }>, key: string, min: number) => {
+      const prev = map.get(key) ?? { count: 0, totalMin: 0 };
+      map.set(key, { count: prev.count + 1, totalMin: prev.totalMin + min });
+    };
+
+    switch (kpi.kpi) {
+      case 'OS Dia': {
+        const entry = report.specialAnalysis.osDiaAnalysis.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            if (!matchesDay(order.date_ref)) continue;
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tr_excede_hd') min = order.tr_ordem_min;
+              else if (f === 'tl_excede_hd') min = order.tl_ordem_min;
+              else if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
+              else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              bump(flagData, f, min);
+              if (f === 'sem_os_alto' && order.sem_os_details) {
+                for (const d of order.sem_os_details) {
+                  bump(semOsSubData, d.type, d.min ?? 0);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'Eficiência': {
+        const entry = kpi.evidenceAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            if (!matchesDay(order.date_ref)) continue;
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tr_excede_hd' || f === 'tr_muito_baixo') min = order.tr_ordem_min;
+              else if (f === 'deslocamento_curto') min = order.tl_ordem_min;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case 'Utilização': {
+        const entry = report.specialAnalysis.utilizacaoAnalysis.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            if (!matchesDay(order.date_ref)) continue;
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
+              else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              bump(flagData, f, min);
+              if (f === 'sem_os_alto' && order.sem_os_details) {
+                for (const d of order.sem_os_details) {
+                  bump(semOsSubData, d.type, d.min ?? 0);
+                }
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'TME IMP': {
+        const entry = kpi.tmeImpAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const order of entry.flaggedOrders) {
+            if (!matchesDay(order.date_ref)) continue;
+            for (const f of order.flags) {
+              let min = 0;
+              if (f === 'tme_muito_alto') min = order.tme_imp_min;
+              else if (f === 'sem_deslocamento') min = order.tl_ordem_min;
+              else if (f === 'sem_execucao') min = order.tr_ordem_min;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case '1º Login': {
+        const entry = kpi.primeiroLoginAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const d of entry.flaggedDays) {
+            if (!matchesDay(d.date_ref)) continue;
+            for (const f of d.flags) {
+              bump(flagData, f, d.primeiro_login_min ?? 0);
+            }
+          }
+        }
+        break;
+      }
+      case '1º Desloc.': {
+        const entry = kpi.primeiroDeslocAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const d of entry.flaggedDays) {
+            if (!matchesDay(d.date_ref)) continue;
+            for (const f of d.flags) {
+              let min = 0;
+              if (f === 'desloc_lento' || f === 'desloc_muito_lento') min = d.primeiro_desloc_min ?? 0;
+              else if (f === 'despacho_tardio') min = d.despacho_apos_inicio_min ?? 0;
+              bump(flagData, f, min);
+            }
+          }
+        }
+        break;
+      }
+      case 'Retorno Base': {
+        const entry = kpi.retornoBaseAnalysis?.find((a) => a.team === team);
+        if (entry) {
+          for (const d of entry.flaggedDays) {
+            if (!matchesDay(d.date_ref)) continue;
+            for (const f of d.flags) {
+              bump(flagData, f, d.retorno_base_min ?? 0);
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    const colors = DashboardComponent.FLAG_COLORS;
+    const flagLabels = DashboardComponent.FLAG_LABELS;
+    const subColors = DashboardComponent.SEM_OS_SUB_COLORS;
+    const subLabels = DashboardComponent.SEM_OS_SUB_LABELS;
+
+    return [...flagData.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([flag, { count, totalMin }]) => ({
+        flag,
+        label: flagLabels[flag] ?? flag,
+        color: colors[flag] ?? '#888',
+        count,
+        totalMin,
+        subFlags: flag === 'sem_os_alto'
+          ? [...semOsSubData.entries()]
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([type, { count: cnt, totalMin: subMin }]) => ({
+                type,
+                label: subLabels[type] ?? type,
+                color: subColors[type] ?? '#c0122d',
+                count: cnt,
+                totalMin: subMin,
+              }))
+          : [],
+      }));
+  }
+
+  protected getDayKpiValue(
+    lines: Array<{ team: string; points: Array<{ dayLabel: string; displayVal: string }> }>,
+    team: string,
+    day: string | null,
+  ): string | null {
+    if (!day) return null;
+    const teamLine = lines.find((l) => l.team === team);
+    if (!teamLine) return null;
+    const pt = teamLine.points.find((p) => p.dayLabel === day);
+    return pt?.displayVal ?? null;
+  }
+
+  protected getDayDeviationTotal(dayFlags: Array<{ totalMin: number }>): number {
+    return dayFlags.reduce((sum, f) => sum + f.totalMin, 0);
   }
 
   private static readonly CHART_COLORS = [
