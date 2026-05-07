@@ -1291,6 +1291,10 @@ type SavedFilterState = {
                         <button class="ac-breadcrumb-back" type="button" (click)="clearAnalyticTeam(i)">{{ kpi.kpi }}</button>
                         <span class="ac-breadcrumb-sep">›</span>
                         <span class="ac-breadcrumb-team">{{ getAnalyticSelectedTeam(i) }}</span>
+                        <ng-container *ngIf="getAnalyticSelectedDay(i) !== null">
+                          <span class="ac-breadcrumb-sep">›</span>
+                          <span class="ac-breadcrumb-day">Dia {{ getAnalyticSelectedDay(i) }}</span>
+                        </ng-container>
                       </ng-container>
                     </h2>
                     <span class="analytic-kpi-dir-badge"
@@ -1340,30 +1344,62 @@ type SavedFilterState = {
                         </ng-container>
                       </ng-container>
                       <!-- One polyline + dots per team (faded behind trend line) -->
+                      <!-- Pass 1: non-selected teams (painted first / behind) -->
                       <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
-                        <polyline
-                          [attr.points]="line.polyline"
-                          class="ac-line"
-                          [attr.stroke]="line.color"
-                          [class.ac-line--active]="getAnalyticSelectedTeam(i) === line.team"
-                          [class.ac-line--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
-                          (click)="toggleAnalyticTeam(line.team, i)" />
-                        <!-- invisible wider hit area -->
-                        <polyline
-                          [attr.points]="line.polyline"
-                          class="ac-line-hit"
-                          (click)="toggleAnalyticTeam(line.team, i)" />
-                        <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
-                          <circle
-                            [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 5 : 3.5"
-                            [attr.fill]="line.color"
-                            [class.ac-pt]="true"
-                            [class.ac-pt--flagged]="pt.flagged"
-                            [class.ac-pt--active]="getAnalyticSelectedTeam(i) === line.team"
-                            [class.ac-pt--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
-                            (click)="selectAnalyticPoint(line.team, pt.dayIndex, i, $event)">
-                            <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
-                          </circle>
+                        <ng-container *ngIf="getAnalyticSelectedTeam(i) !== line.team">
+                          <polyline
+                            [attr.points]="line.polyline"
+                            class="ac-line"
+                            [attr.stroke]="line.color"
+                            [class.ac-line--faded]="getAnalyticSelectedTeam(i) !== null"
+                            (click)="toggleAnalyticTeam(line.team, i)" />
+                          <polyline
+                            [attr.points]="line.polyline"
+                            class="ac-line-hit"
+                            (click)="toggleAnalyticTeam(line.team, i)" />
+                          <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
+                            <circle
+                              [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 5 : 3.5"
+                              [attr.fill]="line.color"
+                              [class.ac-pt]="true"
+                              [class.ac-pt--flagged]="pt.flagged"
+                              [class.ac-pt--faded]="getAnalyticSelectedTeam(i) !== null"
+                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)">
+                              <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
+                            </circle>
+                          </ng-container>
+                        </ng-container>
+                      </ng-container>
+                      <!-- Pass 2: selected team last (painted on top) -->
+                      <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
+                        <ng-container *ngIf="getAnalyticSelectedTeam(i) === line.team">
+                          <polyline
+                            [attr.points]="line.polyline"
+                            class="ac-line ac-line--active"
+                            [attr.stroke]="line.color"
+                            (click)="toggleAnalyticTeam(line.team, i)" />
+                          <polyline
+                            [attr.points]="line.polyline"
+                            class="ac-line-hit"
+                            (click)="toggleAnalyticTeam(line.team, i)" />
+                          <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
+                            <!-- wider transparent hit area so the dot is easy to click -->
+                            <circle
+                              [attr.cx]="pt.x" [attr.cy]="pt.y" r="10"
+                              fill="transparent"
+                              class="ac-pt-hit"
+                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)" />
+                            <circle
+                              [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 6 : 5"
+                              [attr.fill]="line.color"
+                              [class.ac-pt]="true"
+                              [class.ac-pt--flagged]="pt.flagged"
+                              [class.ac-pt--active]="true"
+                              [class.ac-pt--selected-day]="getAnalyticSelectedDay(i) === pt.dayLabel"
+                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)">
+                              <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
+                            </circle>
+                          </ng-container>
                         </ng-container>
                       </ng-container>
                     </svg>
@@ -1444,55 +1480,63 @@ type SavedFilterState = {
                       <ng-container *ngIf="line.team === getAnalyticSelectedTeam(i)">
                         <div class="ac-dev-header">
                           <div class="ac-dev-context">
-                            <span class="ac-dev-context-label">Visão de Desvios</span>
+                            <span class="ac-dev-context-label">{{ getAnalyticSelectedDay(i) !== null ? 'Dia ' + getAnalyticSelectedDay(i) : 'Média Geral' }}</span>
                             <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
                           </div>
                           <span class="ac-dev-kpi-val" [class.ac-dev-kpi-val--above]="line.above" [class.ac-dev-kpi-val--below]="!line.above">
                             {{ kpi.kpi }}: <strong>{{ line.displayValue }}</strong>
                           </span>
                           <span class="ac-dev-meta">Meta: {{ kpi.metaTarget }}</span>
+                          <button *ngIf="getAnalyticSelectedDay(i) !== null" type="button" class="ac-dev-day-back" (click)="clearAnalyticDay(i)" aria-label="Voltar para média">← Média</button>
                           <button type="button" class="ac-dev-close" (click)="clearAnalyticTeam(i)" aria-label="Fechar">✕</button>
                         </div>
-                        <!-- Flag summary rows -->
-                        <ng-container *ngIf="getTeamFlagSummary(kpi, line.team, report) as flagSummary">
-                          <div class="ac-dev-flags-section" *ngIf="flagSummary.length > 0">
-                            <h4 class="ac-dev-flags-title">Flags de Desvio Ativas</h4>
-                            <div class="ac-dev-flags-list">
-                              <ng-container *ngFor="let fs of flagSummary">
-                                <div class="ac-dev-flag-row" [style.--fc]="fs.color">
-                                  <span class="ac-dev-flag-dot"></span>
-                                  <span class="ac-dev-flag-name">{{ fs.label }}</span>
-                                  <span class="ac-dev-flag-count">{{ fs.count }}×</span>
-                                  <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
-                                </div>
-                                <ng-container *ngFor="let sf of fs.subFlags">
-                                  <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
+                        <!-- Modo linha: médias de desvios de todas as datas -->
+                        <ng-container *ngIf="getAnalyticSelectedDay(i) === null">
+                          <ng-container *ngIf="getTeamFlagSummary(kpi, line.team, report) as flagSummary">
+                            <div class="ac-dev-flags-section" *ngIf="flagSummary.length > 0">
+                              <h4 class="ac-dev-flags-title">Média de Desvios — Todos os Dias</h4>
+                              <div class="ac-dev-flags-list">
+                                <ng-container *ngFor="let fs of flagSummary">
+                                  <div class="ac-dev-flag-row" [style.--fc]="fs.color">
                                     <span class="ac-dev-flag-dot"></span>
-                                    <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
-                                    <span class="ac-dev-flag-count">{{ sf.count }}×</span>
-                                    <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
+                                    <span class="ac-dev-flag-name">{{ fs.label }}</span>
+                                    <span class="ac-dev-flag-count">{{ fs.count }}×</span>
+                                    <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
                                   </div>
+                                  <ng-container *ngFor="let sf of fs.subFlags">
+                                    <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
+                                      <span class="ac-dev-flag-dot"></span>
+                                      <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
+                                      <span class="ac-dev-flag-count">{{ sf.count }}×</span>
+                                      <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
+                                    </div>
+                                  </ng-container>
                                 </ng-container>
-                              </ng-container>
-                            </div>
-                          </div>
-                        </ng-container>
-                        <!-- Events list by day -->
-                        <ng-container *ngIf="line.deviations.length > 0; else noDeviations">
-                          <div class="ac-dev-events-title">Ocorrências por Dia</div>
-                          <div class="ac-dev-list">
-                            <div class="ac-dev-item" *ngFor="let dev of line.deviations">
-                              <div class="ac-dev-item-head">
-                                <span class="ac-dev-day">Dia {{ dev.dateRef }}</span>
-                                <span class="ac-dev-flag" *ngFor="let f of dev.flags">{{ f }}</span>
                               </div>
-                              <div class="ac-dev-item-detail" *ngIf="dev.detail">{{ dev.detail }}</div>
                             </div>
-                          </div>
+                            <p class="ac-dev-ok" *ngIf="flagSummary.length === 0">✅ Nenhum desvio registrado para esta equipe neste KPI.</p>
+                          </ng-container>
                         </ng-container>
-                        <ng-template #noDeviations>
-                          <p class="ac-dev-ok">✅ Nenhum desvio registrado para esta equipe neste KPI.</p>
-                        </ng-template>
+                        <!-- Modo ponto: desvios do dia específico -->
+                        <ng-container *ngIf="getAnalyticSelectedDay(i) !== null">
+                          <ng-container *ngIf="getDeviationsForDay(line.deviations, getAnalyticSelectedDay(i)) as dayDevs">
+                            <ng-container *ngIf="dayDevs.length > 0; else noDayDeviations">
+                              <div class="ac-dev-events-title">Desvios — Dia {{ getAnalyticSelectedDay(i) }}</div>
+                              <div class="ac-dev-list">
+                                <div class="ac-dev-item" *ngFor="let dev of dayDevs">
+                                  <div class="ac-dev-item-head">
+                                    <span class="ac-dev-day">Dia {{ dev.dateRef }}</span>
+                                    <span class="ac-dev-flag" *ngFor="let f of dev.flags">{{ f }}</span>
+                                  </div>
+                                  <div class="ac-dev-item-detail" *ngIf="dev.detail">{{ dev.detail }}</div>
+                                </div>
+                              </div>
+                            </ng-container>
+                            <ng-template #noDayDeviations>
+                              <p class="ac-dev-ok">✅ Nenhum desvio registrado neste dia.</p>
+                            </ng-template>
+                          </ng-container>
+                        </ng-container>
                       </ng-container>
                     </ng-container>
                   </div>
@@ -4120,6 +4164,16 @@ type SavedFilterState = {
 
       .ac-pt--faded { opacity: .18; }
 
+      .ac-pt--selected-day {
+        stroke: white;
+        stroke-width: 3;
+        filter: drop-shadow(0 0 6px currentColor);
+      }
+
+      .ac-pt-hit {
+        cursor: pointer;
+      }
+
       /* ── Deviation panel ── */
       .ac-deviation-panel {
         margin-top: 14px;
@@ -4172,6 +4226,19 @@ type SavedFilterState = {
       }
 
       .ac-dev-close:hover { background: var(--border); }
+
+      .ac-dev-day-back {
+        background: transparent;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 11px;
+        color: var(--accent);
+        padding: 2px 8px;
+        border-radius: 6px;
+        transition: background .12s;
+      }
+
+      .ac-dev-day-back:hover { background: var(--border); }
 
       .ac-dev-list {
         display: flex;
@@ -4251,6 +4318,12 @@ type SavedFilterState = {
         font-size: 16px;
         font-weight: 700;
         color: var(--text);
+      }
+
+      .ac-breadcrumb-day {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--accent);
       }
 
       /* ── Flag legend (drawer when team selected) ── */
@@ -6077,6 +6150,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   // ─── Analytic mode state ───────────────────────────────────────────────────
   /** Per-KPI selected team (keyed by kpi section index so each KPI has its own independent selection). */
   protected readonly analyticSelectedTeam = signal<Record<number, string | null>>({});
+  protected readonly analyticSelectedDay = signal<Record<number, string | null>>({});
   protected readonly analyticLegendOpen = signal<Record<number, boolean>>({});
   protected readonly analyticSearch = signal<Record<number, string>>({}); 
 
@@ -6100,9 +6174,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.analyticSelectedTeam()[kpiIndex] ?? null;
   }
 
+  protected getAnalyticSelectedDay(kpiIndex: number): string | null {
+    return this.analyticSelectedDay()[kpiIndex] ?? null;
+  }
+
+  protected clearAnalyticDay(kpiIndex: number): void {
+    this.analyticSelectedDay.update((cur) => ({ ...cur, [kpiIndex]: null }));
+  }
+
   protected toggleAnalyticTeam(team: string, kpiIndex: number): void {
     const wasSelected = (this.analyticSelectedTeam()[kpiIndex] ?? null) === team;
     this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: wasSelected ? null : team }));
+    this.analyticSelectedDay.update((cur) => ({ ...cur, [kpiIndex]: null }));
     if (!wasSelected) {
       this.analyticLegendOpen.update((cur) => ({ ...cur, [kpiIndex]: true }));
     }
@@ -6110,15 +6193,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected clearAnalyticTeam(kpiIndex: number): void {
     this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: null }));
+    this.analyticSelectedDay.update((cur) => ({ ...cur, [kpiIndex]: null }));
   }
 
-  protected selectAnalyticPoint(team: string, _dayIndex: number, kpiIndex: number, ev: MouseEvent): void {
+  protected selectAnalyticPoint(team: string, dayLabel: string, kpiIndex: number, ev: MouseEvent): void {
     ev.stopPropagation();
     const wasSelected = (this.analyticSelectedTeam()[kpiIndex] ?? null) === team;
-    this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: wasSelected ? null : team }));
-    if (!wasSelected) {
+    const wasSameDay = this.analyticSelectedDay()[kpiIndex] === dayLabel;
+    if (wasSelected && wasSameDay) {
+      // Clicou no mesmo ponto novamente → volta para visão de média (linha)
+      this.analyticSelectedDay.update((cur) => ({ ...cur, [kpiIndex]: null }));
+    } else {
+      this.analyticSelectedTeam.update((cur) => ({ ...cur, [kpiIndex]: team }));
+      this.analyticSelectedDay.update((cur) => ({ ...cur, [kpiIndex]: dayLabel }));
       this.analyticLegendOpen.update((cur) => ({ ...cur, [kpiIndex]: true }));
     }
+  }
+
+  protected getDeviationsForDay(
+    deviations: Array<{ dateRef: string; flags: string[]; detail: string }>,
+    day: string | null,
+  ): Array<{ dateRef: string; flags: string[]; detail: string }> {
+    if (!day) return deviations;
+    return deviations.filter((d) => d.dateRef === day);
   }
 
   protected getTeamFlagSummary(
