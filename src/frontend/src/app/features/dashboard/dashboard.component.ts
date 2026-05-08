@@ -1677,7 +1677,7 @@ type SavedFilterState = {
         flex-wrap: wrap;
         justify-content: center;
         gap: 8px;
-        width: min(1000px, 100%);
+        width: min(1480px, 100%);
         pointer-events: auto;
       }
 
@@ -2279,6 +2279,8 @@ type SavedFilterState = {
 
         .workspace-stage {
           padding-top: 116px;
+          padding-left: 14px;
+          padding-right: 14px;
         }
 
         .filter-fab {
@@ -2311,11 +2313,11 @@ type SavedFilterState = {
 
       .workspace-stage {
         min-height: 100vh;
-        padding: 72px 20px 80px;
+        padding: 72px 40px 80px;
         display: grid;
         gap: 28px;
         align-content: start;
-        max-width: 1100px;
+        max-width: 1600px;
         margin: 0 auto;
       }
 
@@ -3125,7 +3127,7 @@ type SavedFilterState = {
 
       .kpi-cr {
         display: grid;
-        grid-template-columns: 22px 180px 1fr 60px;
+        grid-template-columns: 22px 220px 1fr 72px;
         align-items: center;
         gap: 10px;
         padding: 5px 8px;
