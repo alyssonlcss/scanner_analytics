@@ -6410,7 +6410,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!team || !day) return [];
 
     const matchesDay = (dateRef: string | undefined): boolean => {
-      if (!dateRef) return false;
+      // Records without a date reference are date-agnostic — include for any clicked day
+      if (!dateRef) return true;
       if (dateRef === day) return true;
       if (dateRef.startsWith(day + '/')) return true;
       if (day.startsWith(dateRef + '/')) return true;
@@ -6719,20 +6720,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }
       };
 
-      // OS Dia
-      const osDia = kpi.kpi === 'OS Dia'
-        ? (kpi as GeneratedReport['kpis'][number] & { evidenceAnalysis?: never }).scores // not used directly
-        : null;
-      void osDia;
-
       const specialAnalysisMap: Record<string, Array<{ team: string; flaggedOrders?: Array<{ date_ref?: string; flags: string[]; nr_ordem?: string; classe?: string; causa?: string }>; flaggedDays?: Array<{ date_ref?: string; flags: string[] }> }>> = {};
 
       // Map kpi.kpi → specialAnalysis field
-      if (kpi.evidenceAnalysis)       specialAnalysisMap['Eficiência']      = kpi.evidenceAnalysis as ReturnType<typeof Object.values>[0];
-      if (kpi.tmeImpAnalysis)         specialAnalysisMap['TME IMP']         = kpi.tmeImpAnalysis as ReturnType<typeof Object.values>[0];
-      if (kpi.primeiroLoginAnalysis)  specialAnalysisMap['1º Login']        = kpi.primeiroLoginAnalysis as ReturnType<typeof Object.values>[0];
-      if (kpi.primeiroDeslocAnalysis) specialAnalysisMap['1º Deslocamento'] = kpi.primeiroDeslocAnalysis as ReturnType<typeof Object.values>[0];
-      if (kpi.retornoBaseAnalysis)    specialAnalysisMap['Retorno Base']    = kpi.retornoBaseAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.evidenceAnalysis)       specialAnalysisMap['Eficiência']   = kpi.evidenceAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.tmeImpAnalysis)         specialAnalysisMap['TME IMP']      = kpi.tmeImpAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.primeiroLoginAnalysis)  specialAnalysisMap['1º Login']     = kpi.primeiroLoginAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.primeiroDeslocAnalysis) specialAnalysisMap['1º Desloc.']   = kpi.primeiroDeslocAnalysis as ReturnType<typeof Object.values>[0];
+      if (kpi.retornoBaseAnalysis)    specialAnalysisMap['Retorno Base'] = kpi.retornoBaseAnalysis as ReturnType<typeof Object.values>[0];
+
+      // OS Dia and Utilização live in specialAnalysis (not attached to the kpi object)
+      const report = this.reportData();
+      if (report) {
+        if (kpi.kpi === 'OS Dia')       specialAnalysisMap['OS Dia']      = report.specialAnalysis.osDiaAnalysis as ReturnType<typeof Object.values>[0];
+        if (kpi.kpi === 'Utilização')   specialAnalysisMap['Utilização']  = report.specialAnalysis.utilizacaoAnalysis as ReturnType<typeof Object.values>[0];
+      }
 
       const teamAnalysisList = specialAnalysisMap[kpi.kpi] ?? [];
       const teamEntry = teamAnalysisList.find((a) => a.team === team);
@@ -6764,8 +6766,20 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     let sortedDays: string[];
     if (hasDailyTrend) {
-      // Use the dates from dailyTrend (already sorted chronologically by backend)
-      sortedDays = kpi.dailyTrend!.map((pt) => pt.date);
+      // Start with dailyTrend dates (already sorted chronologically by backend)
+      const trendDateSet = new Set(kpi.dailyTrend!.map((pt) => pt.date));
+      // Also collect any flagged dates from deviation maps that may fall outside the trend window.
+      // Deviation map keys are "dd/mm/yyyy" — convert to "dd/mm" to keep the same format as dailyTrend.
+      const allDaySet = new Set<string>(trendDateSet);
+      for (const score of kpi.scores) {
+        const m = buildDevMap(score.team);
+        for (const k of m.keys()) {
+          const parts = k.split('/');
+          const ddMm = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : k;
+          if (!trendDateSet.has(ddMm)) allDaySet.add(ddMm);
+        }
+      }
+      sortedDays = [...allDaySet].sort((a, b) => parseDay(a) - parseDay(b));
     } else {
       // Fallback: collect dates from per-team deviation events
       const allDaySet = new Set<string>();
