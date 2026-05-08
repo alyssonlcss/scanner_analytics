@@ -2947,17 +2947,39 @@ export class PostDownloadReportService {
             const prevDespDate = prevDespStr ? parseDateTimeBr(prevDespStr) : null;
             const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
             const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
-            semOsDetails.push({
-              type: 'entre_ordens',
-              min:  round2(semOsMin),
-              from: prevLibStr,
-              to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
-              interval_discounted: semOsIntervalApplied[i] || undefined,
-              desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
-            });
+            const despachadaDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
+            // When the interval started before the dispatch (interceptsDispatch case), Início Intervalo
+            // is the first event after Lib. Anterior — prioritize intervalo_deslocamento over entre_ordens.
+            if (
+              hasIntervaloDeslocamento &&
+              semOsIntervalApplied[i] &&
+              inicioIntervaloDate &&
+              despachadaDate &&
+              inicioIntervaloDate.getTime() < despachadaDate.getTime()
+            ) {
+              semOsDetails.push({
+                type: 'intervalo_deslocamento',
+                min:  round2(semOsMin),
+                from: prevLibStr,
+                to:   inicioIntervaloRaw || undefined,
+              });
+            } else {
+              semOsDetails.push({
+                type: 'entre_ordens',
+                min:  round2(semOsMin),
+                from: prevLibStr,
+                to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+                interval_discounted: semOsIntervalApplied[i] || undefined,
+                desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
+              });
+            }
           }
         }
-        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate) {
+        // Only add intervalo_deslocamento when the interval was NOT already absorbed into the entre_ordens
+        // discount (semOsIntervalApplied[i] === true). When interceptsDispatch or insideTolerance fires,
+        // calculateSemOsValue returns minutesBetween(inicioIntervalo, prevLiberada), which is the exact same
+        // window that intervalo_deslocamento would report — causing two sub-flags to point to the same time.
+        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate && !semOsIntervalApplied[i]) {
           const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
           semOsDetails.push({
             type: 'intervalo_deslocamento',
@@ -3954,17 +3976,42 @@ export class PostDownloadReportService {
             const prevDespDate = prevDespStr ? parseDateTimeBr(prevDespStr) : null;
             const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
             const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
-            semOsDetails.push({
-              type: 'entre_ordens',
-              min:  round2(semOsMin),
-              from: prevLibStr,
-              to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
-              interval_discounted: semOsIntervalApplied[i] || undefined,
-              desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
-            });
+            const despachadaDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
+            // When the interval started before the dispatch (interceptsDispatch case), Início Intervalo
+            // is the first event after Lib. Anterior — prioritize intervalo_deslocamento over entre_ordens.
+            if (
+              hasIntervaloDeslocamento &&
+              semOsIntervalApplied[i] &&
+              inicioIntervaloDate &&
+              despachadaDate &&
+              inicioIntervaloDate.getTime() < despachadaDate.getTime()
+            ) {
+              const overPct = globalAvgIntervaloDeslocMin > 0 && intervaloDeslocMin !== null
+                ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
+                : undefined;
+              semOsDetails.push({
+                type: 'intervalo_deslocamento',
+                min:  round2(semOsMin),
+                from: prevLibStr,
+                to:   inicioIntervaloRaw || undefined,
+                global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
+                above_avg_pct: overPct,
+              });
+            } else {
+              semOsDetails.push({
+                type: 'entre_ordens',
+                min:  round2(semOsMin),
+                from: prevLibStr,
+                to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+                interval_discounted: semOsIntervalApplied[i] || undefined,
+                desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
+              });
+            }
           }
         }
-        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null) {
+        // Skip intervalo_deslocamento when the interval was already absorbed into entre_ordens
+        // (semOsIntervalApplied[i] === true), to avoid two sub-flags pointing to the same time window.
+        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null && !semOsIntervalApplied[i]) {
           const overPct = globalAvgIntervaloDeslocMin > 0
             ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
             : undefined;
