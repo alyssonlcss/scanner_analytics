@@ -7,6 +7,8 @@ interface TimelineSegment {
   isInterval?: boolean;
   startTime?: string;
   endTime?: string;
+  startLabel?: string;
+  endLabel?: string;
   flags?: string[];
 }
 
@@ -16,9 +18,9 @@ interface TimelineSegment {
   imports: [CommonModule],
   template: `
     <div class="timeline-visual-container">
-      <!-- Indicador de início da timeline -->
-      <div class="timeline-origin" *ngIf="timelineOrigin">
-        <small>{{ timelineOrigin }}</small>
+      <!-- Callout de origem da timeline (independente dos segmentos) -->
+      <div class="timeline-origin-callout" *ngIf="timelineOrigin">
+        <span class="origin-icon">▶</span> {{ timelineOrigin }}
       </div>
 
       <!-- Barra principal da timeline -->
@@ -43,62 +45,97 @@ interface TimelineSegment {
           </div>
 
           <!-- Marcador de horário de início -->
-          <div class="time-marker start-marker">{{ seg.startTime }}</div>
+          <div class="time-marker start-marker">
+            <div class="time-label">{{ seg.startLabel }}</div>
+            <div class="time-value">{{ seg.startTime }}</div>
+          </div>
           
           <!-- Marcador de horário de fim (apenas no último segmento) -->
-          <div *ngIf="isLast" class="time-marker end-marker">{{ seg.endTime }}</div>
+          <div *ngIf="isLast" class="time-marker end-marker">
+            <div class="time-label">{{ seg.endLabel }}</div>
+            <div class="time-value">{{ seg.endTime }}</div>
+          </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
     .timeline-visual-container {
-      margin: 4.5rem 0 2rem 0;
+      margin: 5rem 0 3.5rem 0;
       font-family: sans-serif;
+      position: relative;
     }
-    .timeline-origin {
-      margin-bottom: 0.5rem;
-      padding: 0.25rem 0.5rem;
-      background: #f0f9ff;
-      border-left: 3px solid #0284c7;
-      font-size: 0.75rem;
-      color: #0c4a6e;
-      font-weight: 500;
+    /* Callout de origem da timeline (posicionado antes da barra) */
+    .timeline-origin-callout {
+      position: absolute;
+      top: -76px;
+      left: 0;
+      white-space: nowrap;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #065f46;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+      border-radius: 4px;
+      border: 1px solid #6ee7b7;
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+    }
+    .timeline-origin-callout::after {
+      content: '';
+      position: absolute;
+      bottom: -52px;
+      left: 12px;
+      width: 2px;
+      height: 52px;
+      background: #10b981;
+    }
+    .origin-icon {
+      font-size: 0.85rem;
+      color: #059669;
     }
     .timeline-bar {
       display: flex;
       width: 100%;
-      height: 32px;
-      border-radius: 6px;
-      background: #f0f0f0;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
       overflow: visible;
       position: relative;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
     }
     .timeline-segment {
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-right: 1px solid #fff;
-      background: #e0e7ff;
-      color: #333;
-      font-size: 0.75rem;
-      font-weight: 500;
+      border-right: 2px solid #fff;
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+      color: #1e3a8a;
+      font-size: 0.8rem;
+      font-weight: 600;
       min-width: 50px;
+      transition: all 0.2s ease;
+    }
+    .timeline-segment:hover {
+      filter: brightness(1.05);
+      z-index: 10;
     }
     .timeline-segment:first-child {
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
+      border-top-left-radius: 8px;
+      border-bottom-left-radius: 8px;
     }
     .timeline-segment:last-child {
       border-right: none;
-      border-top-right-radius: 6px;
-      border-bottom-right-radius: 6px;
+      border-top-right-radius: 8px;
+      border-bottom-right-radius: 8px;
     }
     .segment-interval {
-      background: #fdf2f8 !important;
+      background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
       color: #831843 !important;
-      border: 1px dashed #fbcfe8;
+      border: 2px dashed #f9a8d4 !important;
     }
     .segment-bar-content {
       position: relative;
@@ -117,27 +154,31 @@ interface TimelineSegment {
       white-space: nowrap;
       font-size: 0.7rem;
       font-weight: 600;
-      color: #555;
+      color: #374151;
       transform: translateX(-50%);
       left: 50%;
       display: flex;
       align-items: center;
       gap: 4px;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
     .segment-callout::after {
       content: '';
       position: absolute;
       left: 50%;
       transform: translateX(-50%);
-      width: 1px;
-      background: #999;
+      width: 2px;
+      background: #d1d5db;
     }
-    .callout-level-0 { top: -25px; }
-    .callout-level-0::after { bottom: -5px; height: 5px; }
-    .callout-level-1 { top: -45px; }
-    .callout-level-1::after { bottom: -25px; height: 25px; }
-    .callout-level-2 { top: -65px; }
-    .callout-level-2::after { bottom: -45px; height: 45px; }
+    .callout-level-0 { top: -30px; }
+    .callout-level-0::after { bottom: -6px; height: 6px; }
+    .callout-level-1 { top: -52px; }
+    .callout-level-1::after { bottom: -28px; height: 28px; }
+    .callout-level-2 { top: -74px; }
+    .callout-level-2::after { bottom: -50px; height: 50px; }
 
     /* Indicador de flag associada */
     .flag-indicator {
@@ -153,10 +194,30 @@ interface TimelineSegment {
     /* Marcadores de horário */
     .time-marker {
       position: absolute;
-      bottom: -22px;
+      bottom: -40px;
       font-size: 0.65rem;
       color: #666;
       white-space: nowrap;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .time-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .time-value {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #374151;
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #e5e7eb;
     }
     .start-marker {
       left: 0;
@@ -196,9 +257,18 @@ export class TimelineVisualComponent implements OnInit {
   private extractTime(dtStr: string): string {
     if (!dtStr) return '';
     const parts = dtStr.split(' ');
-    if (parts.length > 1) {
-      const timeParts = parts[1].split(':');
-      if (timeParts.length >= 2) return `${timeParts[0]}:${timeParts[1]}`;
+    if (parts.length >= 2) {
+      const datePart = parts[0]; // DD/MM/YYYY
+      const timePart = parts[1]; // HH:MM:SS
+      
+      const timeParts = timePart.split(':');
+      const dateParts = datePart.split('/');
+      
+      if (timeParts.length >= 2 && dateParts.length >= 2) {
+        const hhmm = `${timeParts[0]}:${timeParts[1]}`;
+        const ddmm = `${dateParts[0]}/${dateParts[1]}`;
+        return `${hhmm} ${ddmm}`;
+      }
     }
     return '';
   }
@@ -214,10 +284,10 @@ export class TimelineVisualComponent implements OnInit {
 
     // Definir origem da timeline
     if (this.ev.prev_liberada) {
-      this.timelineOrigin = `▶ Início: Liberação da OS anterior (${this.extractTime(this.ev.prev_liberada)})`;
+      this.timelineOrigin = `Lib. Anterior (${this.extractTime(this.ev.prev_liberada)})`;
     } else {
       const loginTime = this.extractTime(this.ev.log_in) || this.extractTime(this.ev.inicio_calendario);
-      this.timelineOrigin = `▶ Início: Primeira OS do dia (Log In/Início Calendário - ${loginTime})`;
+      this.timelineOrigin = `1ª OS do Dia (${loginTime})`;
     }
 
     // Colher e nomear todos os checkpoints válidos (com timestamp original para extração de hora)
@@ -231,7 +301,7 @@ export class TimelineVisualComponent implements OnInit {
 
     // Lógica de início conforme especificação
     if (this.ev.prev_liberada) {
-      addPt('prev_liberada', this.ev.prev_liberada, 'Lib. Ant.');
+      addPt('prev_liberada', this.ev.prev_liberada, 'Lib. Anterior');
     } else {
       addPt('inicio_calendario', this.ev.inicio_calendario, 'Início Cal.');
       addPt('log_in', this.ev.log_in, 'Log In');
@@ -241,8 +311,8 @@ export class TimelineVisualComponent implements OnInit {
     addPt('a_caminho', this.ev.a_caminho, 'A Caminho');
     addPt('no_local', this.ev.no_local, 'No Local');
     addPt('liberada', this.ev.liberada, 'Liberada');
-    addPt('inicio_intervalo', this.ev.inicio_intervalo, '⏸ Ini. Int.');
-    addPt('fim_intervalo', this.ev.fim_intervalo, '▶ Fim Int.');
+    addPt('inicio_intervalo', this.ev.inicio_intervalo, 'Início Intervalo');
+    addPt('fim_intervalo', this.ev.fim_intervalo, 'Fim Intervalo');
 
     // Remove duplicates mantendo apenas primeira ocorrência
     const uniquePts: typeof pts = [];
@@ -281,13 +351,16 @@ export class TimelineVisualComponent implements OnInit {
         if (isInterval) {
             label = 'INTERVALO';
         } else {
-            // Lógica customizada de negócio
+            // Lógica customizada de negócio (Sem Ordem e suas subflags)
             if (p1.key === 'inicio_calendario' && p2.key === 'despachada') label = 'Início Jornada';
-            else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Sem OS/Espera';
+            else if (p1.key === 'log_in' && p2.key === 'despachada') label = 'Início Jornada';
+            else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
+            else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
+            else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Desl. Intervalo';
+            // Etapas produtivas
             else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'a_caminho' && p2.key === 'no_local') label = 'Deslocamento';
             else if (p1.key === 'no_local' && p2.key === 'liberada') label = 'Reparo';
-            else if (p1.key === 'log_in' && p2.key === 'despachada') label = 'Sem OS/Espera';
             else label = `${p1.label} → ${p2.label}`;
         }
 
@@ -309,7 +382,7 @@ export class TimelineVisualComponent implements OnInit {
             if (this.ev.flag_temp_partida_excedido) {
               flags.push('Temp. Partida ≥ 10min');
             }
-        } else if (label.includes('Sem OS') && this.ev.sem_os_total_min !== undefined) {
+        } else if ((label === 'Início Jornada' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
             // Buscar detalhamento específico
             const match = this.ev.sem_os_details?.find((s: any) => 
               s.from === p1.raw || s.to === p2.raw
@@ -328,6 +401,8 @@ export class TimelineVisualComponent implements OnInit {
             isInterval,
             startTime: this.extractTime(p1.raw),
             endTime: this.extractTime(p2.raw),
+            startLabel: p1.label,
+            endLabel: p2.label,
             flags
         });
     }
@@ -345,6 +420,7 @@ export class TimelineVisualComponent implements OnInit {
             if (canMerge) {
                 current.durationMin += rawSegments[i].durationMin;
                 current.endTime = rawSegments[i].endTime;
+                current.endLabel = rawSegments[i].endLabel;
             } else {
                 merged.push(current);
                 current = rawSegments[i];
