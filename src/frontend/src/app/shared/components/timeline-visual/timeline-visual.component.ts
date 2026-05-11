@@ -46,14 +46,12 @@ interface TimelineSegment {
 
           <!-- Marcador de horário de início -->
           <div class="time-marker start-marker">
-            <div class="time-label">{{ seg.startLabel }}</div>
-            <div class="time-value">{{ seg.startTime }}</div>
+            {{ seg.startLabel }}<br>{{ seg.startTime }}
           </div>
           
           <!-- Marcador de horário de fim (apenas no último segmento) -->
           <div *ngIf="isLast" class="time-marker end-marker">
-            <div class="time-label">{{ seg.endLabel }}</div>
-            <div class="time-value">{{ seg.endTime }}</div>
+            {{ seg.endLabel }}<br>{{ seg.endTime }}
           </div>
         </div>
       </div>
@@ -61,7 +59,7 @@ interface TimelineSegment {
   `,
   styles: [`
     .timeline-visual-container {
-      margin: 5rem 0 3.5rem 0;
+      margin: 5rem 0 2.5rem 0;
       font-family: sans-serif;
       position: relative;
     }
@@ -194,44 +192,57 @@ interface TimelineSegment {
     /* Marcadores de horário */
     .time-marker {
       position: absolute;
-      bottom: -40px;
-      font-size: 0.65rem;
-      color: #666;
-      white-space: nowrap;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-    }
-    .time-label {
-      font-size: 0.6rem;
-      font-weight: 700;
-      color: #9ca3af;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .time-value {
-      font-size: 0.7rem;
+      top: 100%;
+      margin-top: 12px;
+      font-size: 0.68rem;
+      color: #4b5563;
       font-weight: 600;
-      color: #374151;
-      background: #f3f4f6;
-      padding: 2px 6px;
-      border-radius: 4px;
-      border: 1px solid #e5e7eb;
+      line-height: 1.3;
+      transform-origin: top left;
+    }
+    .time-marker::before {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      width: 1px;
+      height: 12px;
+      background: #9ca3af;
     }
     .start-marker {
       left: 0;
-      transform: translateX(-50%);
+      transform: translateX(-10%) rotate(25deg);
+    }
+    .start-marker::before {
+      left: 0;
+      transform: rotate(-25deg);
+      transform-origin: bottom left;
     }
     .timeline-segment:first-child .start-marker {
-      transform: translateX(-10%);
+      left: 0;
+      transform: translateX(0) rotate(25deg);
+    }
+    .timeline-segment:first-child .start-marker::before {
+      left: 0;
+      transform: rotate(-25deg);
     }
     .end-marker {
       right: 0;
-      transform: translateX(50%);
+      transform: translateX(10%) rotate(25deg);
+      transform-origin: top right;
+    }
+    .end-marker::before {
+      right: 0;
+      left: auto;
+      transform: rotate(-25deg);
+      transform-origin: bottom right;
     }
     .timeline-segment:last-child .end-marker {
-      transform: translateX(-90%);
+      right: 0;
+      transform: translateX(0) rotate(25deg);
+    }
+    .timeline-segment:last-child .end-marker::before {
+      right: 0;
+      transform: rotate(-25deg);
     }
   `]
 })
