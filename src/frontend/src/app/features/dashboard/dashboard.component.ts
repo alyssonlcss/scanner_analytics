@@ -1,6 +1,7 @@
 ﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { CommonModule } from '@angular/common';
+import { TimelineVisualComponent } from '../../shared/components/timeline-visual/timeline-visual.component';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { forkJoin } from 'rxjs';
@@ -90,7 +91,7 @@ type SavedFilterState = {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, TocNavComponent],
+  imports: [CommonModule, TocNavComponent, TimelineVisualComponent],
   template: `
     <main class="shell">
       <div class="report-loading" *ngIf="loading()" aria-live="polite" aria-busy="true">
@@ -527,69 +528,8 @@ type SavedFilterState = {
                                 <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
                                 <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                               </p>
-                              <!-- Linha do tempo -->
-                              <ng-container *ngIf="ev.prev_liberada; else primeiraOsBlock">
-                                <!-- OS Anterior -->
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior ({{ ev.prev_nr_ordem || '—' }})</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Desp. Anterior</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.prev_despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Lib. Anterior</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
-                                </div>
-                                <!-- OS Atual -->
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Despachada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">A Caminho</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">No Local</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Liberada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                </div>
-                              </ng-container>
-                              <ng-template #primeiraOsBlock>
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Início Calendário</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">-</span>
-                                  <span class="osdia-ev-ts-label">Log In</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.log_in || '—' }}</span>
-                                </div>
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Despachada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">A Caminho</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">No Local</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Liberada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                </div>
-                              </ng-template>
-                              <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
-                              <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
-                                <span class="osdia-ev-int-icon">⏸</span>
-                                <span class="osdia-ev-int-label">Intervalo:</span>
-                                <span class="osdia-ev-int-val">{{ ev.inicio_intervalo }}</span>
-                                <span class="osdia-ev-int-sep">→</span>
-                                <span class="osdia-ev-int-val">{{ ev.fim_intervalo || '—' }}</span>
-                              </div>
+                              <!-- Linha do tempo visual -->
+                              <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
@@ -675,21 +615,7 @@ type SavedFilterState = {
                                 <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
                                 <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                               </p>
-                              <div class="osdia-ev-timeline">
-                                <span class="osdia-ev-ts-label osdia-ev-ts-first">OS</span>
-                                <span class="osdia-ev-ts-sep">→</span>
-                                <span class="osdia-ev-ts-label">Despachada</span>
-                                <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                <span class="osdia-ev-ts-sep">→</span>
-                                <span class="osdia-ev-ts-label">A Caminho</span>
-                                <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                                <span class="osdia-ev-ts-sep">→</span>
-                                <span class="osdia-ev-ts-label">No Local</span>
-                                <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                <span class="osdia-ev-ts-sep">→</span>
-                                <span class="osdia-ev-ts-label">Liberada</span>
-                                <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                              </div>
+                              <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev, analysis) }}
@@ -792,69 +718,8 @@ type SavedFilterState = {
                                 <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
                                 <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                               </p>
-                              <!-- Linha do tempo -->
-                              <ng-container *ngIf="ev.prev_liberada; else primeiraOsUtilBlock">
-                                <!-- OS Anterior -->
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior ({{ ev.prev_nr_ordem || '—' }})</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Desp. Anterior</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.prev_despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Lib. Anterior</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
-                                </div>
-                                <!-- OS Atual -->
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Despachada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">A Caminho</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">No Local</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Liberada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                </div>
-                              </ng-container>
-                              <ng-template #primeiraOsUtilBlock>
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Início Calendário</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">-</span>
-                                  <span class="osdia-ev-ts-label">Log In</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.log_in || '—' }}</span>
-                                </div>
-                                <div class="osdia-ev-timeline">
-                                  <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Despachada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">A Caminho</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">No Local</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                                  <span class="osdia-ev-ts-sep">→</span>
-                                  <span class="osdia-ev-ts-label">Liberada</span>
-                                  <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                                </div>
-                              </ng-template>
-                              <!-- Intervalo de almoço (se houver dentro da jornada desta OS) -->
-                              <div class="osdia-ev-interval" *ngIf="ev.inicio_intervalo">
-                                <span class="osdia-ev-int-icon">⏸</span>
-                                <span class="osdia-ev-int-label">Intervalo:</span>
-                                <span class="osdia-ev-int-val">{{ ev.inicio_intervalo }}</span>
-                                <span class="osdia-ev-int-sep">→</span>
-                                <span class="osdia-ev-int-val">{{ ev.fim_intervalo || '—' }}</span>
-                              </div>
+                              <!-- Linha do tempo visual -->
+                              <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
@@ -920,27 +785,8 @@ type SavedFilterState = {
                             <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
                             <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                           </p>
-                          <div class="osdia-ev-timeline" *ngIf="ev.prev_liberada">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Anterior</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Lib. Anterior</span>
-                            <span class="osdia-ev-ts-val">{{ ev.prev_liberada }}</span>
-                          </div>
-                          <div class="osdia-ev-timeline">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">OS Atual</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Despachada</span>
-                            <span class="osdia-ev-ts-val">{{ ev.despachada || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">A Caminho</span>
-                            <span class="osdia-ev-ts-val">{{ ev.a_caminho || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">No Local</span>
-                            <span class="osdia-ev-ts-val">{{ ev.no_local || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Liberada</span>
-                            <span class="osdia-ev-ts-val">{{ ev.liberada || '—' }}</span>
-                          </div>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
                               <strong>TME IMP elevado:</strong> {{ tmeImpAlertBody('tme_muito_alto', ev) }}
@@ -997,14 +843,7 @@ type SavedFilterState = {
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ loginFlagLabel(f) }}</span>
                           </div>
-                          <div class="osdia-ev-timeline">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Início Calendário</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Log In Corrigido</span>
-                            <span class="osdia-ev-ts-val">{{ ev.log_in_corrigido || '—' }}</span>
-                          </div>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
                               <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev, analysis) }}
@@ -1061,24 +900,8 @@ type SavedFilterState = {
                             <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="ev.is_primeira_os_jornada" title="Primeira OS da jornada">1ª OS</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ deslocFlagLabel(f) }}</span>
                           </div>
-                          <div class="osdia-ev-timeline">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Início da jornada</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Início Calendário</span>
-                            <span class="osdia-ev-ts-val">{{ ev.inicio_calendario || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">-</span>
-                            <span class="osdia-ev-ts-label">Log In</span>
-                            <span class="osdia-ev-ts-val">{{ ev.log_in_corrigido || '—' }}</span>
-                          </div>
-                          <div class="osdia-ev-timeline">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">1ª OS da jornada</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Despachada</span>
-                            <span class="osdia-ev-ts-val">{{ ev.hora_primeiro_despacho || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">A Caminho</span>
-                            <span class="osdia-ev-ts-val">{{ ev.hora_primeiro_deslocamento || '—' }}</span>
-                          </div>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
                               <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev, analysis) }}
@@ -1138,14 +961,7 @@ type SavedFilterState = {
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ retornoFlagLabel(f) }}</span>
                           </div>
-                          <div class="osdia-ev-timeline">
-                            <span class="osdia-ev-ts-label osdia-ev-ts-first">Última OS Liberada</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-val">{{ ev.hora_ultima_ordem || '—' }}</span>
-                            <span class="osdia-ev-ts-sep">→</span>
-                            <span class="osdia-ev-ts-label">Log Off Corrigido</span>
-                            <span class="osdia-ev-ts-val">{{ ev.log_off_corrigido || '—' }}</span>
-                          </div>
+                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
                               <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev, analysis) }}
