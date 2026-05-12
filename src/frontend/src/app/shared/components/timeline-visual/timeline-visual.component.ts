@@ -180,6 +180,7 @@ interface TimelineSegment {
 })
 export class TimelineVisualComponent implements OnInit {
   @Input() ev: any;
+  @Input() hidePartida: boolean = false;
 
   segments: TimelineSegment[] = [];
 
@@ -394,23 +395,28 @@ export class TimelineVisualComponent implements OnInit {
         });
     }
 
+    // Remove Partida segments when hidePartida is enabled
+    const filteredSegments = this.hidePartida
+      ? rawSegments.filter((s) => s.label !== 'Partida')
+      : rawSegments;
+
     // Merge adjacent segments with same label (exceto se tiverem flags diferentes)
     const merged: TimelineSegment[] = [];
-    if (rawSegments.length > 0) {
-        let current = rawSegments[0];
-        for (let i = 1; i < rawSegments.length; i++) {
+    if (filteredSegments.length > 0) {
+        let current = filteredSegments[0];
+        for (let i = 1; i < filteredSegments.length; i++) {
             const canMerge = 
-              rawSegments[i].label === current.label && 
-              rawSegments[i].isInterval === current.isInterval &&
-              JSON.stringify(rawSegments[i].flags) === JSON.stringify(current.flags);
+              filteredSegments[i].label === current.label && 
+              filteredSegments[i].isInterval === current.isInterval &&
+              JSON.stringify(filteredSegments[i].flags) === JSON.stringify(current.flags);
             
             if (canMerge) {
-                current.durationMin += rawSegments[i].durationMin;
-                current.endTime = rawSegments[i].endTime;
-                current.endLabel = rawSegments[i].endLabel;
+                current.durationMin += filteredSegments[i].durationMin;
+                current.endTime = filteredSegments[i].endTime;
+                current.endLabel = filteredSegments[i].endLabel;
             } else {
                 merged.push(current);
-                current = rawSegments[i];
+                current = filteredSegments[i];
             }
         }
         merged.push(current);

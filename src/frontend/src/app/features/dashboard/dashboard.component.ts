@@ -627,7 +627,7 @@ type SavedFilterState = {
                                   <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
                                 </ng-container>
                               </p>
-                              <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                              <app-timeline-visual [ev]="ev" [hidePartida]="true"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev) }}
