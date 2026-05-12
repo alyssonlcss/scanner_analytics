@@ -16,7 +16,7 @@ export function semOsDetailText(d: {
     switch (d.type) {
       case 'inicio_jornada': {
         const pctIJ = Math.round((d.min - 10) / 10 * 100);
-        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctIJ}% acima do limite (10 min).`;
+        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctIJ}% acima do limite (10 min).`;
       }
       case 'entre_ordens': {
         const pctEO = Math.round((d.min - 10) / 10 * 100);

@@ -232,7 +232,7 @@ export class TimelineVisualComponent implements OnInit {
     return parts[0] || '';
   }
 
-  private static readonly IDLE_LABELS = new Set(['Início Jornada', 'Entre OS', 'Desl. Intervalo', 'Partida']);
+  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
     return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
@@ -320,8 +320,8 @@ export class TimelineVisualComponent implements OnInit {
             label = 'INTERVALO';
         } else {
             // Lógica customizada de negócio (Sem Ordem e suas subflags)
-            if (p1.key === 'inicio_calendario' && p2.key === 'despachada') label = 'Início Jornada';
-            else if (p1.key === 'log_in' && p2.key === 'despachada') label = 'Início Jornada';
+            if (p1.key === 'inicio_calendario' && p2.key === 'despachada') label = '1º Despacho';
+            else if (p1.key === 'log_in' && p2.key === 'despachada') label = '1º Despacho';
             else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'prev_liberada' && p2.key === 'inicio_intervalo') label = 'Desl. Intervalo';
@@ -355,10 +355,10 @@ export class TimelineVisualComponent implements OnInit {
             if (this.ev.flags?.includes('temp_prep_alto')) {
               flags.push('Temp. Partida ≥ 10min');
             }
-        } else if ((label === 'Início Jornada' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
+        } else if ((label === '1º Despacho' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
             // Mapear tipo de detalhe sem_os correspondente
             const detailType =
-              label === 'Início Jornada' ? 'inicio_jornada' :
+              label === '1º Despacho' ? 'inicio_jornada' :
               label === 'Desl. Intervalo' ? 'intervalo_deslocamento' : 'entre_ordens';
 
             const matchedDetail = this.ev.sem_os_details?.find((s: any) => {
@@ -366,11 +366,11 @@ export class TimelineVisualComponent implements OnInit {
               // 'inicio_jornada' always measures from Início Cal. to first dispatch;
               // when Log In exists the segment starts from log_in, not inicio_calendario,
               // so skip the `from` check and match only on the endpoint (despachada).
-              if (label === 'Início Jornada') return s.to === p2.raw;
+              if (label === '1º Despacho') return s.to === p2.raw;
               return s.from === p1.raw && s.to === p2.raw;
             });
 
-            if (label === 'Início Jornada' && matchedDetail) {
+            if (label === '1º Despacho' && matchedDetail) {
               durationMin = Math.max(matchedDetail.min, 1);
             }
 

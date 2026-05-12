@@ -5348,7 +5348,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const pctAbove = (min: number) => Math.round((min - SEM_OS_LIMIT) / SEM_OS_LIMIT * 100);
     switch (d.type) {
       case 'inicio_jornada':
-        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
+        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
       case 'entre_ordens':
         return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
       case 'fim_jornada':

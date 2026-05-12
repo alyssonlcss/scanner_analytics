@@ -180,7 +180,7 @@ export interface OsDiaOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
-    /** Pre-computed label (e.g. "Entre OS", "Início Jornada"). */
+    /** Pre-computed label (e.g. "Entre OS", "1º Despacho"). */
     label?: string;
     /** Pre-computed body text describing the detail. */
     body?: string;
