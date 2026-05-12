@@ -355,7 +355,7 @@ export class TimelineVisualComponent implements OnInit {
             else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'prev_liberada' && p2.key === 'inicio_intervalo') label = 'Desl. Intervalo';
-            else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Desl. Intervalo';
+            else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Entre OS';
             // Etapas produtivas
             else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'fim_intervalo' && p2.key === 'a_caminho') label = 'Partida';
@@ -383,13 +383,17 @@ export class TimelineVisualComponent implements OnInit {
               flags.push('Temp. Partida ≥ 10min');
             }
         } else if ((label === 'Início Jornada' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
-            // Buscar detalhamento específico
-            const match = this.ev.sem_os_details?.find((s: any) => 
-              s.from === p1.raw || s.to === p2.raw
-            );
-            if (match) {
-              durationMin = Math.max(match.min, 1);
+            // Para Início Jornada, busca duração específica em sem_os_details
+            // Para Desl. Intervalo e Entre OS, mantém duração calculada pelos timestamps (mais precisa)
+            if (label === 'Início Jornada') {
+              const match = this.ev.sem_os_details?.find((s: any) => 
+                s.from === p1.raw && s.to === p2.raw
+              );
+              if (match) {
+                durationMin = Math.max(match.min, 1);
+              }
             }
+            // Flag aparece em TODOS os segmentos sem-OS quando excedido
             if (this.ev.flag_sem_os_excedido) {
               flags.push('SemOS ≥ 10min');
             }
