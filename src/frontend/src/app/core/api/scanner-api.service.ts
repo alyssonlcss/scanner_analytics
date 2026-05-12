@@ -43,6 +43,8 @@ export interface ReportKpiInsight {
   scores: ReportKpiTeamScore[];
   average: number;
   metaTarget: number;
+  /** Chart scaling config from backend KPI_THRESHOLDS — worst/best/direction/meta. */
+  chartConfig?: { worst: number; best: number; direction: 'h' | 'l'; meta: number };
   dailyTrend?: Array<{ date: string; avgValue: number }>;
   /** Per-team per-day counts for OS Dia (enables non-flat team lines in the analytic chart). */
   perTeamDailyData?: Array<{ team: string; dailyPoints: Array<{ date: string; value: number }> }>;
@@ -108,9 +110,17 @@ export interface OsDiaOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
+    /** Pre-computed label (e.g. "Entre OS"). */
+    label?: string;
+    /** Pre-computed body text describing the detail. */
+    body?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
+  /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
+  entreOsAfterIntervalo?: { min: number; from: string; to: string };
 }
 
 export interface OsDiaTeamAnalysis {
@@ -155,6 +165,8 @@ export interface EficienciaOrderEvidence {
   hd_pct_tr: number;
   tempo_padrao_min?: number;
   flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 export interface EficienciaTeamAnalysis {
@@ -211,9 +223,17 @@ export interface UtilizacaoOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
+    /** Pre-computed label (e.g. "Entre OS"). */
+    label?: string;
+    /** Pre-computed body text describing the detail. */
+    body?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
+  /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
+  entreOsAfterIntervalo?: { min: number; from: string; to: string };
 }
 
 export interface UtilizacaoTeamAnalysis {
@@ -257,6 +277,8 @@ export interface TmeImpOrderEvidence {
   team_avg_tme_min: number;
   global_avg_tme_min: number;
   flags: Array<'tme_muito_alto' | 'sem_deslocamento' | 'sem_execucao'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 export interface TmeImpTeamAnalysis {
@@ -283,6 +305,8 @@ export interface PrimeiroLoginDayEvidence {
   team_avg_login_min: number;
   global_avg_login_min: number;
   flags: Array<'login_tardio' | 'login_muito_tardio'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 export interface PrimeiroLoginTeamAnalysis {
@@ -315,6 +339,8 @@ export interface PrimeiroDeslocDayEvidence {
   global_avg_desloc_min: number;
   is_primeira_os_jornada: boolean;
   flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 export interface PrimeiroDeslocTeamAnalysis {
@@ -343,6 +369,8 @@ export interface RetornoBaseDayEvidence {
   hora_ultima_ordem: string;
   log_off_corrigido: string;
   flags: Array<'retorno_alto' | 'retorno_muito_alto'>;
+  /** Pre-computed alert text keyed by flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 export interface RetornoBaseTeamAnalysis {
@@ -438,6 +466,10 @@ export interface GeneratedReport {
   outputFiles: {
     jsonPath: string;
     markdownPath: string;
+  };
+  /** Pre-computed flag metadata for rendering (labels keyed by flag code). */
+  flagMeta?: {
+    labels: Record<string, string>;
   };
 }
 

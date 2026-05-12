@@ -64,6 +64,8 @@ interface KpiInsight {
   scores: KpiTeamScore[];
   average: number;
   metaTarget: number;
+  /** Chart scaling config derived from KPI_THRESHOLDS — worst/best/direction/meta for bar chart rendering. */
+  chartConfig?: { worst: number; best: number; direction: 'h' | 'l'; meta: number };
   dailyTrend?: DailyTrendPoint[];
   /** Per-team per-day values (e.g. Nr_Ordem count for OS Dia). Enables non-flat team lines in the analytic chart. */
   perTeamDailyData?: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }>;
@@ -132,6 +134,10 @@ export interface GeneratedReport {
     jsonPath: string;
     markdownPath: string;
   };
+  /** Pre-computed flag metadata for rendering (labels keyed by flag code). */
+  flagMeta?: {
+    labels: Record<string, string>;
+  };
 }
 
 interface TempSemOsRow {
@@ -179,9 +185,17 @@ interface OsDiaOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
+    /** Pre-computed label (e.g. "Entre OS", "Início Jornada"). */
+    label?: string;
+    /** Pre-computed body text describing the detail. */
+    body?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
+  /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
+  entreOsAfterIntervalo?: { min: number; from: string; to: string };
 }
 
 interface OsDiaTeamAnalysis {
@@ -226,6 +240,8 @@ interface EficienciaOrderEvidence {
   hd_pct_tr: number;
   tempo_padrao_min?: number;
   flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 interface EficienciaTeamAnalysis {
@@ -331,6 +347,8 @@ interface TmeImpOrderEvidence {
   team_avg_tme_min: number;
   global_avg_tme_min: number;
   flags: Array<'tme_muito_alto' | 'sem_deslocamento' | 'sem_execucao'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 interface TmeImpTeamAnalysis {
@@ -358,6 +376,8 @@ interface PrimeiroLoginDayEvidence {
   team_avg_login_min: number;
   global_avg_login_min: number;
   flags: Array<'login_tardio' | 'login_muito_tardio'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 interface PrimeiroLoginTeamAnalysis {
@@ -391,6 +411,8 @@ interface PrimeiroDeslocDayEvidence {
   global_avg_desloc_min: number;
   is_primeira_os_jornada: boolean;
   flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 interface PrimeiroDeslocTeamAnalysis {
@@ -420,6 +442,8 @@ interface RetornoBaseDayEvidence {
   hora_ultima_ordem: string;
   log_off_corrigido: string;
   flags: Array<'retorno_alto' | 'retorno_muito_alto'>;
+  /** Pre-computed alert text per flag code. */
+  alertTexts?: Record<string, string>;
 }
 
 interface RetornoBaseTeamAnalysis {
@@ -759,6 +783,28 @@ export class PostDownloadReportService {
       outputFiles: {
         jsonPath: join(params.dataDirectory, this.environment.report.outputFileName),
         markdownPath: join(params.dataDirectory, this.environment.report.outputFileName.replace(/\.json$/i, '.md')),
+      },
+      flagMeta: {
+        labels: {
+          tr_excede_hd:          'Temp. Reparo > HD',
+          tl_excede_hd:          'Temp. Deslocamento Alto',
+          temp_prep_alto:        'Temp. Partida ≥ 10min',
+          sem_os_alto:           'Sem Ordem ≥ 10min',
+          deslocamento_curto:    'Deslocamento Curto',
+          tempo_padrao_vazio:    'Tempo Padrão Vazio',
+          tr_muito_baixo:        'Tempo de Reparo Baixo',
+          tme_muito_alto:        'TME IMP Elevado',
+          sem_deslocamento:      'Sem Deslocamento',
+          sem_execucao:          'Sem Execução',
+          login_tardio:          'Login Tardio',
+          login_muito_tardio:    'Login Muito Tardio',
+          desloc_lento:          'Deslocamento Lento',
+          desloc_muito_lento:    'Deslocamento Muito Lento',
+          sem_desloc_registrado: 'Sem Desloc. Registrado',
+          despacho_tardio:       'Despacho Tardio',
+          retorno_alto:          'Retorno Base Alto',
+          retorno_muito_alto:    'Retorno Muito Alto',
+        },
       },
     };
 
@@ -1359,6 +1405,12 @@ export class PostDownloadReportService {
         scores,
         average,
         metaTarget: threshold?.meta ?? 0,
+        chartConfig: threshold ? {
+          worst: threshold.worst,
+          best: threshold.best,
+          direction: threshold.direction === 'higher-is-better' ? 'h' : 'l',
+          meta: threshold.meta,
+        } : undefined,
       });
     }
 
@@ -3108,7 +3160,9 @@ export class PostDownloadReportService {
       }
 
       const flaggedOrders = this.mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const prioritizedFlaggedOrders = distinctDates > 7 ? this.selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders;
+      const prioritizedFlaggedOrders = this.enrichOsDiaEvidence(
+        distinctDates > 7 ? this.selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders,
+      );
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
@@ -3303,6 +3357,204 @@ export class PostDownloadReportService {
       (evidence.temp_prep_os_min ?? 0) +
       (evidence.sem_os_total_min ?? 0)
     );
+  }
+
+  // ─── Business logic text helpers — single source of truth for alert texts ──
+
+  /** Formats a number for Portuguese locale display (used in pre-computed alert texts). */
+  private nfBr(v: number, minDec = 1, maxDec = 1): string {
+    return v.toLocaleString('pt-BR', { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
+  }
+
+  /** Computes a sem_os_details item's full display text (label: body). */
+  private semOsDetailText(d: {
+    type: string; min: number; from?: string; to?: string;
+    global_avg_min?: number; above_avg_pct?: number;
+    interval_discounted?: boolean; retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean; desp_anterior?: string;
+  }): string {
+    switch (d.type) {
+      case 'inicio_jornada':
+        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}).`;
+      case 'entre_ordens':
+        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''}.`;
+      case 'fim_jornada':
+        return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
+      case 'intervalo_deslocamento':
+        if (Number.isFinite(d.global_avg_min) && Number.isFinite(d.above_avg_pct) && (d.global_avg_min ?? 0) > 0) {
+          return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nfBr(d.above_avg_pct!, 0, 1)}% acima da média geral (${this.nfBr(d.global_avg_min!)} min).`;
+        }
+        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
+      default:
+        return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
+    }
+  }
+
+  /** Enriches OsDia evidence with alertTexts, sem_os_details label/body, and entreOsAfterIntervalo. */
+  private enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvidence[] {
+    const parseDt = (s: string): number => {
+      const parts = s.split(' ');
+      if (parts.length < 2) return 0;
+      const [day, mon, yr] = (parts[0] ?? '').split('/');
+      const [hr, min, sec] = (parts[1] ?? '').split(':');
+      return new Date(+(yr ?? 0), +(mon ?? 1) - 1, +(day ?? 1), +(hr ?? 0), +(min ?? 0), +(sec ?? 0)).getTime();
+    };
+
+    return orders.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'tr_excede_hd':
+            alertTexts[flag] = `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+            break;
+          case 'tl_excede_hd':
+            alertTexts[flag] = `o técnico passou ${ev.tl_ordem_min} min em deslocamento nesta OS — ${ev.global_avg_tl_min > 0 ? this.nfBr((ev.tl_ordem_min - ev.global_avg_tl_min) / ev.global_avg_tl_min * 100, 0, 0) : '?'}% acima da média geral de ${this.nfBr(ev.global_avg_tl_min)} min, representando ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.`;
+            break;
+          case 'temp_prep_alto':
+            alertTexts[flag] = `o técnico levou ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS'} — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
+            break;
+          case 'sem_os_alto':
+            alertTexts[flag] = `${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
+            break;
+        }
+      }
+
+      const enrichedDetails = ev.sem_os_details?.map((d) => {
+        const text = this.semOsDetailText(d);
+        const sep = text.indexOf(': ');
+        return { ...d, label: sep > -1 ? text.slice(0, sep) : text, body: sep > -1 ? text.slice(sep + 2) : '' };
+      });
+
+      let entreOsAfterIntervalo: OsDiaOrderEvidence['entreOsAfterIntervalo'];
+      if (ev.fim_intervalo && ev.despachada) {
+        const fimTs  = parseDt(ev.fim_intervalo);
+        const despTs = parseDt(ev.despachada);
+        if (fimTs > 0 && despTs > 0 && despTs > fimTs) {
+          const minDiff = Math.round((despTs - fimTs) / 60000);
+          if (minDiff > 10) {
+            const alreadyCovered = ev.sem_os_details?.some((d) => d.type === 'entre_ordens' && d.from === ev.fim_intervalo);
+            if (!alreadyCovered) {
+              entreOsAfterIntervalo = { min: minDiff, from: ev.fim_intervalo, to: ev.despachada };
+            }
+          }
+        }
+      }
+
+      return {
+        ...ev,
+        alertTexts,
+        sem_os_details: enrichedDetails ?? ev.sem_os_details,
+        ...(entreOsAfterIntervalo ? { entreOsAfterIntervalo } : {}),
+      };
+    });
+  }
+
+  /** Enriches Eficiencia evidence items with pre-computed alertTexts. */
+  private enrichEficienciaEvidence(
+    orders: EficienciaOrderEvidence[],
+    analysis: { globalAvgExecucaoMin: number; globalAvgDeslocamentoMin: number },
+  ): EficienciaOrderEvidence[] {
+    return orders.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'tr_muito_baixo':
+            alertTexts[flag] = `${ev.tr_ordem_min} min de execução — ${analysis.globalAvgExecucaoMin > 0 ? this.nfBr((analysis.globalAvgExecucaoMin - ev.tr_ordem_min) / analysis.globalAvgExecucaoMin * 100, 0, 0) : '?'}% abaixo da média geral de ${this.nfBr(analysis.globalAvgExecucaoMin)} min. Deslocamento registrado (TL): ${ev.tl_ordem_min} min${ev.tl_ordem_min > analysis.globalAvgDeslocamentoMin ? ' — TL elevado indica erro no apontamento de "A Caminho" ou "No Local", comprimindo artificialmente o TR' : ' — grande possibilidade de erro de apontamento de "A Caminho" ou "No Local"'}.`;
+            break;
+          case 'deslocamento_curto':
+            alertTexts[flag] = `o tempo de deslocamento desta OS foi de apenas ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${this.nfBr(analysis.globalAvgDeslocamentoMin)} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.`;
+            break;
+          case 'tr_excede_hd':
+            alertTexts[flag] = `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+            break;
+          case 'tempo_padrao_vazio':
+            alertTexts[flag] = `esta OS foi atendida em ${ev.tr_ordem_min} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.`;
+            break;
+        }
+      }
+      return { ...ev, alertTexts };
+    });
+  }
+
+  /** Enriches TME IMP evidence items with pre-computed alertTexts. */
+  private enrichTmeImpEvidence(orders: TmeImpOrderEvidence[]): TmeImpOrderEvidence[] {
+    return orders.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'tme_muito_alto':
+            alertTexts[flag] = `esta OS acumulou ${this.nfBr(ev.tme_imp_min)} min de tempo improdutivo — acima da média da equipe (${this.nfBr(ev.team_avg_tme_min)} min) e da média geral (${this.nfBr(ev.global_avg_tme_min)} min). Esse é o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva registrada. Quanto maior esse tempo, mais prejudica a pontuação da equipe.`;
+            break;
+          case 'sem_deslocamento':
+            alertTexts[flag] = `a OS tem ${this.nfBr(ev.tl_ordem_min)} min de deslocamento, mas não há horário de saída lançado no sistema. O técnico se deslocou mas não atualizou o aplicativo, impedindo o cálculo correto do tempo improdutivo.`;
+            break;
+          case 'sem_execucao':
+            alertTexts[flag] = `esta OS não tem registro de execução, mas acumulou tempo improdutivo. Pode indicar uma OS encerrada sem atendimento real ou lançamento incorreto no sistema.`;
+            break;
+        }
+      }
+      return { ...ev, alertTexts };
+    });
+  }
+
+  /** Enriches Primeiro Login evidence items with pre-computed alertTexts. */
+  private enrichLoginEvidence(days: PrimeiroLoginDayEvidence[], metaTarget: number): PrimeiroLoginDayEvidence[] {
+    return days.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'login_muito_tardio':
+            alertTexts[flag] = `o técnico levou ${this.nfBr(ev.primeiro_login_min)} min para entrar no sistema — mais do que o dobro da meta de ${metaTarget} min. Um atraso tão grande atrasa o primeiro despacho e reduz bastante o tempo disponível para atendimento no dia.`;
+            break;
+          case 'login_tardio':
+            alertTexts[flag] = `o técnico levou ${this.nfBr(ev.primeiro_login_min)} min para entrar no sistema — acima da meta de ${metaTarget} min (média da equipe: ${this.nfBr(ev.team_avg_login_min)} min). Quanto mais tarde o técnico acessa o sistema, mais tarde recebe o primeiro despacho e menos chamados consegue atender no dia.`;
+            break;
+        }
+      }
+      return { ...ev, alertTexts };
+    });
+  }
+
+  /** Enriches Primeiro Desloc evidence items with pre-computed alertTexts. */
+  private enrichDeslocEvidence(days: PrimeiroDeslocDayEvidence[], metaTarget: number): PrimeiroDeslocDayEvidence[] {
+    return days.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'despacho_tardio':
+            alertTexts[flag] = `a equipe recebeu a primeira OS com ${this.nfBr(ev.despacho_apos_inicio_min)} min de atraso em relação ao início da jornada — acima do limite de 10 min.${ev.login_atraso_min > 0 ? ` Desse total, ${this.nfBr(ev.login_atraso_min)} min foram de atraso no acesso ao sistema (início da jornada ${ev.inicio_calendario} → acesso ${ev.log_in_corrigido}) e os demais ${this.nfBr(ev.despacho_apos_inicio_min - ev.login_atraso_min)} min de espera entre o acesso e o primeiro despacho.` : ''} Esse atraso reduz o tempo disponível para atendimentos no dia.`;
+            break;
+          case 'desloc_muito_lento':
+            alertTexts[flag] = `a equipe levou ${this.nfBr(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — mais de 1,5× a meta de ${metaTarget} min. Uma demora tão grande indica que o técnico ficou parado por muito tempo antes de se deslocar para o primeiro atendimento do dia.`;
+            break;
+          case 'desloc_lento':
+            alertTexts[flag] = `a equipe levou ${this.nfBr(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — acima da meta de ${metaTarget} min (média da equipe: ${this.nfBr(ev.team_avg_desloc_min)} min). Sair tarde para o primeiro atendimento reduz o aproveitamento da jornada.`;
+            break;
+          case 'sem_desloc_registrado':
+            alertTexts[flag] = `há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.`;
+            break;
+        }
+      }
+      return { ...ev, alertTexts };
+    });
+  }
+
+  /** Enriches Retorno Base evidence items with pre-computed alertTexts. */
+  private enrichRetornoEvidence(days: RetornoBaseDayEvidence[], metaTarget: number): RetornoBaseDayEvidence[] {
+    return days.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'retorno_muito_alto':
+            alertTexts[flag] = `${this.nfBr(ev.retorno_base_min)} min — mais de 1,5× a meta de ${metaTarget} min. Pode indicar trajeto muito longo até a base, região de atuação distante, ou permanência no campo sem atendimento após a última OS. Retornos longos são descontados no cálculo de Utilização, prejudicando a nota da equipe.`;
+            break;
+          case 'retorno_alto':
+            alertTexts[flag] = `${this.nfBr(ev.retorno_base_min)} min — acima da meta de ${metaTarget} min (média da equipe: ${this.nfBr(ev.team_avg_retorno_min)} min, média geral: ${this.nfBr(ev.global_avg_retorno_min)} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.`;
+            break;
+        }
+      }
+      return { ...ev, alertTexts };
+    });
   }
 
   private analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): EficienciaTeamAnalysis[] {
@@ -3583,6 +3835,10 @@ export class PostDownloadReportService {
 
       const countTempoPadraoVazio = mergedFlaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length;
       const allFlagged = distinctDates > 7 ? mergedFlaggedOrders.slice(0, 10) : mergedFlaggedOrders;
+      const enrichedFlagged = this.enrichEficienciaEvidence(allFlagged, {
+        globalAvgExecucaoMin: round2(globalAvgExecucao),
+        globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
+      });
 
       // Always include all top 3 and bottom 3 teams
       result.push({
@@ -3596,7 +3852,7 @@ export class PostDownloadReportService {
         globalAvgExecucaoMin: round2(globalAvgExecucao),
         analysisType,
         flags,
-        flaggedOrders: allFlagged,
+        flaggedOrders: enrichedFlagged,
         tempoPadraoVazioOrders: [],
         simulatedEficiencia,
         summary: {
@@ -4317,6 +4573,10 @@ export class PostDownloadReportService {
       // Sort: highest TME IMP first
       flaggedOrders.sort((a, b) => b.tme_imp_min - a.tme_imp_min);
 
+      const enrichedFlaggedOrders = this.enrichTmeImpEvidence(
+        distinctDates > 7 ? flaggedOrders.slice(0, 10) : flaggedOrders,
+      );
+
       result.push({
         team,
         tmeImpValue,
@@ -4325,7 +4585,7 @@ export class PostDownloadReportService {
         avgTmeImpMin: round2(teamAvgTme),
         globalAvgTmeImpMin: round2(globalAvgTme),
         totalOrders: teamRows.length,
-        flaggedOrders: distinctDates > 7 ? flaggedOrders.slice(0, 10) : flaggedOrders,
+        flaggedOrders: enrichedFlaggedOrders,
         summary: { countTmeMuitoAlto, countSemDeslocamento, countSemExecucao },
       });
     }
@@ -4467,7 +4727,10 @@ export class PostDownloadReportService {
         globalAvgLoginMin: round2(globalAvgLogin),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+        flaggedDays: this.enrichLoginEvidence(
+          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+          LOGIN_META,
+        ),
         summary: { countLoginTardio, countLoginMuitoTardio },
       });
     }
@@ -4639,7 +4902,10 @@ export class PostDownloadReportService {
         globalAvgDeslocMin: round2(globalAvgDesloc),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+        flaggedDays: this.enrichDeslocEvidence(
+          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+          DESLOC_META,
+        ),
         summary: { countDeslocLento, countDeslocMuitoLento, countSemDeslocRegistrado, countDespachioTardio },
       });
     }
@@ -4752,7 +5018,10 @@ export class PostDownloadReportService {
         globalAvgRetornoMin: round2(globalAvgRetorno),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+        flaggedDays: this.enrichRetornoEvidence(
+          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
+          RETORNO_META,
+        ),
         summary: { countRetornoAlto, countRetornoMuitoAlto },
       });
     }

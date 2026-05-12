@@ -11,7 +11,7 @@ const pdfMake = require('pdfmake/build/pdfmake');
 const pdfFonts = require('pdfmake/build/vfs_fonts');
 pdfMake.vfs = pdfFonts.pdfMake?.vfs ?? pdfFonts.vfs;
 
-import { type GeneratedReport, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
+import { type GeneratedReport, type ReportKpiInsight, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
@@ -441,8 +441,8 @@ type SavedFilterState = {
                     <span class="kpi-cr-pos">{{ i + 1 }}</span>
                     <span class="kpi-cr-team">{{ t.team }}</span>
                     <div class="kpi-cr-track">
-                      <div class="kpi-cr-fill kpi-cr-fill--good" [style.width.%]="barWidthPct(t.value, kpi.kpi)"></div>
-                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                      <div class="kpi-cr-fill kpi-cr-fill--good" [style.width.%]="barWidthPct(t.value, kpi.kpi, kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget, kpi)"></div>
                     </div>
                     <span class="kpi-cr-val">{{ t.value }}</span>
                   </div>
@@ -450,8 +450,8 @@ type SavedFilterState = {
                     <span class="kpi-cr-pos">—</span>
                     <span class="kpi-cr-team kpi-cr-team--avg">Média geral</span>
                     <div class="kpi-cr-track">
-                      <div class="kpi-cr-fill kpi-cr-fill--avg" [style.width.%]="barWidthPct(kpi.average, kpi.kpi)"></div>
-                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                      <div class="kpi-cr-fill kpi-cr-fill--avg" [style.width.%]="barWidthPct(kpi.average, kpi.kpi, kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget, kpi)"></div>
                     </div>
                     <span class="kpi-cr-val kpi-cr-val--avg">{{ kpi.average }}</span>
                   </div>
@@ -460,8 +460,8 @@ type SavedFilterState = {
                     <span class="kpi-cr-pos">{{ i + 1 }}</span>
                     <span class="kpi-cr-team">{{ t.team }}</span>
                     <div class="kpi-cr-track">
-                      <div class="kpi-cr-fill kpi-cr-fill--bad" [style.width.%]="barWidthPct(t.value, kpi.kpi)"></div>
-                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget)"></div>
+                      <div class="kpi-cr-fill kpi-cr-fill--bad" [style.width.%]="barWidthPct(t.value, kpi.kpi, kpi)"></div>
+                      <div class="kpi-cr-meta-line" [style.left.%]="kpiMetaPct(kpi.kpi, kpi.metaTarget, kpi)"></div>
                     </div>
                     <span class="kpi-cr-val kpi-cr-val--opp">{{ t.value }}</span>
                   </div>
@@ -620,16 +620,16 @@ type SavedFilterState = {
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev, analysis) }}
+                                  <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
-                                  <strong>Deslocamento (TL) muito curto:</strong> {{ eficienciaAlertBody('deslocamento_curto', ev, analysis) }}
+                                  <strong>Deslocamento (TL) muito curto:</strong> {{ eficienciaAlertBody('deslocamento_curto', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> {{ eficienciaAlertBody('tr_excede_hd', ev, analysis) }}
+                                  <strong>Tempo de Reparo alto:</strong> {{ eficienciaAlertBody('tr_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('tempo_padrao_vazio')" class="osdia-ev-alert">
-                                  <strong>Tempo Padrão ausente:</strong> {{ eficienciaAlertBody('tempo_padrao_vazio', ev, analysis) }}
+                                  <strong>Tempo Padrão ausente:</strong> {{ eficienciaAlertBody('tempo_padrao_vazio', ev) }}
                                 </li>
                               </ul>
                             </div>
@@ -850,10 +850,10 @@ type SavedFilterState = {
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev, analysis) }}
+                              <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('login_tardio') && !ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login tardio:</strong> {{ loginAlertBody('login_tardio', ev, analysis) }}
+                              <strong>Login tardio:</strong> {{ loginAlertBody('login_tardio', ev) }}
                             </li>
                           </ul>
                         </div>
@@ -908,16 +908,16 @@ type SavedFilterState = {
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
-                              <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev, analysis) }}
+                              <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Tempo de Partida:</strong> {{ deslocAlertBody('desloc_muito_lento', ev, analysis) }}
+                              <strong>Tempo de Partida:</strong> {{ deslocAlertBody('desloc_muito_lento', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento lento:</strong> {{ deslocAlertBody('desloc_lento', ev, analysis) }}
+                              <strong>Deslocamento lento:</strong> {{ deslocAlertBody('desloc_lento', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
-                              <strong>Sem deslocamento registrado:</strong> {{ deslocAlertBody('sem_desloc_registrado', ev, analysis) }}
+                              <strong>Sem deslocamento registrado:</strong> {{ deslocAlertBody('sem_desloc_registrado', ev) }}
                             </li>
                           </ul>
                         </div>
@@ -968,10 +968,10 @@ type SavedFilterState = {
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev, analysis) }}
+                              <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev) }}
                             </li>
                             <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno acima da meta:</strong> {{ retornoAlertBody('retorno_alto', ev, analysis) }}
+                              <strong>Retorno acima da meta:</strong> {{ retornoAlertBody('retorno_alto', ev) }}
                             </li>
                           </ul>
                         </div>
@@ -4627,18 +4627,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.dayRange().min >= this.dayRange().max || this.sliderMin() >= this.sliderTotal();
   });
 
-  private readonly KPI_CHART_CONFIG: Record<string, { worst: number; best: number; direction: 'h' | 'l' }> = {
-    'OS Dia':        { worst: 1.0,  best: 5.5,  direction: 'h' },
-    'Eficiência':    { worst: 80,   best: 125,  direction: 'h' },
-    'Utilização':    { worst: 60,   best: 88,   direction: 'h' },
-    'Reparo Por OS': { worst: 1.32, best: 1.18, direction: 'l' },
-    'TME':           { worst: 72,   best: 45,   direction: 'l' },
-    'TME IMP':       { worst: 28,   best: 17,   direction: 'l' },
-    '1º Login':      { worst: 12,   best: 7,    direction: 'l' },
-    '1º Desloc.':    { worst: 30,   best: 20,   direction: 'l' },
-    'Retorno Base':  { worst: 50,   best: 35,   direction: 'l' },
-  };
-
   private scrollObserver?: IntersectionObserver;
 
   private activeDownloadRequest?: Subscription;
@@ -4774,8 +4762,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }, 60);
   }
 
-  protected barWidthPct(value: number, kpiName: string): number {
-    const cfg = this.KPI_CHART_CONFIG[kpiName];
+  protected barWidthPct(value: number, kpiName: string, kpi?: { chartConfig?: { worst: number; best: number; direction: 'h' | 'l' } }): number {
+    const cfg = kpi?.chartConfig;
     if (!cfg || !Number.isFinite(value)) return 0;
     const pct = cfg.direction === 'h'
       ? (value - cfg.worst) / (cfg.best - cfg.worst) * 100
@@ -4783,8 +4771,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return Math.max(2, Math.min(100, pct));
   }
 
-  protected kpiMetaPct(kpiName: string, metaTarget: number): number {
-    return this.barWidthPct(metaTarget, kpiName);
+  protected kpiMetaPct(kpiName: string, metaTarget: number, kpi?: { chartConfig?: { worst: number; best: number; direction: 'h' | 'l' } }): number {
+    return this.barWidthPct(metaTarget, kpiName, kpi);
   }
 
   protected exportPdf(): void {
@@ -5020,28 +5008,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private buildPdfDocDef(section: { report: GeneratedReport; title: string; subtitle: string; dateRangeLabel?: string }): any {
     const { report, title, subtitle, dateRangeLabel } = section;
 
-    const KPI_CFG_PDF: Record<string, { worst: number; best: number; dir: 'h' | 'l'; meta: number }> = {
-      'OS Dia':       { worst: 1.0,  best: 5.5,  dir: 'h', meta: 4.4 },
-      'Eficiência':   { worst: 80,   best: 125,  dir: 'h', meta: 100 },
-      'Utilização':   { worst: 60,   best: 88,   dir: 'h', meta: 85 },
-      'TME IMP':      { worst: 28,   best: 17,   dir: 'l', meta: 20 },
-      '1º Login':     { worst: 12,   best: 7,    dir: 'l', meta: 8 },
-      '1º Desloc.':   { worst: 30,   best: 20,   dir: 'l', meta: 25 },
-      'Retorno Base': { worst: 50,   best: 35,   dir: 'l', meta: 40 },
-    };
-
-    const barPct = (value: number, kpiName: string): number => {
-      const cfg = KPI_CFG_PDF[kpiName];
+    const barPct = (value: number, kpi: ReportKpiInsight): number => {
+      const cfg = kpi.chartConfig;
       if (!cfg || !Number.isFinite(value)) return 2;
-      const pct = cfg.dir === 'h'
+      const pct = cfg.direction === 'h'
         ? (value - cfg.worst) / (cfg.best - cfg.worst) * 100
         : (cfg.worst - value) / (cfg.worst - cfg.best) * 100;
       return Math.max(2, Math.min(100, pct));
     };
 
-    const metaLinePct = (kpiName: string): number => {
-      const cfg = KPI_CFG_PDF[kpiName];
-      return cfg ? barPct(cfg.meta, kpiName) : 50;
+    const metaLinePct = (kpi: ReportKpiInsight): number => {
+      const cfg = kpi.chartConfig;
+      return cfg ? barPct(cfg.meta, kpi) : 50;
     };
 
     const isAbove = (kpi: { kpi: string; direction: string; metaTarget: number }, value: number): boolean =>
@@ -5183,8 +5161,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }
         // ───────────────────────────────────────────────────────────────────
         const above = t.group === 'avg' ? null : isAbove(kpi, t.value);
-        const pct = barPct(t.value, kpi.kpi);
-        const mlPct = metaLinePct(kpi.kpi);
+        const pct = barPct(t.value, kpi);
+        const mlPct = metaLinePct(kpi);
         const barColor = t.group === 'avg' ? MUTED : (above ? BLUE : RED);
         const valColor = t.group === 'avg' ? GRAY : (above ? BLUE : RED);
         kpiChartItems.push({
@@ -5568,10 +5546,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               orderItems.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? '  \u00b7  ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
             }
             orderItems.push(tl('OS', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
-            if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${this.eficienciaAlertBody('tr_muito_baixo', ev, analysis)}`));
-            if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${this.eficienciaAlertBody('deslocamento_curto', ev, analysis)}`));
-            if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${this.eficienciaAlertBody('tr_excede_hd', ev, analysis)}`));
-            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${this.eficienciaAlertBody('tempo_padrao_vazio', ev, analysis)}`));
+            if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${this.eficienciaAlertBody('tr_muito_baixo', ev)}`));
+            if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${this.eficienciaAlertBody('deslocamento_curto', ev)}`));
+            if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${this.eficienciaAlertBody('tr_excede_hd', ev)}`));
+            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${this.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => this.eficienciaFlagLabel(f), ev.date_ref || undefined)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
@@ -5721,8 +5699,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const dayItems: any[] = [];
             dayItems.push(tl('Inicio Cal.', ev.inicio_calendario || '\u2014', `Log In: ${ev.log_in_corrigido || '\u2014'}`));
-            if (ev.flags?.includes('login_muito_tardio')) dayItems.push(alertItem(`Login muito tardio: ${this.loginAlertBody('login_muito_tardio', ev, analysis)}`));
-            else if (ev.flags?.includes('login_tardio')) dayItems.push(alertItem(`Login tardio: ${this.loginAlertBody('login_tardio', ev, analysis)}`));
+            if (ev.flags?.includes('login_muito_tardio')) dayItems.push(alertItem(`Login muito tardio: ${this.loginAlertBody('login_muito_tardio', ev)}`));
+            else if (ev.flags?.includes('login_tardio')) dayItems.push(alertItem(`Login tardio: ${this.loginAlertBody('login_tardio', ev)}`));
             teamItems.push({ stack: [
               {
                 text: [
@@ -5770,10 +5748,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             const dayItems: any[] = [];
             dayItems.push(tl('Jornada', `Inicio Cal.: ${ev.inicio_calendario || '\u2014'}`, `Log In: ${ev.log_in_corrigido || '\u2014'}`));
             dayItems.push(tl('1\u00aa OS', `Despachada: ${ev.hora_primeiro_despacho || '\u2014'}`, `A Caminho: ${ev.hora_primeiro_deslocamento || '\u2014'}`));
-            if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${this.deslocAlertBody('despacho_tardio', ev, analysis)}`));
-            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${this.deslocAlertBody('desloc_muito_lento', ev, analysis)}`));
-            else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${this.deslocAlertBody('desloc_lento', ev, analysis)}`));
-            if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${this.deslocAlertBody('sem_desloc_registrado', ev, analysis)}`));
+            if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${this.deslocAlertBody('despacho_tardio', ev)}`));
+            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${this.deslocAlertBody('desloc_muito_lento', ev)}`));
+            else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${this.deslocAlertBody('desloc_lento', ev)}`));
+            if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${this.deslocAlertBody('sem_desloc_registrado', ev)}`));
             teamItems.push({ stack: [
               {
                 text: [
@@ -5818,8 +5796,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const dayItems: any[] = [];
             dayItems.push(tl('Ultima OS Lib.', ev.hora_ultima_ordem || '\u2014', `Log Off: ${ev.log_off_corrigido || '\u2014'}`));
-            if (ev.flags?.includes('retorno_muito_alto')) dayItems.push(alertItem(`Retorno muito alto: ${this.retornoAlertBody('retorno_muito_alto', ev, analysis)}`));
-            else if (ev.flags?.includes('retorno_alto')) dayItems.push(alertItem(`Retorno acima da meta: ${this.retornoAlertBody('retorno_alto', ev, analysis)}`));
+            if (ev.flags?.includes('retorno_muito_alto')) dayItems.push(alertItem(`Retorno muito alto: ${this.retornoAlertBody('retorno_muito_alto', ev)}`));
+            else if (ev.flags?.includes('retorno_alto')) dayItems.push(alertItem(`Retorno acima da meta: ${this.retornoAlertBody('retorno_alto', ev)}`));
             teamItems.push({ stack: [
               {
                 text: [
@@ -6190,7 +6168,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     const colors = DashboardComponent.FLAG_COLORS;
-    const flagLabels = DashboardComponent.FLAG_LABELS;
+    const flagLabels = report.flagMeta?.labels ?? {};
     const subColors = DashboardComponent.SEM_OS_SUB_COLORS;
     const subLabels = DashboardComponent.SEM_OS_SUB_LABELS;
 
@@ -6364,7 +6342,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     const colors = DashboardComponent.FLAG_COLORS;
-    const flagLabels = DashboardComponent.FLAG_LABELS;
+    const flagLabels = report.flagMeta?.labels ?? {};
     const subColors = DashboardComponent.SEM_OS_SUB_COLORS;
     const subLabels = DashboardComponent.SEM_OS_SUB_LABELS;
 
@@ -6414,27 +6392,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ];
 
   // ─── Flag metadata for analytic drill-down ────────────────────────────────
-  private static readonly FLAG_LABELS: Record<string, string> = {
-    tr_excede_hd:          'Temp. Reparo > HD',
-    tl_excede_hd:          'Temp. Deslocamento Alto',
-    temp_prep_alto:        'Temp. Partida ≥ 10min',
-    sem_os_alto:           'Sem Ordem ≥ 10min',
-    deslocamento_curto:    'Deslocamento Curto',
-    tempo_padrao_vazio:    'Tempo Padrão Vazio',
-    tr_muito_baixo:        'Tempo de Reparo Baixo',
-    tme_muito_alto:        'TME IMP Elevado',
-    sem_deslocamento:      'Sem Deslocamento',
-    sem_execucao:          'Sem Execução',
-    login_tardio:          'Login Tardio',
-    login_muito_tardio:    'Login Muito Tardio',
-    desloc_lento:          'Deslocamento Lento',
-    desloc_muito_lento:    'Deslocamento Muito Lento',
-    sem_desloc_registrado: 'Sem Desloc. Registrado',
-    despacho_tardio:       'Despacho Tardio',
-    retorno_alto:          'Retorno Base Alto',
-    retorno_muito_alto:    'Retorno Muito Alto',
-  };
-
   private static readonly FLAG_COLORS: Record<string, string> = {
     tr_excede_hd:          '#d97706',
     tl_excede_hd:          '#7c3aed',
@@ -6767,36 +6724,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected osDiaFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      tr_excede_hd:       'Temp. Reparo>20%HD',
-      tl_excede_hd:       'Temp. Desloc.',
-      temp_prep_alto:     'Temp. Partida≥10min',
-      sem_os_alto:        'SemOS≥10min',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
-  /** Detecta janela Entre OS após intervalo (fim_intervalo → despachada > 10min) não coberta pelo backend */
-  protected entreOsAfterIntervalo(ev: any): { min: number; from: string; to: string } | null {
-    if (!ev.fim_intervalo || !ev.despachada) return null;
-    const parseDt = (s: string) => {
-      const parts = s.split(' ');
-      if (parts.length < 2) return 0;
-      const [day, mon, yr] = parts[0].split('/');
-      const [hr, min, sec] = parts[1].split(':');
-      return new Date(+yr, +mon - 1, +day, +hr, +min, +(sec || 0)).getTime();
-    };
-    const fimTs = parseDt(ev.fim_intervalo);
-    const despTs = parseDt(ev.despachada);
-    if (fimTs <= 0 || despTs <= 0 || despTs <= fimTs) return null;
-    const minDiff = Math.round((despTs - fimTs) / 60000);
-    if (minDiff <= 10) return null;
-    // Não duplica se backend já inclui este trecho em sem_os_details
-    const alreadyCovered = ev.sem_os_details?.some((d: any) =>
-      d.type === 'entre_ordens' && d.from === ev.fim_intervalo
-    );
-    if (alreadyCovered) return null;
-    return { min: minDiff, from: ev.fim_intervalo, to: ev.despachada };
+  /** Detecta janela Entre OS após intervalo — delegado ao backend via entreOsAfterIntervalo */
+  protected entreOsAfterIntervalo(ev: { entreOsAfterIntervalo?: { min: number; from: string; to: string } }): { min: number; from: string; to: string } | null {
+    return ev.entreOsAfterIntervalo ?? null;
   }
 
   protected filterOsDiaEvidence<T extends { idleAnalysis?: unknown; flaggedOrders: unknown[] }>(list: T[]): T[] {
@@ -6833,73 +6766,38 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected eficienciaFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      deslocamento_curto: 'Desloc. Curto',
-      tr_excede_hd: 'Temp. Reparo>20%HD',
-      tr_muito_baixo: 'Temp. Reparo Baixo',
-      tempo_padrao_vazio: 'Temp. Padrão Vazio',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
   protected tmeImpFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      tme_muito_alto:    'TME≥1.5×avg',
-      sem_deslocamento:  'Sem A Caminho',
-      sem_execucao:      'TR=0',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
   protected loginFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      login_tardio:       'Login Tardio',
-      login_muito_tardio: 'Login Muito Tardio',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
   protected deslocFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      desloc_lento:           'Desloc. Lento',
-      desloc_muito_lento:     'Desloc. Muito Lento',
-      sem_desloc_registrado:  'Sem Registro',
-      despacho_tardio:        'Despacho Tardio',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
   protected retornoFlagLabel(flag: string): string {
-    const labels: Record<string, string> = {
-      retorno_alto:       'Retorno Alto',
-      retorno_muito_alto: 'Retorno Muito Alto',
-    };
-    return labels[flag] ?? flag;
+    return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
-  // ─── Alert body builders — SINGLE SOURCE OF TRUTH for HTML template + PDF export ────────────────
-  // To change any alert text: edit ONLY here. Both HTML and PDF will reflect the change automatically.
+  // ─── Alert body — delegates to pre-computed backend texts ────────────────
 
   private nf(v: number, minDec = 1, maxDec = 1): string {
     return v.toLocaleString('pt-BR', { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
   }
 
-  protected osDiaAlertBody(flag: string, ev: any): string {
-    switch (flag) {
-      case 'tr_excede_hd':
-        return `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
-      case 'tl_excede_hd':
-        return `o técnico passou ${ev.tl_ordem_min} min em deslocamento nesta OS — ${ev.global_avg_tl_min > 0 ? this.nf((ev.tl_ordem_min - ev.global_avg_tl_min) / ev.global_avg_tl_min * 100, 0, 0) : '?'}% acima da média geral de ${this.nf(ev.global_avg_tl_min)} min, representando ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.`;
-      case 'temp_prep_alto':
-        return `o técnico levou ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS'} — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
-      case 'sem_os_alto':
-        return `${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
-      default:
-        return '';
-    }
+  protected osDiaAlertBody(flag: string, ev: { alertTexts?: Record<string, string> }): string {
+    return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected semOsDetailText(d: any): string {
+  protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; label?: string; body?: string }): string {
+    if (d.label && d.body) return `${d.label}: ${d.body}`;
+    // Fallback for older cached reports without pre-computed fields
     switch (d.type) {
       case 'inicio_jornada':
         return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}).`;
@@ -6908,8 +6806,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       case 'fim_jornada':
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
       case 'intervalo_deslocamento':
-        if (Number.isFinite(d?.global_avg_min) && Number.isFinite(d?.above_avg_pct) && d.global_avg_min > 0) {
-          return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nf(d.above_avg_pct, 0, 1)}% acima da média geral (${this.nf(d.global_avg_min)} min).`;
+        if (Number.isFinite(d?.global_avg_min) && Number.isFinite(d?.above_avg_pct) && (d.global_avg_min ?? 0) > 0) {
+          return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nf(d.above_avg_pct!, 0, 1)}% acima da média geral (${this.nf(d.global_avg_min!)} min).`;
         }
         return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
       default:
@@ -6917,81 +6815,38 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  protected semOsDetailLabel(d: any): string {
+  protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
+    if (d.label) return d.label;
     const text = this.semOsDetailText(d);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(0, sep) : text;
   }
 
-  protected semOsDetailBody(d: any): string {
+  protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
+    if (d.body) return d.body;
     const text = this.semOsDetailText(d);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(sep + 2) : '';
   }
 
-  protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence, analysis: EficienciaTeamAnalysis): string {
-    switch (flag) {
-      case 'tr_muito_baixo':
-        return `${ev.tr_ordem_min} min de execução — ${analysis.globalAvgExecucaoMin > 0 ? this.nf((analysis.globalAvgExecucaoMin - ev.tr_ordem_min) / analysis.globalAvgExecucaoMin * 100, 0, 0) : '?'}% abaixo da média geral de ${this.nf(analysis.globalAvgExecucaoMin)} min. Deslocamento registrado (TL): ${ev.tl_ordem_min} min${ev.tl_ordem_min > analysis.globalAvgDeslocamentoMin ? ' — TL elevado indica erro no apontamento de "A Caminho" ou "No Local", comprimindo artificialmente o TR' : ' — grande possibilidade de erro de apontamento de "A Caminho" ou "No Local"'}.`;
-      case 'deslocamento_curto':
-        return `o tempo de deslocamento desta OS foi de apenas ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${this.nf(analysis.globalAvgDeslocamentoMin)} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.`;
-      case 'tr_excede_hd':
-        return `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
-      case 'tempo_padrao_vazio':
-        return `esta OS foi atendida em ${ev.tr_ordem_min} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.`;
-      default:
-        return '';
-    }
+  protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence): string {
+    return ev.alertTexts?.[flag] ?? '';
   }
 
   protected tmeImpAlertBody(flag: string, ev: TmeImpOrderEvidence): string {
-    switch (flag) {
-      case 'tme_muito_alto':
-        return `esta OS acumulou ${this.nf(ev.tme_imp_min)} min de tempo improdutivo — acima da média da equipe (${this.nf(ev.team_avg_tme_min)} min) e da média geral (${this.nf(ev.global_avg_tme_min)} min). Esse é o tempo entre a chegada ao local (No Local) e a liberação da OS, sem execução produtiva registrada. Quanto maior esse tempo, mais prejudica a pontuação da equipe.`;
-      case 'sem_deslocamento':
-        return `a OS tem ${this.nf(ev.tl_ordem_min)} min de deslocamento, mas não há horário de saída lançado no sistema. O técnico se deslocou mas não atualizou o aplicativo, impedindo o cálculo correto do tempo improdutivo.`;
-      case 'sem_execucao':
-        return `esta OS não tem registro de execução, mas acumulou tempo improdutivo. Pode indicar uma OS encerrada sem atendimento real ou lançamento incorreto no sistema.`;
-      default:
-        return '';
-    }
+    return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected loginAlertBody(flag: string, ev: PrimeiroLoginDayEvidence, analysis: PrimeiroLoginTeamAnalysis): string {
-    switch (flag) {
-      case 'login_muito_tardio':
-        return `o técnico levou ${this.nf(ev.primeiro_login_min)} min para entrar no sistema — mais do que o dobro da meta de ${analysis.metaTarget} min. Um atraso tão grande atrasa o primeiro despacho e reduz bastante o tempo disponível para atendimento no dia.`;
-      case 'login_tardio':
-        return `o técnico levou ${this.nf(ev.primeiro_login_min)} min para entrar no sistema — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_login_min)} min). Quanto mais tarde o técnico acessa o sistema, mais tarde recebe o primeiro despacho e menos chamados consegue atender no dia.`;
-      default:
-        return '';
-    }
+  protected loginAlertBody(flag: string, ev: PrimeiroLoginDayEvidence): string {
+    return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected deslocAlertBody(flag: string, ev: PrimeiroDeslocDayEvidence, analysis: PrimeiroDeslocTeamAnalysis): string {
-    switch (flag) {
-      case 'despacho_tardio':
-        return `a equipe recebeu a primeira OS com ${this.nf(ev.despacho_apos_inicio_min)} min de atraso em relação ao início da jornada — acima do limite de 10 min.${ev.login_atraso_min > 0 ? ` Desse total, ${this.nf(ev.login_atraso_min)} min foram de atraso no acesso ao sistema (início da jornada ${ev.inicio_calendario} → acesso ${ev.log_in_corrigido}) e os demais ${this.nf(ev.despacho_apos_inicio_min - ev.login_atraso_min)} min de espera entre o acesso e o primeiro despacho.` : ''} Esse atraso reduz o tempo disponível para atendimentos no dia.`;
-      case 'desloc_muito_lento':
-        return `a equipe levou ${this.nf(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — mais de 1,5× a meta de ${analysis.metaTarget} min. Uma demora tão grande indica que o técnico ficou parado por muito tempo antes de se deslocar para o primeiro atendimento do dia.`;
-      case 'desloc_lento':
-        return `a equipe levou ${this.nf(ev.primeiro_desloc_min)} min para registrar saída após o primeiro despacho — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_desloc_min)} min). Sair tarde para o primeiro atendimento reduz o aproveitamento da jornada.`;
-      case 'sem_desloc_registrado':
-        return `há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.`;
-      default:
-        return '';
-    }
+  protected deslocAlertBody(flag: string, ev: PrimeiroDeslocDayEvidence): string {
+    return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected retornoAlertBody(flag: string, ev: RetornoBaseDayEvidence, analysis: RetornoBaseTeamAnalysis): string {
-    switch (flag) {
-      case 'retorno_muito_alto':
-        return `${this.nf(ev.retorno_base_min)} min — mais de 1,5× a meta de ${analysis.metaTarget} min. Pode indicar trajeto muito longo até a base, região de atuação distante, ou permanência no campo sem atendimento após a última OS. Retornos longos são descontados no cálculo de Utilização, prejudicando a nota da equipe.`;
-      case 'retorno_alto':
-        return `${this.nf(ev.retorno_base_min)} min — acima da meta de ${analysis.metaTarget} min (média da equipe: ${this.nf(ev.team_avg_retorno_min)} min, média geral: ${this.nf(ev.global_avg_retorno_min)} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.`;
-      default:
-        return '';
-    }
+  protected retornoAlertBody(flag: string, ev: RetornoBaseDayEvidence): string {
+    return ev.alertTexts?.[flag] ?? '';
   }
   // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
