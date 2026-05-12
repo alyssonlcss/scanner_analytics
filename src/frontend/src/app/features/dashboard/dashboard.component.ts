@@ -943,7 +943,6 @@ type SavedFilterState = {
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ deslocFlagLabel(f) }}</span>
                           </div>
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
-                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
                               <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev) }}

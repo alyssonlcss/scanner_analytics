@@ -266,9 +266,14 @@ export class TimelineVisualComponent implements OnInit {
   private buildTimeline() {
     if (!this.ev) return;
 
+    // Normalizar aliases de campos (suporte a PrimeiroDeslocDayEvidence)
+    const logIn = this.ev.log_in || this.ev.log_in_corrigido;
+    const despachada = this.ev.despachada || this.ev.hora_primeiro_despacho;
+    const aCaminho = this.ev.a_caminho || this.ev.hora_primeiro_deslocamento;
+
     // Detectar cenário onde prev_liberada é posterior à despachada
     const prevLibTs = this.ev.prev_liberada ? this.parseDt(this.ev.prev_liberada) : 0;
-    const despTs = this.ev.despachada ? this.parseDt(this.ev.despachada) : 0;
+    const despTs = despachada ? this.parseDt(despachada) : 0;
     const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
 
     this.despachHint = '';
@@ -277,11 +282,10 @@ export class TimelineVisualComponent implements OnInit {
     if (this.ev.prev_liberada) {
       this.timelineOrigin = `Lib. Anterior (${this.extractTime(this.ev.prev_liberada)})`;
       if (despAfterPrevLib) {
-        // Despachada está no passado em relação à Lib. Anterior; mostrar como referência
-        this.despachHint = this.extractTime(this.ev.despachada);
+        this.despachHint = this.extractTime(despachada);
       }
     } else {
-      const loginTime = this.extractTime(this.ev.log_in) || this.extractTime(this.ev.inicio_calendario);
+      const loginTime = this.extractTime(logIn) || this.extractTime(this.ev.inicio_calendario);
       this.timelineOrigin = `1ª OS do Dia (${loginTime})`;
     }
 
@@ -299,14 +303,14 @@ export class TimelineVisualComponent implements OnInit {
       addPt('prev_liberada', this.ev.prev_liberada, 'Lib. Anterior');
     } else {
       addPt('inicio_calendario', this.ev.inicio_calendario, 'Início Cal.');
-      addPt('log_in', this.ev.log_in, 'Log In');
+      addPt('log_in', logIn, 'Log In');
     }
     
     // Adicionar despachada somente se não estiver no passado em relação à Lib. Anterior
     if (!despAfterPrevLib) {
-      addPt('despachada', this.ev.despachada, 'Despachada');
+      addPt('despachada', despachada, 'Despachada');
     }
-    addPt('a_caminho', this.ev.a_caminho, 'A Caminho');
+    addPt('a_caminho', aCaminho, 'A Caminho');
     addPt('no_local', this.ev.no_local, 'No Local');
     addPt('liberada', this.ev.liberada, 'Liberada');
     addPt('inicio_intervalo', this.ev.inicio_intervalo, 'Início Intervalo');
