@@ -14,17 +14,23 @@ export function semOsDetailText(d: {
     retorno_base_used_row?: boolean; desp_anterior?: string;
   }): string {
     switch (d.type) {
-      case 'inicio_jornada':
-        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}).`;
-      case 'entre_ordens':
-        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''}.`;
+      case 'inicio_jornada': {
+        const pctIJ = Math.round((d.min - 10) / 10 * 100);
+        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctIJ}% acima do limite (10 min).`;
+      }
+      case 'entre_ordens': {
+        const pctEO = Math.round((d.min - 10) / 10 * 100);
+        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctEO}% acima do limite (10 min).`;
+      }
       case 'fim_jornada':
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
-      case 'intervalo_deslocamento':
+      case 'intervalo_deslocamento': {
         if (Number.isFinite(d.global_avg_min) && Number.isFinite(d.above_avg_pct) && (d.global_avg_min ?? 0) > 0) {
           return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${nfBr(d.above_avg_pct!, 0, 1)}% acima da média geral (${nfBr(d.global_avg_min!)} min).`;
         }
-        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
+        const pctID = Math.round((d.min - 10) / 10 * 100);
+        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}) — ${pctID}% acima do limite (10 min).`;
+      }
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
     }
@@ -50,9 +56,14 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
           case 'tl_excede_hd':
             alertTexts[flag] = `o técnico passou ${ev.tl_ordem_min} min em deslocamento nesta OS — ${ev.global_avg_tl_min > 0 ? nfBr((ev.tl_ordem_min - ev.global_avg_tl_min) / ev.global_avg_tl_min * 100, 0, 0) : '?'}% acima da média geral de ${nfBr(ev.global_avg_tl_min)} min, representando ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.`;
             break;
-          case 'temp_prep_alto':
-            alertTexts[flag] = `o técnico levou ${ev.temp_prep_os_min} min entre ${ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS'} — acima do limite de 10 min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
+          case 'temp_prep_alto': {
+            const tempPrepMin = ev.temp_prep_os_min ?? 0;
+            const limit = ev.prev_liberada ? 10 : 25;
+            const pct = Math.round((tempPrepMin - limit) / limit * 100);
+            const subject = ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS';
+            alertTexts[flag] = `o técnico levou ${tempPrepMin} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
             break;
+          }
           case 'sem_os_alto':
             alertTexts[flag] = `${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;

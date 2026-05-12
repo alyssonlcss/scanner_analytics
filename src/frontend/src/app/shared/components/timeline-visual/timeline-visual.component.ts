@@ -238,7 +238,7 @@ export class TimelineVisualComponent implements OnInit {
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
-    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && (seg.flags?.length ?? 0) > 0;
+    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && (seg.flags?.includes('acima_media') ?? false);
   }
 
   private buildTimeline() {
@@ -366,15 +366,11 @@ export class TimelineVisualComponent implements OnInit {
               durationMin = Math.max(matchedDetail.min, 1);
             }
 
-            // Escuro apenas quando passa da média geral:
-            // - se global_avg_min disponível no detalhe → comparar diretamente
-            // - senão, o detalhe só existe quando o backend já confirmou que passou do limite (≥ 10 min)
+            // Escuro apenas quando passa da média geral — requer global_avg_min no detalhe
             if (matchedDetail) {
               const globalAvg: number | undefined = matchedDetail.global_avg_min;
-              if (globalAvg !== undefined && globalAvg > 0) {
-                if (durationMin > globalAvg) flags.push('acima_media');
-              } else {
-                flags.push('acima_media'); // detalhe presente = backend confirmou que passou do limite
+              if (globalAvg !== undefined && globalAvg > 0 && durationMin > globalAvg) {
+                flags.push('acima_media');
               }
             }
         }

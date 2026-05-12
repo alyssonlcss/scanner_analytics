@@ -543,13 +543,13 @@ type SavedFilterState = {
                                   <strong>Tempo de Deslocamento alto:</strong> {{ osDiaAlertBody('tl_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> {{ tempPrepAltoText(ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
-                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}).</li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}) — {{ (((eo.min - 10) / 10) * 100).toFixed(0) }}% acima do limite (10 min).</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -743,13 +743,13 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> {{ tempPrepAltoText(ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
-                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}).</li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}) — {{ (((eo.min - 10) / 10) * 100).toFixed(0) }}% acima do limite (10 min).</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -5343,37 +5343,49 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; label?: string; body?: string }): string {
-    if (d.label && d.body) return `${d.label}: ${d.body}`;
-    // Fallback for older cached reports without pre-computed fields
+    // Always compute fresh (ignore pre-computed label/body) to ensure stats are always shown
+    const SEM_OS_LIMIT = 10;
+    const pctAbove = (min: number) => Math.round((min - SEM_OS_LIMIT) / SEM_OS_LIMIT * 100);
     switch (d.type) {
       case 'inicio_jornada':
-        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}).`;
+        return `Início Jornada: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
       case 'entre_ordens':
-        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''}.`;
+        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
       case 'fim_jornada':
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
       case 'intervalo_deslocamento':
         if (Number.isFinite(d?.global_avg_min) && Number.isFinite(d?.above_avg_pct) && (d.global_avg_min ?? 0) > 0) {
           return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nf(d.above_avg_pct!, 0, 1)}% acima da média geral (${this.nf(d.global_avg_min!)} min).`;
         }
-        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}).`;
+        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
     }
   }
 
   protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
-    if (d.label) return d.label;
     const text = this.semOsDetailText(d);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(0, sep) : text;
   }
 
   protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
-    if (d.body) return d.body;
+    // Always recompute fresh to ensure % stats are shown (ignore pre-computed d.body)
     const text = this.semOsDetailText(d);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(sep + 2) : '';
+  }
+
+  protected tempPrepAltoText(ev: { temp_prep_os_min?: number; prev_liberada?: string; alertTexts?: Record<string, string> }): string {
+    const val = ev.temp_prep_os_min;
+    if (val == null || !Number.isFinite(val)) return ev.alertTexts?.['temp_prep_alto'] ?? '';
+    const isFirst = !ev.prev_liberada;
+    const limit = isFirst ? 25 : 10;
+    const pct = Math.round((val - limit) / limit * 100);
+    const subject = isFirst
+      ? 'o início da jornada e o registro de saída da primeira OS'
+      : 'a liberação da OS anterior e o registro de saída nesta OS';
+    return `o técnico levou ${val} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
   }
 
   protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence): string {
