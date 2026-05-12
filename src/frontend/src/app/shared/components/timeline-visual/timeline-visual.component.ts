@@ -21,6 +21,7 @@ interface TimelineSegment {
       <!-- Callout de origem da timeline (independente dos segmentos) -->
       <div class="timeline-origin-callout" *ngIf="timelineOrigin">
         <span class="origin-icon">▶</span> {{ timelineOrigin }}
+        <span *ngIf="despachHint" class="desp-hint">· Desp.: {{ despachHint }}</span>
       </div>
 
       <!-- Barra principal da timeline -->
@@ -29,19 +30,14 @@ interface TimelineSegment {
           *ngFor="let seg of segments; let i = index; let isLast = last" 
           class="timeline-segment" 
           [class.segment-interval]="seg.isInterval"
-          [style.flex-grow]="seg.durationMin"
+          [style.flex-grow]="getFlexGrow(seg.durationMin)"
           [title]="seg.startTime + ' → ' + seg.endTime">
           
-          <!-- Callout com label do segmento -->
-          <div class="segment-callout" [ngClass]="'callout-level-' + (i % 3)">
-            {{ seg.label }}
-            <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">⚠</span>
-          </div>
-          
-          <!-- Conteúdo da barra (minutos) -->
+          <!-- Conteúdo da barra (label - minutos) -->
           <div class="segment-bar-content">
             <span *ngIf="seg.isInterval" class="interval-icon">⏸</span>
-            {{ seg.durationMin }}m
+            {{ seg.label }} - {{ seg.durationMin }}m
+            <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">⚠</span>
           </div>
 
           <!-- Marcador de horário de início -->
@@ -94,6 +90,11 @@ interface TimelineSegment {
       font-size: 0.85rem;
       color: #059669;
     }
+    .desp-hint {
+      font-weight: 400;
+      color: #047857;
+      opacity: 0.85;
+    }
     .timeline-bar {
       display: flex;
       width: 100%;
@@ -141,42 +142,12 @@ interface TimelineSegment {
       display: flex;
       align-items: center;
       gap: 4px;
+      font-size: 0.75rem;
+      white-space: nowrap;
     }
     .interval-icon {
       font-size: 0.8rem;
     }
-    
-    /* Callouts flexíveis com múltiplos níveis para evitar sobreposição */
-    .segment-callout {
-      position: absolute;
-      white-space: nowrap;
-      font-size: 0.7rem;
-      font-weight: 600;
-      color: #374151;
-      transform: translateX(-50%);
-      left: 50%;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 6px;
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-    }
-    .segment-callout::after {
-      content: '';
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 2px;
-      background: #d1d5db;
-    }
-    .callout-level-0 { top: -30px; }
-    .callout-level-0::after { bottom: -6px; height: 6px; }
-    .callout-level-1 { top: -52px; }
-    .callout-level-1::after { bottom: -28px; height: 28px; }
-    .callout-level-2 { top: -74px; }
-    .callout-level-2::after { bottom: -50px; height: 50px; }
 
     /* Indicador de flag associada */
     .flag-indicator {
@@ -193,56 +164,47 @@ interface TimelineSegment {
     .time-marker {
       position: absolute;
       top: 100%;
-      margin-top: 12px;
-      font-size: 0.68rem;
+      margin-top: 18px;
+      font-size: 0.62rem;
       color: #4b5563;
       font-weight: 600;
-      line-height: 1.3;
-      transform-origin: top left;
+      line-height: 1.4;
+      white-space: nowrap;
     }
     .time-marker::before {
       content: '';
       position: absolute;
       bottom: 100%;
       width: 1px;
-      height: 12px;
+      height: 18px;
       background: #9ca3af;
     }
     .start-marker {
       left: 0;
-      transform: translateX(-10%) rotate(25deg);
+      transform: translateX(-10%);
     }
     .start-marker::before {
       left: 0;
-      transform: rotate(-25deg);
-      transform-origin: bottom left;
     }
     .timeline-segment:first-child .start-marker {
-      left: 0;
-      transform: translateX(0) rotate(25deg);
+      transform: translateX(0);
     }
     .timeline-segment:first-child .start-marker::before {
       left: 0;
-      transform: rotate(-25deg);
     }
     .end-marker {
       right: 0;
-      transform: translateX(10%) rotate(25deg);
-      transform-origin: top right;
+      transform: translateX(10%);
     }
     .end-marker::before {
       right: 0;
       left: auto;
-      transform: rotate(-25deg);
-      transform-origin: bottom right;
     }
     .timeline-segment:last-child .end-marker {
-      right: 0;
-      transform: translateX(0) rotate(25deg);
+      transform: translateX(0);
     }
     .timeline-segment:last-child .end-marker::before {
       right: 0;
-      transform: rotate(-25deg);
     }
   `]
 })
@@ -251,9 +213,20 @@ export class TimelineVisualComponent implements OnInit {
 
   segments: TimelineSegment[] = [];
   timelineOrigin: string = '';
+  despachHint: string = '';
 
   ngOnInit() {
     this.buildTimeline();
+  }
+
+  // Escala logarítmica: comprime intervalos longos e aumenta segmentos curtos
+  getFlexGrow(durationMin: number): number {
+    if (durationMin <= 8) {
+      return 8; // mínimo para segmentos muito curtos
+    }
+    // Raiz quadrada para comprimir grandes valores mantendo proporcionalidade
+    // 8min → ~8.5 | 15min → ~11.6 | 30min → ~16.4 | 60min → ~23.2 | 120min → ~32.9
+    return Math.sqrt(durationMin) * 3;
   }
 
   private parseDt(dtStr: string): number {
@@ -293,9 +266,20 @@ export class TimelineVisualComponent implements OnInit {
   private buildTimeline() {
     if (!this.ev) return;
 
+    // Detectar cenário onde prev_liberada é posterior à despachada
+    const prevLibTs = this.ev.prev_liberada ? this.parseDt(this.ev.prev_liberada) : 0;
+    const despTs = this.ev.despachada ? this.parseDt(this.ev.despachada) : 0;
+    const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
+
+    this.despachHint = '';
+
     // Definir origem da timeline
     if (this.ev.prev_liberada) {
       this.timelineOrigin = `Lib. Anterior (${this.extractTime(this.ev.prev_liberada)})`;
+      if (despAfterPrevLib) {
+        // Despachada está no passado em relação à Lib. Anterior; mostrar como referência
+        this.despachHint = this.extractTime(this.ev.despachada);
+      }
     } else {
       const loginTime = this.extractTime(this.ev.log_in) || this.extractTime(this.ev.inicio_calendario);
       this.timelineOrigin = `1ª OS do Dia (${loginTime})`;
@@ -318,7 +302,10 @@ export class TimelineVisualComponent implements OnInit {
       addPt('log_in', this.ev.log_in, 'Log In');
     }
     
-    addPt('despachada', this.ev.despachada, 'Despachada');
+    // Adicionar despachada somente se não estiver no passado em relação à Lib. Anterior
+    if (!despAfterPrevLib) {
+      addPt('despachada', this.ev.despachada, 'Despachada');
+    }
     addPt('a_caminho', this.ev.a_caminho, 'A Caminho');
     addPt('no_local', this.ev.no_local, 'No Local');
     addPt('liberada', this.ev.liberada, 'Liberada');
@@ -367,9 +354,11 @@ export class TimelineVisualComponent implements OnInit {
             else if (p1.key === 'log_in' && p2.key === 'despachada') label = 'Início Jornada';
             else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
+            else if (p1.key === 'prev_liberada' && p2.key === 'inicio_intervalo') label = 'Desl. Intervalo';
             else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Desl. Intervalo';
             // Etapas produtivas
             else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
+            else if (p1.key === 'fim_intervalo' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'a_caminho' && p2.key === 'no_local') label = 'Deslocamento';
             else if (p1.key === 'no_local' && p2.key === 'liberada') label = 'Reparo';
             else label = `${p1.label} → ${p2.label}`;
