@@ -521,6 +521,7 @@ type SavedFilterState = {
                               <div class="osdia-ev-header">
                                 <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
+                                <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
@@ -541,10 +542,11 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
                                   <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
-                                <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
+                                <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}).</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -711,6 +713,7 @@ type SavedFilterState = {
                               <div class="osdia-ev-header">
                                 <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
+                                <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
@@ -725,10 +728,11 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
                                   <strong>Tempo de Partida/OS elevado:</strong> {{ osDiaAlertBody('temp_prep_alto', ev) }}
                                 </li>
-                                <li *ngIf="ev.flags.includes('sem_os_alto') && ev.sem_os_details?.length" class="osdia-ev-alert">
+                                <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
                                   <ol class="osdia-sem-os-list">
                                     <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}).</li>
                                   </ol>
                                 </li>
                               </ul>
@@ -6770,6 +6774,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       sem_os_alto:        'SemOS≥10min',
     };
     return labels[flag] ?? flag;
+  }
+
+  /** Detecta janela Entre OS após intervalo (fim_intervalo → despachada > 10min) não coberta pelo backend */
+  protected entreOsAfterIntervalo(ev: any): { min: number; from: string; to: string } | null {
+    if (!ev.fim_intervalo || !ev.despachada) return null;
+    const parseDt = (s: string) => {
+      const parts = s.split(' ');
+      if (parts.length < 2) return 0;
+      const [day, mon, yr] = parts[0].split('/');
+      const [hr, min, sec] = parts[1].split(':');
+      return new Date(+yr, +mon - 1, +day, +hr, +min, +(sec || 0)).getTime();
+    };
+    const fimTs = parseDt(ev.fim_intervalo);
+    const despTs = parseDt(ev.despachada);
+    if (fimTs <= 0 || despTs <= 0 || despTs <= fimTs) return null;
+    const minDiff = Math.round((despTs - fimTs) / 60000);
+    if (minDiff <= 10) return null;
+    // Não duplica se backend já inclui este trecho em sem_os_details
+    const alreadyCovered = ev.sem_os_details?.some((d: any) =>
+      d.type === 'entre_ordens' && d.from === ev.fim_intervalo
+    );
+    if (alreadyCovered) return null;
+    return { min: minDiff, from: ev.fim_intervalo, to: ev.despachada };
   }
 
   protected filterOsDiaEvidence<T extends { idleAnalysis?: unknown; flaggedOrders: unknown[] }>(list: T[]): T[] {

@@ -393,8 +393,8 @@ export class TimelineVisualComponent implements OnInit {
                 durationMin = Math.max(match.min, 1);
               }
             }
-            // Flag aparece em TODOS os segmentos sem-OS quando excedido
-            if (this.ev.flag_sem_os_excedido) {
+            // Flag por segmento: verifica individualmente se aquele trecho excede 10min
+            if (durationMin > 10) {
               flags.push('SemOS ≥ 10min');
             }
         }
