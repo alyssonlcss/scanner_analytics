@@ -14,6 +14,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
     const TEMP_PREP_THRESHOLD_MIN = 10;
     const TEMP_PREP_THRESHOLD_FIRST_MIN = 25;
     const SEM_OS_THRESHOLD_MIN = 10;
+    const TOLERANCE_MIN = 5; // invisible grace margin — keeps displayed limits unchanged
 
     const utilizacaoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'));
     if (!utilizacaoKpi) return [];
@@ -307,8 +308,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
         const flags: UtilizacaoOrderEvidence['flags'] = [];
         const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;
-        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold) flags.push('temp_prep_alto');
-        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) flags.push('sem_os_alto');
+        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) flags.push('temp_prep_alto');
+        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) flags.push('sem_os_alto');
 
         const prevLiberadaDate   = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
         const aCaminhoDate       = parseDateTimeBr(String(row[caminhoCol] ?? ''));
@@ -394,7 +395,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         }
         // Skip intervalo_deslocamento when the interval was already absorbed into entre_ordens
         // (semOsIntervalApplied[i] === true), to avoid two sub-flags pointing to the same time window.
-        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null && !semOsIntervalApplied[i]) {
+        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null && !semOsIntervalApplied[i] && intervaloDeslocMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
           const overPct = globalAvgIntervaloDeslocMin > 0
             ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
             : undefined;
@@ -441,7 +442,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
       // Add fim de jornada to the last order's evidence
       const fimJornadaThreshold = retornoBaseAvg > 0 ? retornoBaseAvg * 0.15 : SEM_OS_THRESHOLD_MIN;
-      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold) {
+      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN) {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
         const logOffStr  = logOffCorrigidoCol ? String(lastRow[logOffCorrigidoCol] ?? '').trim() : undefined;

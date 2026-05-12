@@ -17,6 +17,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
     const TEMP_PREP_THRESHOLD_MIN      = 10; // demais OS: Lib.Anterior → A Caminho
     const TEMP_PREP_THRESHOLD_FIRST_MIN = 25; // 1ª OS da jornada: Início Calendário → A Caminho
     const SEM_OS_THRESHOLD_MIN = 10;
+    const TOLERANCE_MIN = 5; // invisible grace margin — keeps displayed limits unchanged
 
     // 1. Determine under-performing teams from ranking (average OS/Dia < meta)
     const rankAcc = createAccessor(rankingRows[0]);
@@ -297,10 +298,10 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           flags.push('tl_excede_hd');
         }
         const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;
-        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold) {
+        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) {
           flags.push('temp_prep_alto');
         }
-        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
+        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
           flags.push('sem_os_alto');
         }
 
@@ -319,8 +320,11 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
           fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
         );
-        if (hasIntervaloDeslocamento) {
-          flags.push('sem_os_alto');
+        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate) {
+          const intDurMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
+          if (intDurMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+            flags.push('sem_os_alto');
+          }
         }
 
         // Remove duplicate flags
@@ -387,12 +391,14 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         // window that intervalo_deslocamento would report — causing two sub-flags to point to the same time.
         if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate && !semOsIntervalApplied[i]) {
           const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
-          semOsDetails.push({
-            type: 'intervalo_deslocamento',
-            min:  intMin,
-            from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
-            to:   inicioIntervaloRaw || undefined,
-          });
+          if (intMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+            semOsDetails.push({
+              type: 'intervalo_deslocamento',
+              min:  intMin,
+              from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+              to:   inicioIntervaloRaw || undefined,
+            });
+          }
         }
 
         const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
@@ -429,7 +435,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       }
       // Add fim de jornada to the last order's evidence
       const fimJornadaThreshold = retornoBaseAvg > 0 ? retornoBaseAvg * 0.15 : SEM_OS_THRESHOLD_MIN;
-      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold) {
+      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN) {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
         const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() : undefined;

@@ -328,6 +328,8 @@ export class TimelineVisualComponent implements OnInit {
             // Etapas produtivas
             else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'fim_intervalo' && p2.key === 'a_caminho') label = 'Partida';
+            else if (p1.key === 'prev_liberada' && p2.key === 'a_caminho') label = 'Partida';
+            else if (p1.key === 'liberada' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'a_caminho' && p2.key === 'no_local') label = 'Deslocamento';
             else if (p1.key === 'no_local' && p2.key === 'liberada') label = 'Reparo';
             else label = `${p1.label} → ${p2.label}`;
@@ -358,9 +360,14 @@ export class TimelineVisualComponent implements OnInit {
               label === 'Início Jornada' ? 'inicio_jornada' :
               label === 'Desl. Intervalo' ? 'intervalo_deslocamento' : 'entre_ordens';
 
-            const matchedDetail = this.ev.sem_os_details?.find((s: any) =>
-              s.type === detailType && s.from === p1.raw && s.to === p2.raw
-            );
+            const matchedDetail = this.ev.sem_os_details?.find((s: any) => {
+              if (s.type !== detailType) return false;
+              // 'inicio_jornada' always measures from Início Cal. to first dispatch;
+              // when Log In exists the segment starts from log_in, not inicio_calendario,
+              // so skip the `from` check and match only on the endpoint (despachada).
+              if (label === 'Início Jornada') return s.to === p2.raw;
+              return s.from === p1.raw && s.to === p2.raw;
+            });
 
             if (label === 'Início Jornada' && matchedDetail) {
               durationMin = Math.max(matchedDetail.min, 1);
