@@ -5346,18 +5346,24 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Always compute fresh (ignore pre-computed label/body) to ensure stats are always shown
     const SEM_OS_LIMIT = 10;
     const pctAbove = (min: number) => Math.round((min - SEM_OS_LIMIT) / SEM_OS_LIMIT * 100);
+    const fmtAvg = (pct: number | undefined, avg: number | undefined): string => {
+      if (!Number.isFinite(pct) || !Number.isFinite(avg) || (avg ?? 0) <= 0) return '';
+      const dir = (pct! >= 0) ? 'acima' : 'abaixo';
+      return ` | ${this.nf(Math.abs(pct!), 0, 1)}% ${dir} da média geral (${this.nf(avg!)} min)`;
+    };
     switch (d.type) {
       case 'inicio_jornada':
-        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
+        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       case 'entre_ordens':
-        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
-      case 'fim_jornada':
-        return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}.`;
+        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      case 'fim_jornada': {
+        const rbDiscount = d.retorno_base_discounted ?? 0;
+        const pctRb = rbDiscount > 0 ? Math.round((d.min / rbDiscount) * 100) : undefined;
+        const rbPart = pctRb !== undefined ? ` — ${pctRb}% acima do retorno base` : '';
+        return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}${rbPart}.`;
+      }
       case 'intervalo_deslocamento':
-        if (Number.isFinite(d?.global_avg_min) && Number.isFinite(d?.above_avg_pct) && (d.global_avg_min ?? 0) > 0) {
-          return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${this.nf(d.above_avg_pct!, 0, 1)}% acima da média geral (${this.nf(d.global_avg_min!)} min).`;
-        }
-        return `Desl. Intervalo: ${d.min} min — Lib. Anterior (${d.from ?? '—'}) até Início Intervalo (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min).`;
+        return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
     }

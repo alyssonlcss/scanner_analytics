@@ -103,6 +103,52 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       ? round2(globalIntervaloDeslocValues.reduce((sum, v) => sum + v, 0) / globalIntervaloDeslocValues.length)
       : 0;
 
+    // Global avg of 1º Despacho (inicio_jornada) across all rows
+    let globalIJSum = 0, globalIJCount = 0;
+    if (firstDespachoCol) {
+      for (const row of deslocRows) {
+        const v = parseNumber(String(row[firstDespachoCol] ?? ''));
+        if (v !== null && Number.isFinite(v) && v > 0 && v < 480) {
+          globalIJSum += v;
+          globalIJCount++;
+        }
+      }
+    }
+    const globalAvgInicioJornadaMin = globalIJCount > 0 ? round2(globalIJSum / globalIJCount) : 0;
+
+    // Global avg of entre_ordens (between consecutive orders) across all teams/days
+    const globalEntreOrdensValues: number[] = [];
+    {
+      const allGroupedEO = new Map<string, CsvRow[]>();
+      for (const row of deslocRows) {
+        const team = String(row[teamCol] ?? '').trim();
+        const date = String(row[dateCol] ?? '').trim();
+        if (!team || !date) continue;
+        const rows = allGroupedEO.get(`${team}::${date}`) ?? [];
+        rows.push(row);
+        allGroupedEO.set(`${team}::${date}`, rows);
+      }
+      for (const rows of allGroupedEO.values()) {
+        const orderedRows = [...rows].sort((a, b) => {
+          const l = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          const r = parseDateTimeBr(String(b[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          return l - r;
+        });
+        for (let idx = 1; idx < orderedRows.length; idx++) {
+          const prevLib = liberadaCol ? parseDateTimeBr(String(orderedRows[idx - 1][liberadaCol] ?? '')) : null;
+          const desp    = despachadaCol ? parseDateTimeBr(String(orderedRows[idx][despachadaCol] ?? '')) : null;
+          if (!prevLib || !desp) continue;
+          const diffMin = minutesBetween(desp, prevLib);
+          if (Number.isFinite(diffMin) && diffMin > 0 && diffMin < 480) {
+            globalEntreOrdensValues.push(diffMin);
+          }
+        }
+      }
+    }
+    const globalAvgEntreOrdensMin = globalEntreOrdensValues.length > 0
+      ? round2(globalEntreOrdensValues.reduce((s, v) => s + v, 0) / globalEntreOrdensValues.length)
+      : 0;
+
     // Group by team+date, underperforming teams only
     const grouped = new Map<string, { team: string; date: string; rows: CsvRow[] }>();
     for (const row of deslocRows) {
@@ -354,6 +400,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               min:  round2(semOsMin),
               from: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+              global_avg_min: globalAvgInicioJornadaMin > 0 ? globalAvgInicioJornadaMin : undefined,
+              above_avg_pct: globalAvgInicioJornadaMin > 0 ? round2((semOsMin - globalAvgInicioJornadaMin) / globalAvgInicioJornadaMin * 100) : undefined,
             });
           } else {
             const prevDespStr = prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() || undefined : undefined;
@@ -389,6 +437,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
                 to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
                 interval_discounted: semOsIntervalApplied[i] || undefined,
                 desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
+                global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
+                above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((semOsMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
               });
             }
           }

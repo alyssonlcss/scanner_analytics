@@ -103,7 +103,7 @@ interface TimelineSegment {
     }
     .segment-idle--high {
       background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%) !important;
-      color: #450a0a !important;
+      color: #7f1d1d !important;
       border-right-color: #fff !important;
     }
     .segment-bar-content {
@@ -232,14 +232,14 @@ export class TimelineVisualComponent implements OnInit {
     return parts[0] || '';
   }
 
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida']);
+  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
     return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
-    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && (seg.flags?.includes('acima_media') ?? false);
+    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && ((seg.flags?.length ?? 0) > 0);
   }
 
   private buildTimeline() {
@@ -281,6 +281,12 @@ export class TimelineVisualComponent implements OnInit {
     addPt('liberada', this.ev.liberada, 'Liberada');
     addPt('inicio_intervalo', this.ev.inicio_intervalo, 'Início Intervalo');
     addPt('fim_intervalo', this.ev.fim_intervalo, 'Fim Intervalo');
+
+    // Add log_off point from fim_jornada sem_os_detail if available
+    const fimJornadaDetail = this.ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
+    if (fimJornadaDetail?.to) {
+      addPt('log_off', fimJornadaDetail.to, 'Log Off');
+    }
 
     // Remove duplicates mantendo apenas primeira ocorrência
     const uniquePts: typeof pts = [];
@@ -326,6 +332,7 @@ export class TimelineVisualComponent implements OnInit {
             else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
             else if (p1.key === 'prev_liberada' && p2.key === 'inicio_intervalo') label = 'Desl. Intervalo';
             else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Entre OS';
+            else if (p1.key === 'liberada' && p2.key === 'log_off') label = 'Antes Log Off';
             // Etapas produtivas
             else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
             else if (p1.key === 'fim_intervalo' && p2.key === 'a_caminho') label = 'Partida';
@@ -355,30 +362,37 @@ export class TimelineVisualComponent implements OnInit {
             if (this.ev.flags?.includes('temp_prep_alto')) {
               flags.push('Temp. Partida ≥ 10min');
             }
-        } else if ((label === '1º Despacho' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
+        } else if ((label === '1º Despacho' || label === 'Entre OS' || label === 'Desl. Intervalo' || label === 'Antes Log Off') && this.ev.sem_os_details !== undefined) {
             // Mapear tipo de detalhe sem_os correspondente
             const detailType =
               label === '1º Despacho' ? 'inicio_jornada' :
-              label === 'Desl. Intervalo' ? 'intervalo_deslocamento' : 'entre_ordens';
+              label === 'Desl. Intervalo' ? 'intervalo_deslocamento' :
+              label === 'Antes Log Off' ? 'fim_jornada' : 'entre_ordens';
 
             const matchedDetail = this.ev.sem_os_details?.find((s: any) => {
               if (s.type !== detailType) return false;
               // 'inicio_jornada' always measures from Início Cal. to first dispatch;
               // when Log In exists the segment starts from log_in, not inicio_calendario,
               // so skip the `from` check and match only on the endpoint (despachada).
-              if (label === '1º Despacho') return s.to === p2.raw;
+              // 'fim_jornada' matches on the log_off endpoint (to).
+              if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
               return s.from === p1.raw && s.to === p2.raw;
             });
 
-            if (label === '1º Despacho' && matchedDetail) {
+            if ((label === '1º Despacho' || label === 'Antes Log Off') && matchedDetail) {
               durationMin = Math.max(matchedDetail.min, 1);
             }
 
-            // Escuro apenas quando passa da média geral — requer global_avg_min no detalhe
+            // Flag de intensidade: acima_media quando há referência global, sempre para fim_jornada
             if (matchedDetail) {
-              const globalAvg: number | undefined = matchedDetail.global_avg_min;
-              if (globalAvg !== undefined && globalAvg > 0 && durationMin > globalAvg) {
+              if (detailType === 'fim_jornada') {
+                // fim_jornada só é criado pelo backend quando já excede o threshold — sempre mais forte
                 flags.push('acima_media');
+              } else {
+                const globalAvg: number | undefined = matchedDetail.global_avg_min;
+                if (globalAvg !== undefined && globalAvg > 0 && durationMin > globalAvg) {
+                  flags.push('acima_media');
+                }
               }
             }
         }
