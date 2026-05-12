@@ -516,14 +516,21 @@ type SavedFilterState = {
                               <!-- Header: ordem + alertas -->
                               <div class="osdia-ev-header">
                                 <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
-                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
-                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
-                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                              <p class="osdia-ev-causa">
+                                <ng-container *ngIf="ev.classe || ev.causa">
+                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                  <span class="osdia-ev-causa-sep"> — </span>
+                                </ng-container>
+                                <ng-container *ngIf="ev.prev_liberada">
+                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                                </ng-container>
                               </p>
                               <!-- Linha do tempo visual -->
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
@@ -606,12 +613,19 @@ type SavedFilterState = {
                             <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
                               <div class="osdia-ev-header">
                                 <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ eficienciaFlagLabel(f) }}</span>
                               </div>
-                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
-                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
-                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                              <p class="osdia-ev-causa">
+                                <ng-container *ngIf="ev.classe || ev.causa">
+                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
+                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                  <span class="osdia-ev-causa-sep"> — </span>
+                                </ng-container>
+                                <ng-container *ngIf="ev.prev_liberada">
+                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                                </ng-container>
                               </p>
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
@@ -708,14 +722,21 @@ type SavedFilterState = {
                               <!-- Header: ordem + alertas -->
                               <div class="osdia-ev-header">
                                 <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
-                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
-                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
-                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                              <p class="osdia-ev-causa">
+                                <ng-container *ngIf="ev.classe || ev.causa">
+                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                  <span class="osdia-ev-causa-sep"> — </span>
+                                </ng-container>
+                                <ng-container *ngIf="ev.prev_liberada">
+                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                                </ng-container>
                               </p>
                               <!-- Linha do tempo visual -->
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
@@ -942,6 +963,9 @@ type SavedFilterState = {
                             <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="ev.is_primeira_os_jornada" title="Primeira OS da jornada">1ª OS</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ deslocFlagLabel(f) }}</span>
                           </div>
+                          <p class="osdia-ev-causa" *ngIf="ev.is_primeira_os_jornada">
+                            <span class="rpt-osdia-badge rpt-osdia-badge--first">1ª OS</span>
+                          </p>
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
@@ -5209,6 +5233,41 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected countIdleOrders(flaggedOrders: Array<{ flags: string[] }>): number {
     return flaggedOrders.filter(o => o.flags.includes('temp_prep_alto') || o.flags.includes('sem_os_alto')).length;
+  }
+
+  private extractEvTime(dtStr: string): string {
+    if (!dtStr) return '';
+    const parts = dtStr.split(' ');
+    if (parts.length >= 2) {
+      const tp = parts[1].split(':');
+      const dp = parts[0].split('/');
+      if (tp.length >= 2 && dp.length >= 2) return `${tp[0]}:${tp[1]} ${dp[0]}/${dp[1]}`;
+    }
+    return '';
+  }
+
+  private parseEvDt(dtStr: string): number {
+    if (!dtStr) return 0;
+    const [d, t] = dtStr.split(' ');
+    if (!d || !t) return 0;
+    const [day, mon, yr] = d.split('/');
+    const [hr, min, sec] = t.split(':');
+    return new Date(+yr, +mon - 1, +day, +hr, +min, +sec).getTime();
+  }
+
+  protected evPrevLiberadaTime(ev: any): string {
+    return this.extractEvTime(ev.prev_liberada);
+  }
+
+  protected evDespAfterPrevLib(ev: any): string | null {
+    const despachada = ev.despachada || ev.hora_primeiro_despacho;
+    if (!despachada || !ev.prev_liberada) return null;
+    const prevLibTs = this.parseEvDt(ev.prev_liberada);
+    const despTs = this.parseEvDt(despachada);
+    if (prevLibTs > 0 && despTs > 0 && prevLibTs > despTs) {
+      return this.extractEvTime(despachada);
+    }
+    return null;
   }
 
   protected osDiaFlagLabel(flag: string): string {

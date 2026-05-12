@@ -18,18 +18,14 @@ interface TimelineSegment {
   imports: [CommonModule],
   template: `
     <div class="timeline-visual-container">
-      <!-- Callout de origem da timeline (independente dos segmentos) -->
-      <div class="timeline-origin-callout" *ngIf="timelineOrigin">
-        <span class="origin-icon">▶</span> {{ timelineOrigin }}
-        <span *ngIf="despachHint" class="desp-hint">· Desp.: {{ despachHint }}</span>
-      </div>
-
       <!-- Barra principal da timeline -->
       <div class="timeline-bar">
         <div 
           *ngFor="let seg of segments; let i = index; let isLast = last" 
           class="timeline-segment" 
           [class.segment-interval]="seg.isInterval"
+          [class.segment-idle]="!seg.isInterval && isIdleSegment(seg)"
+          [class.segment-idle--high]="!seg.isInterval && isIdleHighSegment(seg)"
           [style.flex-grow]="getFlexGrow(seg.durationMin)"
           [title]="seg.startTime + ' → ' + seg.endTime">
           
@@ -55,45 +51,9 @@ interface TimelineSegment {
   `,
   styles: [`
     .timeline-visual-container {
-      margin: 5rem 0 2.5rem 0;
+      margin: 0.5rem 0 2.5rem 0;
       font-family: sans-serif;
       position: relative;
-    }
-    /* Callout de origem da timeline (posicionado antes da barra) */
-    .timeline-origin-callout {
-      position: absolute;
-      top: -76px;
-      left: 0;
-      white-space: nowrap;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #065f46;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 8px;
-      background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-      border-radius: 4px;
-      border: 1px solid #6ee7b7;
-      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
-    }
-    .timeline-origin-callout::after {
-      content: '';
-      position: absolute;
-      bottom: -52px;
-      left: 12px;
-      width: 2px;
-      height: 52px;
-      background: #10b981;
-    }
-    .origin-icon {
-      font-size: 0.85rem;
-      color: #059669;
-    }
-    .desp-hint {
-      font-weight: 400;
-      color: #047857;
-      opacity: 0.85;
     }
     .timeline-bar {
       display: flex;
@@ -132,9 +92,19 @@ interface TimelineSegment {
       border-bottom-right-radius: 8px;
     }
     .segment-interval {
-      background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
-      color: #831843 !important;
-      border: 2px dashed #f9a8d4 !important;
+      background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%) !important;
+      color: #78350f !important;
+      border: 2px dashed #fbbf24 !important;
+    }
+    .segment-idle {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+      color: #7f1d1d !important;
+      border-right-color: #fff !important;
+    }
+    .segment-idle--high {
+      background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%) !important;
+      color: #450a0a !important;
+      border-right-color: #fff !important;
     }
     .segment-bar-content {
       position: relative;
@@ -212,8 +182,6 @@ export class TimelineVisualComponent implements OnInit {
   @Input() ev: any;
 
   segments: TimelineSegment[] = [];
-  timelineOrigin: string = '';
-  despachHint: string = '';
 
   ngOnInit() {
     this.buildTimeline();
@@ -263,6 +231,16 @@ export class TimelineVisualComponent implements OnInit {
     return parts[0] || '';
   }
 
+  private static readonly IDLE_LABELS = new Set(['Início Jornada', 'Entre OS', 'Desl. Intervalo', 'Partida']);
+
+  isIdleSegment(seg: TimelineSegment): boolean {
+    return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
+  }
+
+  isIdleHighSegment(seg: TimelineSegment): boolean {
+    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && (seg.flags?.length ?? 0) > 0;
+  }
+
   private buildTimeline() {
     if (!this.ev) return;
 
@@ -275,19 +253,6 @@ export class TimelineVisualComponent implements OnInit {
     const prevLibTs = this.ev.prev_liberada ? this.parseDt(this.ev.prev_liberada) : 0;
     const despTs = despachada ? this.parseDt(despachada) : 0;
     const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
-
-    this.despachHint = '';
-
-    // Definir origem da timeline
-    if (this.ev.prev_liberada) {
-      this.timelineOrigin = `Lib. Anterior (${this.extractTime(this.ev.prev_liberada)})`;
-      if (despAfterPrevLib) {
-        this.despachHint = this.extractTime(despachada);
-      }
-    } else {
-      const loginTime = this.extractTime(logIn) || this.extractTime(this.ev.inicio_calendario);
-      this.timelineOrigin = `1ª OS do Dia (${loginTime})`;
-    }
 
     // Colher e nomear todos os checkpoints válidos (com timestamp original para extração de hora)
     const pts: { key: string; ts: number; label: string; raw: string }[] = [];
@@ -383,23 +348,34 @@ export class TimelineVisualComponent implements OnInit {
             }
         } else if (label === 'Partida' && this.ev.temp_prep_os_min !== undefined) {
             durationMin = Math.max(this.ev.temp_prep_os_min, 1);
-            if (this.ev.flag_temp_partida_excedido) {
+            // Escuro quando o backend flagou como acima do limite (temp_prep_alto = > 10 min)
+            if (this.ev.flags?.includes('temp_prep_alto')) {
               flags.push('Temp. Partida ≥ 10min');
             }
         } else if ((label === 'Início Jornada' || label === 'Entre OS' || label === 'Desl. Intervalo') && this.ev.sem_os_total_min !== undefined) {
-            // Para Início Jornada, busca duração específica em sem_os_details
-            // Para Desl. Intervalo e Entre OS, mantém duração calculada pelos timestamps (mais precisa)
-            if (label === 'Início Jornada') {
-              const match = this.ev.sem_os_details?.find((s: any) => 
-                s.from === p1.raw && s.to === p2.raw
-              );
-              if (match) {
-                durationMin = Math.max(match.min, 1);
-              }
+            // Mapear tipo de detalhe sem_os correspondente
+            const detailType =
+              label === 'Início Jornada' ? 'inicio_jornada' :
+              label === 'Desl. Intervalo' ? 'intervalo_deslocamento' : 'entre_ordens';
+
+            const matchedDetail = this.ev.sem_os_details?.find((s: any) =>
+              s.type === detailType && s.from === p1.raw && s.to === p2.raw
+            );
+
+            if (label === 'Início Jornada' && matchedDetail) {
+              durationMin = Math.max(matchedDetail.min, 1);
             }
-            // Flag por segmento: verifica individualmente se aquele trecho excede 10min
-            if (durationMin > 10) {
-              flags.push('SemOS ≥ 10min');
+
+            // Escuro apenas quando passa da média geral:
+            // - se global_avg_min disponível no detalhe → comparar diretamente
+            // - senão, o detalhe só existe quando o backend já confirmou que passou do limite (≥ 10 min)
+            if (matchedDetail) {
+              const globalAvg: number | undefined = matchedDetail.global_avg_min;
+              if (globalAvg !== undefined && globalAvg > 0) {
+                if (durationMin > globalAvg) flags.push('acima_media');
+              } else {
+                flags.push('acima_media'); // detalhe presente = backend confirmou que passou do limite
+              }
             }
         }
 

@@ -164,6 +164,7 @@ export interface EficienciaOrderEvidence {
   hd_total_min: number;
   hd_pct_tr: number;
   tempo_padrao_min?: number;
+  prev_liberada?: string;
   flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
