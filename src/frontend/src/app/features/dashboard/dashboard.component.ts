@@ -785,8 +785,40 @@ type SavedFilterState = {
                             <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
                             <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
                           </p>
-                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
-                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                          <div class="kpi-ev-timeline">
+                            <span class="kpi-tl-node kpi-tl-node--prev">
+                              <span class="kpi-tl-label">OS Anterior</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node">
+                              <span class="kpi-tl-label">Lib. Anterior</span>
+                              <span class="kpi-tl-time">{{ ev.prev_liberada || '—' }}</span>
+                            </span>
+                            <span class="kpi-tl-sep">|</span>
+                            <span class="kpi-tl-node kpi-tl-node--cur">
+                              <span class="kpi-tl-label">OS Atual</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node">
+                              <span class="kpi-tl-label">Despachada</span>
+                              <span class="kpi-tl-time">{{ ev.despachada }}</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node">
+                              <span class="kpi-tl-label">A Caminho</span>
+                              <span class="kpi-tl-time">{{ ev.a_caminho }}</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node">
+                              <span class="kpi-tl-label">No Local</span>
+                              <span class="kpi-tl-time">{{ ev.no_local }}</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node kpi-tl-node--end">
+                              <span class="kpi-tl-label">Liberada</span>
+                              <span class="kpi-tl-time">{{ ev.liberada }}</span>
+                            </span>
+                          </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
                               <strong>TME IMP elevado:</strong> {{ tmeImpAlertBody('tme_muito_alto', ev) }}
@@ -843,7 +875,17 @@ type SavedFilterState = {
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ loginFlagLabel(f) }}</span>
                           </div>
-                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                          <div class="kpi-ev-timeline">
+                            <span class="kpi-tl-node kpi-tl-node--prev">
+                              <span class="kpi-tl-label">Início Calendário</span>
+                              <span class="kpi-tl-time">{{ ev.inicio_calendario }}</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node kpi-tl-node--end">
+                              <span class="kpi-tl-label">Log In Corrigido</span>
+                              <span class="kpi-tl-time">{{ ev.log_in_corrigido }}</span>
+                            </span>
+                          </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
                               <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev) }}
@@ -961,7 +1003,17 @@ type SavedFilterState = {
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ retornoFlagLabel(f) }}</span>
                           </div>
-                          <app-timeline-visual [ev]="ev"></app-timeline-visual>
+                          <div class="kpi-ev-timeline">
+                            <span class="kpi-tl-node kpi-tl-node--prev">
+                              <span class="kpi-tl-label">Última OS Liberada</span>
+                              <span class="kpi-tl-time">{{ ev.hora_ultima_ordem }}</span>
+                            </span>
+                            <span class="kpi-tl-arrow">→</span>
+                            <span class="kpi-tl-node kpi-tl-node--end">
+                              <span class="kpi-tl-label">Log Off Corrigido</span>
+                              <span class="kpi-tl-time">{{ ev.log_off_corrigido }}</span>
+                            </span>
+                          </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
                               <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev) }}
@@ -3496,6 +3548,60 @@ type SavedFilterState = {
         color: #b91c3a;
         font-size: 0.7rem;
         top: 2px;
+      }
+
+      /* KPI-specific event timelines (Login, Retorno Base, TME IMP) */
+      .kpi-ev-timeline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+        font-size: 0.73rem;
+        margin: 4px 0;
+      }
+
+      .kpi-tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .kpi-tl-label {
+        color: var(--muted-strong);
+        font-weight: 600;
+        line-height: 1.2;
+      }
+
+      .kpi-tl-time {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.3;
+      }
+
+      .kpi-tl-arrow {
+        color: var(--muted);
+        font-size: 0.85rem;
+        flex-shrink: 0;
+        align-self: center;
+      }
+
+      .kpi-tl-sep {
+        color: var(--border);
+        font-size: 1rem;
+        padding: 0 4px;
+        flex-shrink: 0;
+        align-self: center;
+      }
+
+      .kpi-tl-node--prev .kpi-tl-label,
+      .kpi-tl-node--cur .kpi-tl-label {
+        font-weight: 700;
+        color: var(--accent-2);
+      }
+
+      .kpi-tl-node--end .kpi-tl-time {
+        color: #b91c3a;
+        font-weight: 600;
       }
 
       .osdia-ev-alert strong {
