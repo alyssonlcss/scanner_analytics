@@ -222,24 +222,30 @@ export class DashboardPdfService {
     }));
 
     const LINE_H = 14;
-    const mkMarker = (label: string, time: string, align: 'left' | 'right' = 'left') => {
-      const lineCol = { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 0.8, lineColor: '#9ca3af' }], width: 1 };
-      const textCol = { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: align };
-      const cols = align === 'right' ? [textCol, lineCol] : [lineCol, textCol];
-      return { columns: cols, columnGap: 0.5 };
-    };
+    const mkLineCol = () => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 0.8, lineColor: '#9ca3af' }], width: 1 });
+    const mkLeftMarker = (label: string, time: string) => ({
+      columns: [mkLineCol(), { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3 }],
+      columnGap: 1,
+    });
 
     const timeRow = segs.map((s, i) => {
       const isLast = i === segs.length - 1;
       if (isLast) {
         return {
           columns: [
-            { ...mkMarker(s.startLabel ?? '', s.startTime ?? ''), width: '*' },
-            { ...mkMarker(s.endLabel ?? '', s.endTime ?? ''), width: 'auto' },
+            { ...mkLeftMarker(s.startLabel ?? '', s.startTime ?? ''), width: 'auto' },
+            {
+              columns: [
+                { text: `${s.endLabel ?? ''}\n${s.endTime ?? ''}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: 'right' as const, width: '*' },
+                mkLineCol(),
+              ],
+              columnGap: 0,
+              width: '*',
+            },
           ],
         };
       }
-      return mkMarker(s.startLabel ?? '', s.startTime ?? '');
+      return mkLeftMarker(s.startLabel ?? '', s.startTime ?? '');
     });
 
     return {
@@ -251,8 +257,8 @@ export class DashboardPdfService {
         hLineWidth: () => 0,
         vLineWidth: (i: number) => (i > 0 && i < segs.length ? 1 : 0),
         vLineColor: () => '#ffffff',
-        paddingLeft: () => 2,
-        paddingRight: () => 2,
+        paddingLeft: () => 0,
+        paddingRight: () => 0,
         paddingTop: () => 2,
         paddingBottom: () => 2,
       },
