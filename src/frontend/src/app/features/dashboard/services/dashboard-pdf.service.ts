@@ -72,9 +72,8 @@ export class DashboardPdfService {
   ]);
 
   private tlFlexGrow(min: number): number {
-    // Log2 compression: large segments give up proportionally more space to small ones.
-    // 1m→8 | 5m→20.7 | 10m→27.5 | 30m→39.6 | 60m→47.8 | 120m→56.7
-    return Math.max(8, Math.log2(min + 1) * 8);
+    // Mesma fórmula do web (getFlexGrow): proporcional à raiz do tempo.
+    return min <= 8 ? 8 : Math.sqrt(min) * 3;
   }
 
   private buildTlSegments(ev: any, hidePartida: boolean): TlSegment[] {
@@ -191,7 +190,7 @@ export class DashboardPdfService {
         const linPt = uniquePts.find(p => p.key === 'log_in');
         if (icalPt && linPt) {
           const diff = Math.round((icalPt.ts - linPt.ts) / 60000);
-          barText = `Log In: ${diff}m`;
+          barText = `Log In: ${diff}min`;
           if (diff < -8) flags.push('login_atrasado');
         }
       }
@@ -224,24 +223,36 @@ export class DashboardPdfService {
     const getTxtColor = (s: TlSegment): string =>
       s.isInterval ? '#78350f' : (isRepairAlarm(s) || IDLE.has(s.label)) ? '#7f1d1d' : '#1e3a8a';
 
-    // Distribute TOTAL_W: each segment gets at least enough px for its label to
-    // fit on one line (CHAR_W pt/char at bold 5.5pt Roboto), then extra budget
-    // is shared proportionally via tlFlexGrow.
-    const CHAR_W = 3.6;   // conservative pt-per-char estimate for bold 5.5pt
+    // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
+    const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt
     const TOTAL_W = 500;
     const grows = segs.map(s => this.tlFlexGrow(s.durationMin));
     const totalGrow = grows.reduce((a, b) => a + b, 0);
+    const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
+
+    // 2. Mínimo para caber o texto em uma linha.
     const minWidths = segs.map(s => Math.ceil((s.barText ?? s.label).length * CHAR_W + 4));
-    const minTotal = minWidths.reduce((a, b) => a + b, 0);
-    const extraBudget = Math.max(0, TOTAL_W - minTotal);
-    const widths = segs.map((_, i) => Math.round(minWidths[i] + (grows[i] / totalGrow) * extraBudget));
+
+    // 3. Aplica mínimos (boost segmentos estreitos demais).
+    let widths = segs.map((_, i) => Math.max(minWidths[i], Math.round(rawWidths[i])));
+
+    // 4. Se os boosts causaram estouro, reduz proporcionalmente os segmentos com folga.
+    const totalW = widths.reduce((a, b) => a + b, 0);
+    if (totalW > TOTAL_W) {
+      const excess = totalW - TOTAL_W;
+      const slack = widths.map((w, i) => Math.max(0, w - minWidths[i]));
+      const totalSlack = slack.reduce((a, b) => a + b, 0);
+      if (totalSlack > 0) {
+        widths = widths.map((w, i) => Math.round(w - (slack[i] / totalSlack) * excess));
+      }
+    }
 
     const barRow = segs.map((s) => ({
       stack: s.barText !== undefined
         ? [{ text: s.barText, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const }]
         : [
             { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
-            { text: `${s.durationMin}m`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
+            { text: `${s.durationMin}min`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
           ],
       fillColor: getFill(s),
     }));

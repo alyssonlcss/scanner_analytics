@@ -34,7 +34,11 @@ interface TimelineSegment {
           <!-- Conteúdo da barra (label - minutos) -->
           <div class="segment-bar-content">
             <span *ngIf="seg.isInterval" class="interval-icon">⏸</span>
-            {{ seg.barText ?? (seg.label + ' - ' + seg.durationMin + 'm') }}
+            <span *ngIf="seg.barText !== undefined">{{ seg.barText }}</span>
+            <span *ngIf="seg.barText === undefined" class="seg-two-line">
+              <span class="seg-name">{{ seg.label }}</span>
+              <span class="seg-dur">{{ seg.durationMin }}min</span>
+            </span>
             <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">⚠</span>
           </div>
 
@@ -121,6 +125,20 @@ interface TimelineSegment {
       gap: 4px;
       font-size: 0.75rem;
       white-space: nowrap;
+    }
+    .seg-two-line {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.2;
+    }
+    .seg-name {
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .seg-dur {
+      font-size: 0.62rem;
+      font-weight: 500;
     }
     .interval-icon {
       font-size: 0.8rem;
@@ -396,7 +414,7 @@ export class TimelineVisualComponent implements OnInit {
             const linTs = this.parseDt(this.ev.log_in || this.ev.log_in_corrigido || '');
             if (icalTs > 0 && linTs > 0) {
               const diff = Math.round((icalTs - linTs) / 60000);
-              barText = `Log In: ${diff}m`;
+              barText = `Log In: ${diff}min`;
               if (diff < -8) flags.push('login_atrasado');
             }
         }
