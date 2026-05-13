@@ -1,7 +1,8 @@
-// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
-// Software proprietário e confidencial. Uso não autorizado é proibido.
+﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietÃ¡rio e confidencial. Uso nÃ£o autorizado Ã© proibido.
 import { Injectable } from '@angular/core';
 import type { GeneratedReport, ReportKpiInsight } from '../../../core/api/scanner-api.service';
+import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../../shared/utils/timeline-segment.utils';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfMake = require('pdfmake/build/pdfmake');
@@ -52,188 +53,35 @@ export interface SemOsDetail {
   [key: string]: unknown;
 }
 
-interface TlSegment {
-  label: string;
-  durationMin: number;
-  overrideDuration?: string;
-  isInterval: boolean;
-  startTime: string;
-  endTime: string;
-  startLabel: string;
-  endLabel: string;
-  flags: string[];
-}
-
 @Injectable({ providedIn: 'root' })
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
+    '1Âº Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
   ]);
 
-  private tlFlexGrow(min: number): number {
-    // Mesma fórmula do web (getFlexGrow): proporcional à raiz do tempo.
-    return min <= 8 ? 8 : Math.sqrt(min) * 3;
-  }
-
-  private buildTlSegments(ev: any, hidePartida: boolean): TlSegment[] {
-    if (!ev) return [];
-
-    const parseDt = (dtStr: string): number => {
-      if (!dtStr) return 0;
-      const [d, t] = dtStr.split(' ');
-      if (!d || !t) return 0;
-      const [day, mon, yr] = d.split('/');
-      const [hr, min, sec] = t.split(':');
-      return new Date(+yr, +mon - 1, +day, +hr, +min, +(sec || '0')).getTime();
-    };
-
-    const extractTime = (raw: string): string => {
-      if (!raw) return '';
-      const parts = raw.split(' ');
-      if (parts.length < 2) return '';
-      const tp = parts[1].split(':');
-      const dp = parts[0].split('/');
-      if (tp.length >= 2 && dp.length >= 2) return `${tp[0]}:${tp[1]} ${dp[0]}/${dp[1]}`;
-      return '';
-    };
-
-    const logIn = ev.log_in || ev.log_in_corrigido;
-    const despachada = ev.despachada || ev.hora_primeiro_despacho;
-    const aCaminho = ev.a_caminho || ev.hora_primeiro_deslocamento;
-
-    const prevLibTs = ev.prev_liberada ? parseDt(ev.prev_liberada) : 0;
-    const despTs = despachada ? parseDt(despachada) : 0;
-    const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
-
-    const pts: { key: string; ts: number; label: string; raw: string }[] = [];
-    const addPt = (key: string, val: string | undefined, label: string) => {
-      if (val) { const ts = parseDt(val); if (ts > 0) pts.push({ key, ts, label, raw: val }); }
-    };
-
-    if (ev.prev_liberada) {
-      addPt('prev_liberada', ev.prev_liberada, 'Lib. Anterior');
-    } else {
-      addPt('inicio_calendario', ev.inicio_calendario, 'Início Cal.');
-      addPt('log_in', logIn, 'Log In');
-    }
-    if (!despAfterPrevLib) addPt('despachada', despachada, 'Despachada');
-    addPt('a_caminho', aCaminho, 'A Caminho');
-    addPt('no_local', ev.no_local, 'No Local');
-    addPt('liberada', ev.liberada, 'Liberada');
-    addPt('inicio_intervalo', ev.inicio_intervalo, 'Início Intervalo');
-    addPt('fim_intervalo', ev.fim_intervalo, 'Fim Intervalo');
-    const fimJornada = ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
-    if (fimJornada?.to) addPt('log_off', fimJornada.to, 'Log Off');
-
-    const seen = new Set<string>();
-    const uniquePts = pts.filter((p) => seen.has(p.key) ? false : (seen.add(p.key), true));
-    uniquePts.sort((a, b) => a.ts - b.ts);
-
-    const isInInterval = (tsMain: number) => {
-      const iS = uniquePts.find((p) => p.key === 'inicio_intervalo');
-      const iE = uniquePts.find((p) => p.key === 'fim_intervalo');
-      return iS && iE ? tsMain >= iS.ts && tsMain < iE.ts : false;
-    };
-
-    const labelMap: Record<string, string> = {
-      'inicio_calendario_log_in': 'Log In',
-      'log_in_inicio_calendario': 'Log In',
-      'inicio_calendario_despachada': '1º Despacho',
-      'log_in_despachada': '1º Despacho',
-      'prev_liberada_despachada': 'Entre OS',
-      'liberada_despachada': 'Entre OS',
-      'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
-      'fim_intervalo_despachada': 'Entre OS',
-      'liberada_log_off': 'Antes Log Off',
-      'despachada_a_caminho': 'Partida',
-      'fim_intervalo_a_caminho': 'Partida',
-      'prev_liberada_a_caminho': 'Partida',
-      'liberada_a_caminho': 'Partida',
-      'a_caminho_no_local': 'Deslocamento',
-      'no_local_liberada': 'Reparo',
-    };
-
-    const rawSegs: TlSegment[] = [];
-    for (let i = 0; i < uniquePts.length - 1; i++) {
-      const p1 = uniquePts[i], p2 = uniquePts[i + 1];
-      let dur = Math.round((p2.ts - p1.ts) / 60000);
-      if (dur < 0) continue;
-      const interval = isInInterval(p1.ts + (p2.ts - p1.ts) / 2);
-      const label = interval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
-      const flags: string[] = [];
-      let overrideDuration: string | undefined;
-
-      if (label === 'Reparo' && ev.tr_ordem_min !== undefined) {
-        dur = Math.max(ev.tr_ordem_min, 1);
-        if (ev.flag_temp_reparo_excedido) flags.push('TR > Média Global e M300');
-      } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
-        dur = Math.max(ev.tl_ordem_min, 1);
-        if (ev.flag_temp_desloc_excedido) flags.push('Temp. Desloc. Excedido');
-      } else if (label === 'Partida' && ev.temp_prep_os_min !== undefined) {
-        dur = Math.max(ev.temp_prep_os_min, 1);
-        if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥ 10min');
-      } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
-        const detType: Record<string, string> = { '1º Despacho': 'inicio_jornada', 'Desl. Intervalo': 'intervalo_deslocamento', 'Antes Log Off': 'fim_jornada', 'Entre OS': 'entre_ordens' };
-        const md = ev.sem_os_details?.find((s: any) => {
-          if (s.type !== detType[label]) return false;
-          if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
-          return s.from === p1.raw && s.to === p2.raw;
-        });
-        if ((label === '1º Despacho' || label === 'Antes Log Off') && md) dur = Math.max(md.min, 1);
-        if (md) {
-          if (detType[label] === 'fim_jornada') flags.push('acima_media');
-          else { const g: number | undefined = md.global_avg_min; if (g !== undefined && g > 0 && dur > g) flags.push('acima_media'); }
-        }
-      } else if (label === 'Log In') {
-        const icalPt = uniquePts.find(p => p.key === 'inicio_calendario');
-        const linPt = uniquePts.find(p => p.key === 'log_in');
-        if (icalPt && linPt) {
-          const diff = Math.round((icalPt.ts - linPt.ts) / 60000);
-          overrideDuration = `${diff}min`;
-          if (diff < -8) flags.push('login_atrasado');
-        }
-      }
-      rawSegs.push({ label, durationMin: dur, overrideDuration, isInterval: interval, startTime: extractTime(p1.raw), endTime: extractTime(p2.raw), startLabel: p1.label, endLabel: p2.label, flags });
-    }
-
-    const filtered = hidePartida ? rawSegs.filter((s) => s.label !== 'Partida') : rawSegs;
-    const merged: TlSegment[] = [];
-    if (filtered.length > 0) {
-      let cur = { ...filtered[0] };
-      for (let i = 1; i < filtered.length; i++) {
-        const s = filtered[i];
-        if (s.label === cur.label && s.isInterval === cur.isInterval && JSON.stringify(s.flags) === JSON.stringify(cur.flags)) {
-          cur = { ...cur, durationMin: cur.durationMin + s.durationMin, endTime: s.endTime, endLabel: s.endLabel };
-        } else { merged.push(cur); cur = { ...s }; }
-      }
-      merged.push(cur);
-    }
-    return merged;
-  }
-
   private buildTimelinePdfBlock(ev: any, hidePartida = false): any | null {
-    const segs = this.buildTlSegments(ev, hidePartida);
+    const segs = buildTimelineSegments(ev, hidePartida);
     if (!segs.length) return null;
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
-    const isRepairAlarm = (s: TlSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
-    const getFill = (s: TlSegment): string =>
+    const isRepairAlarm = (s: TimelineSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
+    const getFill = (s: TimelineSegment): string =>
       s.isInterval ? '#fde68a' : isRepairAlarm(s) ? '#fca5a5' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
-    const getTxtColor = (s: TlSegment): string =>
+    const getTxtColor = (s: TimelineSegment): string =>
       s.isInterval ? '#78350f' : (isRepairAlarm(s) || IDLE.has(s.label)) ? '#7f1d1d' : '#1e3a8a';
 
-    // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
+    // 1. Larguras proporcionais puras (mesma lÃ³gica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt
     const TOTAL_W = 500;
-    const grows = segs.map(s => this.tlFlexGrow(s.durationMin));
+    const grows = segs.map(s => tlFlexGrow(s.durationMin));
     const totalGrow = grows.reduce((a, b) => a + b, 0);
     const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
 
-    // 2. Mínimo para caber o texto em uma linha.
+    // 2. MÃ­nimo para caber o texto em uma linha.
     const minWidths = segs.map(s => Math.ceil(Math.max(s.label.length, (s.overrideDuration ?? `${s.durationMin}min`).length) * CHAR_W + 4));
 
-    // 3. Aplica mínimos (boost segmentos estreitos demais).
+    // 3. Aplica mÃ­nimos (boost segmentos estreitos demais).
     let widths = segs.map((_, i) => Math.max(minWidths[i], Math.round(rawWidths[i])));
 
     // 4. Se os boosts causaram estouro, reduz proporcionalmente os segmentos com folga.
@@ -299,7 +147,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Filtra o relatório por prefixo de equipe (para gerar PDFs segmentados por base).
+   * Filtra o relatÃ³rio por prefixo de equipe (para gerar PDFs segmentados por base).
    */
   filterReportByTeamPrefix(report: GeneratedReport, prefix: string): GeneratedReport {
     const matches = (team: string): boolean => team.toUpperCase().startsWith(prefix);
@@ -327,7 +175,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Renderiza um emoji como Data URL PNG (compatível com pdfmake).
+   * Renderiza um emoji como Data URL PNG (compatÃ­vel com pdfmake).
    */
   renderEmojiDataUrl(emoji: string, pxSize: number): string {
     try {
@@ -349,7 +197,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Renderiza um símbolo Unicode (não-emoji) colorido como PNG para pdfmake.
+   * Renderiza um sÃ­mbolo Unicode (nÃ£o-emoji) colorido como PNG para pdfmake.
    */
   renderSymbolDataUrl(symbol: string, pxSize: number, color: string): string {
     try {
@@ -372,7 +220,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Remove / substitui emojis que o Roboto não consegue renderizar no pdfmake.
+   * Remove / substitui emojis que o Roboto nÃ£o consegue renderizar no pdfmake.
    */
   stripEmojiForPdf(text: string): string {
     return text
@@ -396,7 +244,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Constrói a definição completa do documento PDF para pdfmake.
+   * ConstrÃ³i a definiÃ§Ã£o completa do documento PDF para pdfmake.
    */
   buildPdfDocDef(section: PdfSection, helpers: PdfHelpers): any {
     const { report, title, subtitle, dateRangeLabel } = section;
@@ -419,7 +267,7 @@ export class DashboardPdfService {
       kpi.direction === 'higher-is-better' ? value >= kpi.metaTarget : value <= kpi.metaTarget;
 
     const fmt = (v: number | undefined | null, dec = 1): string =>
-      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : '—';
+      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : 'â€”';
 
     const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
     const es = report.executiveSummary;
@@ -436,12 +284,12 @@ export class DashboardPdfService {
 
     // Cover
     const cover: any[] = [
-      { text: 'Relatório Analítico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
+      { text: 'RelatÃ³rio AnalÃ­tico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
       { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
       subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
       { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 2] },
-      dateRangeLabel ? { text: `Período de referência: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
-      { text: 'Autor: Alysson Pinheiro — Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
+      dateRangeLabel ? { text: `PerÃ­odo de referÃªncia: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
+      { text: 'Autor: Alysson Pinheiro â€” Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
     ];
 
     const content: any[] = [...cover.filter(Boolean)];
@@ -455,7 +303,7 @@ export class DashboardPdfService {
             { stack: [{ text: `${es.totalTeams}`, fontSize: 20, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, color: MUTED }], alignment: 'center' as const },
             es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 20, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, color: MUTED }], alignment: 'center' as const } : {},
             { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 20, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, color: MUTED }], alignment: 'center' as const },
-            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes crÃ­ticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
           ],
           columnGap: 12,
           margin: [0, 0, 0, 8],
@@ -487,11 +335,11 @@ export class DashboardPdfService {
       }
       if (es.topActionIssues.length > 0) {
         const shortLabel = (s: string): string => s.split(':')[0].trim();
-        content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
+        content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' Â· ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
       }
       const alertBadges: string[] = [];
-      if (es.retornoBaseAlertCount > 0) alertBadges.push(`⚠ ${es.retornoBaseAlertCount} equipe(s) com Retorno a Base acima da meta`);
-      if (es.tmeImpAlertCount > 0) alertBadges.push(`⚠ ${es.tmeImpAlertCount} equipe(s) com TME IMP acima da meta`);
+      if (es.retornoBaseAlertCount > 0) alertBadges.push(`âš  ${es.retornoBaseAlertCount} equipe(s) com Retorno a Base acima da meta`);
+      if (es.tmeImpAlertCount > 0) alertBadges.push(`âš  ${es.tmeImpAlertCount} equipe(s) com TME IMP acima da meta`);
       if (alertBadges.length > 0) {
         content.push({ text: `ALERTAS: ${alertBadges.join('   ')}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 6, 0, 0] });
       }
@@ -500,13 +348,13 @@ export class DashboardPdfService {
 
     // KPI sections
     report.kpis.filter((kpi) => kpi.topTeams.length > 0 || kpi.opportunityTeams.length > 0).forEach((kpi) => {
-      const dec = ['OS Dia', 'Eficiência', 'Utilização'].includes(kpi.kpi) ? 1 : 0;
+      const dec = ['OS Dia', 'EficiÃªncia', 'UtilizaÃ§Ã£o'].includes(kpi.kpi) ? 1 : 0;
       const dirUp = kpi.direction === 'higher-is-better';
-      const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
+      const suffix = kpi.kpi === 'EficiÃªncia' || kpi.kpi === 'UtilizaÃ§Ã£o' ? '%' : '';
 
       const allTeams: Array<{ team: string; value: number; group: string }> = [
         ...kpi.topTeams.map((t) => ({ ...t, group: 'top' })),
-        { team: 'Média geral', value: kpi.average, group: 'avg' },
+        { team: 'MÃ©dia geral', value: kpi.average, group: 'avg' },
         ...kpi.opportunityTeams.map((t) => ({ ...t, group: 'opp' })),
       ];
 
@@ -584,28 +432,28 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('OS/Dia'), th('Ordens'), th('Jornadas'), th('Dias ociosos'), th('Ocioso méd.'), th('Temp. Prep.')],
+              [th('Equipe'), th('OS/Dia'), th('Ordens'), th('Jornadas'), th('Dias ociosos'), th('Ocioso mÃ©d.'), th('Temp. Prep.')],
               ...report.specialAnalysis.osDiaAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(fmt(a.osDiaValue), { color: isAbove(kpi, a.osDiaValue) ? BLUE : RED, bold: true }),
                 td(`${a.totalOrders}`),
                 td(`${a.totalJornadas}`),
                 td(`${a.idleDays}`),
-                td(a.idleDays > 0 ? `${Math.round(a.idleAvgMin)} min` : '—'),
-                td(a.tempPrepTotalMin > 0 ? `${Math.round(a.tempPrepTotalMin)} min` : '—'),
+                td(a.idleDays > 0 ? `${Math.round(a.idleAvgMin)} min` : 'â€”'),
+                td(a.tempPrepTotalMin > 0 ? `${Math.round(a.tempPrepTotalMin)} min` : 'â€”'),
               ]),
             ],
           },
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+      } else if (kpi.kpi === 'UtilizaÃ§Ã£o' && report.specialAnalysis.utilizacaoAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('Utilização'), th('Ordens'), th('Jornadas'), th('Abaixo meta'), th('Temp. Prep.'), th('Sem OS')],
+              [th('Equipe'), th('UtilizaÃ§Ã£o'), th('Ordens'), th('Jornadas'), th('Abaixo meta'), th('Temp. Prep.'), th('Sem OS')],
               ...report.specialAnalysis.utilizacaoAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.utilizacaoValue, 0)}%`, { color: isAbove(kpi, a.utilizacaoValue) ? BLUE : RED, bold: true }),
@@ -626,7 +474,7 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('TME IMP'), th('Média TME'), th('Média global'), th('Ordens'), th('TME muito alto')],
+              [th('Equipe'), th('TME IMP'), th('MÃ©dia TME'), th('MÃ©dia global'), th('Ordens'), th('TME muito alto')],
               ...report.specialAnalysis.tmeImpAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.tmeImpValue, 0)} min`, { color: isAbove(kpi, a.tmeImpValue) ? BLUE : RED, bold: true }),
@@ -640,13 +488,13 @@ export class DashboardPdfService {
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === '1º Login' && report.specialAnalysis.primeiroLoginAnalysis?.length) {
+      } else if (kpi.kpi === '1Âº Login' && report.specialAnalysis.primeiroLoginAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('1º Login'), th('Média login'), th('Dias totais'), th('Acima meta'), th('Login tardio')],
+              [th('Equipe'), th('1Âº Login'), th('MÃ©dia login'), th('Dias totais'), th('Acima meta'), th('Login tardio')],
               ...report.specialAnalysis.primeiroLoginAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.primeiroLoginValue, 0)} min`, { color: isAbove(kpi, a.primeiroLoginValue) ? BLUE : RED, bold: true }),
@@ -660,13 +508,13 @@ export class DashboardPdfService {
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === '1º Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis?.length) {
+      } else if (kpi.kpi === '1Âº Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('1º Desloc.'), th('Média desloc.'), th('Dias totais'), th('Acima meta'), th('Desloc. lento')],
+              [th('Equipe'), th('1Âº Desloc.'), th('MÃ©dia desloc.'), th('Dias totais'), th('Acima meta'), th('Desloc. lento')],
               ...report.specialAnalysis.primeiroDeslocAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.primeiroDeslocValue, 0)} min`, { color: isAbove(kpi, a.primeiroDeslocValue) ? BLUE : RED, bold: true }),
@@ -686,7 +534,7 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('Retorno Base'), th('Média retorno'), th('Dias totais'), th('Acima meta'), th('Retorno alto')],
+              [th('Equipe'), th('Retorno Base'), th('MÃ©dia retorno'), th('Dias totais'), th('Acima meta'), th('Retorno alto')],
               ...report.specialAnalysis.retornoBaseAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.retornoBaseValue, 0)} min`, { color: isAbove(kpi, a.retornoBaseValue) ? BLUE : RED, bold: true }),
@@ -738,7 +586,7 @@ export class DashboardPdfService {
         text: [
           { text: `OS ${nr_ordem}${extra ? ' | ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
           { text: '    ', fontSize: 7 },
-          ...(isPrimeiraOs ? [{ text: '1ª OS', bold: true, color: BLUE, fontSize: 6.5 }] : []),
+          ...(isPrimeiraOs ? [{ text: '1\u00aa OS', bold: true, color: BLUE, fontSize: 6.5 }] : []),
           ...flags.flatMap((f, i) => [
             ...(i > 0 || isPrimeiraOs ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
             { text: labelFn(f), bold: true, color: RED, fontSize: 6.5 },
@@ -815,7 +663,7 @@ export class DashboardPdfService {
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
         const osDiaList = report.specialAnalysis.osDiaAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        const osDiaDrillHead = osDiaList.length > 0 ? drillHead('Análise Detalhada — OS Dia') : null;
+        const osDiaDrillHead = osDiaList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” OS Dia') : null;
         osDiaList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `OS/Dia ${fmt(analysis.osDiaValue)}`,
@@ -836,11 +684,11 @@ export class DashboardPdfService {
               teamItems.push({ text: `! ${idleText1}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
             }
             teamItems.push(chipRow([
-              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
-              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
-              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
-              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+              `HD MÃ©dio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `Temp. Partida MÃ©dio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem MÃ©dio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso MÃ©dio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) â€” limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras MÃ©d/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
             ]));
           }
           if (analysis.flaggedOrders?.length > 0) {
@@ -882,26 +730,26 @@ export class DashboardPdfService {
         });
       }
 
-      // Eficiência drill-down
-      if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis?.length) {
+      // EficiÃªncia drill-down
+      if (kpi.kpi === 'EficiÃªncia' && kpi.evidenceAnalysis?.length) {
         const efList = kpi.evidenceAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || (a.summary?.countTempoPadraoVazio ?? 0) > 0);
-        const efDrillHead = efList.length > 0 ? drillHead('Análise Detalhada — Eficiência (Top 3 e 3 Abaixo do Padrão)') : null;
+        const efDrillHead = efList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” EficiÃªncia (Top 3 e 3 Abaixo do PadrÃ£o)') : null;
         efList.forEach((analysis: any, analysisIdx: number) => {
           const isTop = analysis.analysisType === 'top_performer';
           const teamBarColor = isTop ? BLUE : RED;
           const chips: string[] = [
-            `Média ${analysis.averageEficiencia}%`,
-            `TL Médio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
-            `TR Médio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
+            `MÃ©dia ${analysis.averageEficiencia}%`,
+            `TL MÃ©dio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
+            `TR MÃ©dio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
           ];
-          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. Padrão Médio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
+          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. PadrÃ£o MÃ©dio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
           if (analysis.summary?.countDeslocamentoCurto > 0) chips.push(`TL Curto: ${analysis.summary.countDeslocamentoCurto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.flags?.length > 0) {
             teamItems.push(chipRow([
               `TL Global: ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min`,
               `TR Global: ${analysis.globalAvgExecucaoMin?.toFixed(1)} min`,
-              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min — 25% global)`] : []),
+              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min â€” 25% global)`] : []),
             ]));
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
@@ -917,14 +765,14 @@ export class DashboardPdfService {
             if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${helpers.eficienciaAlertBody('tr_muito_baixo', ev)}`));
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${helpers.eficienciaAlertBody('deslocamento_curto', ev)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.eficienciaAlertBody('tr_excede_hd', ev)}`));
-            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${helpers.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
+            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo PadrÃ£o ausente: ${helpers.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.eficienciaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           if (analysis.summary?.countTempoPadraoVazio > 0) {
-            teamItems.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
+            teamItems.push({ text: `Equipe penalizada por ausÃªncia de Tempo PadrÃ£o: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrÃ£o.${analysis.simulatedEficiencia != null ? ` SimulaÃ§Ã£o com TR mÃ©dio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
           }
           const efHdr = cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop);
           const efBlock = indentBlock(teamItems, teamBarColor, 8);
@@ -936,13 +784,13 @@ export class DashboardPdfService {
         });
       }
 
-      // Utilização drill-down
-      if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+      // UtilizaÃ§Ã£o drill-down
+      if (kpi.kpi === 'UtilizaÃ§Ã£o' && report.specialAnalysis.utilizacaoAnalysis?.length) {
         const utilList = report.specialAnalysis.utilizacaoAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        const utilDrillHead = utilList.length > 0 ? drillHead('Análise Detalhada — Utilização (3 Abaixo do Padrão)') : null;
+        const utilDrillHead = utilList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” UtilizaÃ§Ã£o (3 Abaixo do PadrÃ£o)') : null;
         utilList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `Utilização: ${analysis.utilizacaoValue}%`,
+            `UtilizaÃ§Ã£o: ${analysis.utilizacaoValue}%`,
             `Meta: ${analysis.metaTarget}%`,
             `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
           ];
@@ -960,11 +808,11 @@ export class DashboardPdfService {
               teamItems.push({ text: `! ${idleText2}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
             }
             teamItems.push(chipRow([
-              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
-              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
-              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) — limite: 10%`,
-              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+              `HD MÃ©dio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `Temp. Partida MÃ©dio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem MÃ©dio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso MÃ©dio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) â€” limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras MÃ©d/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
             ]));
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
@@ -1005,13 +853,13 @@ export class DashboardPdfService {
       // TME IMP drill-down
       if (kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis?.length) {
         const tmeList = kpi.tmeImpAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0);
-        const tmeDrillHead = tmeList.length > 0 ? drillHead('Análise Detalhada — TME IMP (Ordens com TME Elevado)') : null;
+        const tmeDrillHead = tmeList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” TME IMP (Ordens com TME Elevado)') : null;
         tmeList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
+            `MÃ©dia equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
+            `MÃ©dia global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
             `Total OS: ${analysis.totalOrders}`,
           ];
           if (analysis.summary?.countTmeMuitoAlto > 0) chips.push(`TME\u22651.5\u00d7avg: ${analysis.summary.countTmeMuitoAlto}`);
@@ -1045,16 +893,16 @@ export class DashboardPdfService {
         });
       }
 
-      // 1º Login drill-down
-      if (kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis?.length) {
+      // 1Âº Login drill-down
+      if (kpi.kpi === '1Âº Login' && kpi.primeiroLoginAnalysis?.length) {
         const loginList = kpi.primeiroLoginAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const loginDrillHead = loginList.length > 0 ? drillHead('Análise Detalhada — 1º Login (Dias Acima da Meta)') : null;
+        const loginDrillHead = loginList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” 1Âº Login (Dias Acima da Meta)') : null;
         loginList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
+            `MÃ©dia equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
+            `MÃ©dia global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
             `Dias com atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countLoginMuitoTardio > 0) chips.push(`Login>16min: ${analysis.summary.countLoginMuitoTardio}`);
@@ -1091,16 +939,16 @@ export class DashboardPdfService {
         });
       }
 
-      // 1º Desloc. drill-down
-      if (kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
+      // 1Âº Desloc. drill-down
+      if (kpi.kpi === '1Âº Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
         const deslocList = kpi.primeiroDeslocAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const deslocDrillHead = deslocList.length > 0 ? drillHead('Análise Detalhada — 1º Desloc. (Dias Acima da Meta)') : null;
+        const deslocDrillHead = deslocList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” 1Âº Desloc. (Dias Acima da Meta)') : null;
         deslocList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
+            `MÃ©dia equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
+            `MÃ©dia global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countDeslocMuitoLento > 0) chips.push(`Desloc.>37min: ${analysis.summary.countDeslocMuitoLento}`);
@@ -1145,13 +993,13 @@ export class DashboardPdfService {
       // Retorno Base drill-down
       if (kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis?.length) {
         const retornoList = kpi.retornoBaseAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const retornoDrillHead = retornoList.length > 0 ? drillHead('Análise Detalhada — Retorno Base (Dias Acima da Meta)') : null;
+        const retornoDrillHead = retornoList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” Retorno Base (Dias Acima da Meta)') : null;
         retornoList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
+            `MÃ©dia equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
+            `MÃ©dia global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countRetornoMuitoAlto > 0) chips.push(`Retorno>60min: ${analysis.summary.countRetornoMuitoAlto}`);
@@ -1204,11 +1052,11 @@ export class DashboardPdfService {
               [th('Equipe'), th('Rank'), th('Dias'), th('OS/Dia\n4,4'), th('Efic.\n100%'), th('Util.\n85%'), th('TME\n20'), th('Login\n8'), th('Desloc\n25'), th('Ret.\n40'), th('Score')],
               ...report.teamScorecard.map((row) => [
                 td(row.team, { bold: true, alignment: 'left' as const, fillColor: row.kpisBelowMeta >= 4 ? '#fff1f2' : row.kpisBelowMeta === 3 ? '#fffbeb' : null }),
-                td(`${row.classificacao ?? '—'}`, { color: GRAY }),
-                td(`${row.diasTrabalhados ?? '—'}`, { color: GRAY }),
+                td(`${row.classificacao ?? 'â€”'}`, { color: GRAY }),
+                td(`${row.diasTrabalhados ?? 'â€”'}`, { color: GRAY }),
                 td(fmt(row.kpis.osDia), { color: row.kpiStatus.osDia === 'above' ? BLUE : row.kpiStatus.osDia === 'below' ? RED : DARK, bold: true }),
-                td(row.kpis.eficiencia != null ? `${fmt(row.kpis.eficiencia, 0)}%` : '—', { color: row.kpiStatus.eficiencia === 'above' ? BLUE : row.kpiStatus.eficiencia === 'below' ? RED : DARK, bold: true }),
-                td(row.kpis.utilizacao != null ? `${fmt(row.kpis.utilizacao, 0)}%` : '—', { color: row.kpiStatus.utilizacao === 'above' ? BLUE : row.kpiStatus.utilizacao === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.eficiencia != null ? `${fmt(row.kpis.eficiencia, 0)}%` : 'â€”', { color: row.kpiStatus.eficiencia === 'above' ? BLUE : row.kpiStatus.eficiencia === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.utilizacao != null ? `${fmt(row.kpis.utilizacao, 0)}%` : 'â€”', { color: row.kpiStatus.utilizacao === 'above' ? BLUE : row.kpiStatus.utilizacao === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.tmeImp, 0), { color: row.kpiStatus.tmeImp === 'above' ? BLUE : row.kpiStatus.tmeImp === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.primeiroLogin, 0), { color: row.kpiStatus.primeiroLogin === 'above' ? BLUE : row.kpiStatus.primeiroLogin === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.primeiroDesloc, 0), { color: row.kpiStatus.primeiroDesloc === 'above' ? BLUE : row.kpiStatus.primeiroDesloc === 'below' ? RED : DARK, bold: true }),
@@ -1226,7 +1074,7 @@ export class DashboardPdfService {
     if (report.deviations.mostRecurring.length > 0) {
       content.push(
         { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
-        { text: 'Desvios de Padrão Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8] },
+        { text: 'Desvios de PadrÃ£o Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8] },
         {
           columns: [
             {
@@ -1253,7 +1101,7 @@ export class DashboardPdfService {
                     widths: ['auto', '*'],
                     body: report.deviations.teamBreakdown.map((t) => [
                       td(t.team, { bold: true, alignment: 'left' as const }),
-                      td(t.deviations.join(' · '), { color: GRAY }),
+                      td(t.deviations.join(' Â· '), { color: GRAY }),
                     ]),
                   },
                   layout: 'lightHorizontalLines',

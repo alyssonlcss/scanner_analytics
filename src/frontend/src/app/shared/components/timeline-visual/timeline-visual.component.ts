@@ -1,17 +1,6 @@
-import { Component, Input, OnInit } from '@angular/core';
+﻿import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-
-interface TimelineSegment {
-  label: string;
-  durationMin: number;
-  overrideDuration?: string;
-  isInterval?: boolean;
-  startTime?: string;
-  endTime?: string;
-  startLabel?: string;
-  endLabel?: string;
-  flags?: string[];
-}
+import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/timeline-segment.utils';
 
 @Component({
   selector: 'app-timeline-visual',
@@ -29,24 +18,24 @@ interface TimelineSegment {
           [class.segment-idle--high]="!seg.isInterval && isIdleHighSegment(seg)"
           [class.segment-repair-alarm]="!seg.isInterval && (isRepairAlarmSegment(seg) || isLoginAlarmSegment(seg))"
           [style.flex-grow]="getFlexGrow(seg.durationMin)"
-          [title]="seg.startTime + ' → ' + seg.endTime">
+          [title]="seg.startTime + ' â†’ ' + seg.endTime">
           
-          <!-- Conteúdo da barra (label - minutos) -->
+          <!-- ConteÃºdo da barra (label - minutos) -->
           <div class="segment-bar-content">
-            <span *ngIf="seg.isInterval" class="interval-icon">⏸</span>
+            <span *ngIf="seg.isInterval" class="interval-icon">â¸</span>
             <span class="seg-two-line">
               <span class="seg-name">{{ seg.label }}</span>
               <span class="seg-dur">{{ seg.overrideDuration ?? (seg.durationMin + 'min') }}</span>
             </span>
-            <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">⚠</span>
+            <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">âš </span>
           </div>
 
-          <!-- Marcador de horário de início -->
+          <!-- Marcador de horÃ¡rio de inÃ­cio -->
           <div class="time-marker start-marker">
             {{ seg.startLabel }}<br>{{ seg.startTime }}
           </div>
           
-          <!-- Marcador de horário de fim (apenas no último segmento) -->
+          <!-- Marcador de horÃ¡rio de fim (apenas no Ãºltimo segmento) -->
           <div *ngIf="isLast" class="time-marker end-marker">
             {{ seg.endLabel }}<br>{{ seg.endTime }}
           </div>
@@ -154,7 +143,7 @@ interface TimelineSegment {
       50% { opacity: 0.5; }
     }
 
-    /* Marcadores de horário */
+    /* Marcadores de horÃ¡rio */
     .time-marker {
       position: absolute;
       top: 100%;
@@ -190,51 +179,12 @@ export class TimelineVisualComponent implements OnInit {
     this.buildTimeline();
   }
 
-  // Escala logarítmica: comprime intervalos longos e aumenta segmentos curtos
+  // Escala logarÃ­tmica: comprime intervalos longos e aumenta segmentos curtos
   getFlexGrow(durationMin: number): number {
-    if (durationMin <= 8) {
-      return 8; // mínimo para segmentos muito curtos
-    }
-    // Raiz quadrada para comprimir grandes valores mantendo proporcionalidade
-    // 8min → ~8.5 | 15min → ~11.6 | 30min → ~16.4 | 60min → ~23.2 | 120min → ~32.9
-    return Math.sqrt(durationMin) * 3;
+    return tlFlexGrow(durationMin);
   }
 
-  private parseDt(dtStr: string): number {
-    if (!dtStr) return 0;
-    const [d, t] = dtStr.split(' ');
-    if (!d || !t) return 0;
-    const [day, mon, yr] = d.split('/');
-    const [hr, min, sec] = t.split(':');
-    return new Date(+yr, +mon - 1, +day, +hr, +min, +sec).getTime();
-  }
-
-  private extractTime(dtStr: string): string {
-    if (!dtStr) return '';
-    const parts = dtStr.split(' ');
-    if (parts.length >= 2) {
-      const datePart = parts[0]; // DD/MM/YYYY
-      const timePart = parts[1]; // HH:MM:SS
-      
-      const timeParts = timePart.split(':');
-      const dateParts = datePart.split('/');
-      
-      if (timeParts.length >= 2 && dateParts.length >= 2) {
-        const hhmm = `${timeParts[0]}:${timeParts[1]}`;
-        const ddmm = `${dateParts[0]}/${dateParts[1]}`;
-        return `${hhmm} ${ddmm}`;
-      }
-    }
-    return '';
-  }
-
-  private extractDate(dtStr: string): string {
-    if (!dtStr) return '';
-    const parts = dtStr.split(' ');
-    return parts[0] || '';
-  }
-
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off']);
+  private static readonly IDLE_LABELS = new Set(['1Âº Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
     return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
@@ -254,210 +204,6 @@ export class TimelineVisualComponent implements OnInit {
 
   private buildTimeline() {
     if (!this.ev) return;
-
-    // Normalizar aliases de campos (suporte a PrimeiroDeslocDayEvidence)
-    const logIn = this.ev.log_in || this.ev.log_in_corrigido;
-    const despachada = this.ev.despachada || this.ev.hora_primeiro_despacho;
-    const aCaminho = this.ev.a_caminho || this.ev.hora_primeiro_deslocamento;
-
-    // Detectar cenário onde prev_liberada é posterior à despachada
-    const prevLibTs = this.ev.prev_liberada ? this.parseDt(this.ev.prev_liberada) : 0;
-    const despTs = despachada ? this.parseDt(despachada) : 0;
-    const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
-
-    // Colher e nomear todos os checkpoints válidos (com timestamp original para extração de hora)
-    const pts: { key: string; ts: number; label: string; raw: string }[] = [];
-    const addPt = (key: string, val: string, label: string) => {
-      if (val) {
-        const ts = this.parseDt(val);
-        if (ts > 0) pts.push({ key, ts, label, raw: val });
-      }
-    };
-
-    // Lógica de início conforme especificação
-    if (this.ev.prev_liberada) {
-      addPt('prev_liberada', this.ev.prev_liberada, 'Lib. Anterior');
-    } else {
-      addPt('inicio_calendario', this.ev.inicio_calendario, 'Início Cal.');
-      addPt('log_in', logIn, 'Log In');
-    }
-    
-    // Adicionar despachada somente se não estiver no passado em relação à Lib. Anterior
-    if (!despAfterPrevLib) {
-      addPt('despachada', despachada, 'Despachada');
-    }
-    addPt('a_caminho', aCaminho, 'A Caminho');
-    addPt('no_local', this.ev.no_local, 'No Local');
-    addPt('liberada', this.ev.liberada, 'Liberada');
-    addPt('inicio_intervalo', this.ev.inicio_intervalo, 'Início Intervalo');
-    addPt('fim_intervalo', this.ev.fim_intervalo, 'Fim Intervalo');
-
-    // Add log_off point from fim_jornada sem_os_detail if available
-    const fimJornadaDetail = this.ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
-    if (fimJornadaDetail?.to) {
-      addPt('log_off', fimJornadaDetail.to, 'Log Off');
-    }
-
-    // Remove duplicates mantendo apenas primeira ocorrência
-    const uniquePts: typeof pts = [];
-    const seen = new Set<string>();
-    for (const pt of pts) {
-        if (!seen.has(pt.key)) {
-            seen.add(pt.key);
-            uniquePts.push(pt);
-        }
-    }
-
-    uniquePts.sort((a, b) => a.ts - b.ts);
-
-    // Função para verificar se um ponto de tempo está dentro de um intervalo
-    const isInsideInterval = (tsMain: number) => {
-        const iStart = uniquePts.find(p => p.key === 'inicio_intervalo');
-        const iEnd = uniquePts.find(p => p.key === 'fim_intervalo');
-        if (!iStart || !iEnd) return false;
-        return tsMain >= iStart.ts && tsMain < iEnd.ts;
-    };
-
-    // Criar segmentos brutos para cada par de pontos
-    const rawSegments: TimelineSegment[] = [];
-    for (let i = 0; i < uniquePts.length - 1; i++) {
-        const p1 = uniquePts[i];
-        const p2 = uniquePts[i+1];
-        
-        let durationMin = Math.round((p2.ts - p1.ts) / 60000);
-        if (durationMin < 0) continue;
-
-        const midPoint = p1.ts + (p2.ts - p1.ts) / 2;
-        const isInterval = isInsideInterval(midPoint);
-
-        // Determinar label do segmento
-        let label = '';
-        if (isInterval) {
-            label = 'INTERVALO';
-        } else {
-            // Lógica customizada de negócio (Sem Ordem e suas subflags)
-            if (p1.key === 'inicio_calendario' && p2.key === 'log_in') label = 'Log In';
-            else if (p1.key === 'log_in' && p2.key === 'inicio_calendario') label = 'Log In';
-            else if (p1.key === 'inicio_calendario' && p2.key === 'despachada') label = '1º Despacho';
-            else if (p1.key === 'log_in' && p2.key === 'despachada') label = '1º Despacho';
-            else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
-            else if (p1.key === 'liberada' && p2.key === 'despachada') label = 'Entre OS';
-            else if (p1.key === 'prev_liberada' && p2.key === 'inicio_intervalo') label = 'Desl. Intervalo';
-            else if (p1.key === 'fim_intervalo' && p2.key === 'despachada') label = 'Entre OS';
-            else if (p1.key === 'liberada' && p2.key === 'log_off') label = 'Antes Log Off';
-            // Etapas produtivas
-            else if (p1.key === 'despachada' && p2.key === 'a_caminho') label = 'Partida';
-            else if (p1.key === 'fim_intervalo' && p2.key === 'a_caminho') label = 'Partida';
-            else if (p1.key === 'prev_liberada' && p2.key === 'a_caminho') label = 'Partida';
-            else if (p1.key === 'liberada' && p2.key === 'a_caminho') label = 'Partida';
-            else if (p1.key === 'a_caminho' && p2.key === 'no_local') label = 'Deslocamento';
-            else if (p1.key === 'no_local' && p2.key === 'liberada') label = 'Reparo';
-            else label = `${p1.label} → ${p2.label}`;
-        }
-
-        // Sincronizar com valores calculados (regras de negócio)
-        const flags: string[] = [];
-        let overrideDuration: string | undefined;
-        
-        if (label === 'Reparo' && this.ev.tr_ordem_min !== undefined) {
-            durationMin = Math.max(this.ev.tr_ordem_min, 1);
-            if (this.ev.flag_temp_reparo_excedido) {
-              flags.push('TR > Média Global e M300');
-            }
-        } else if (label === 'Deslocamento' && this.ev.tl_ordem_min !== undefined) {
-            durationMin = Math.max(this.ev.tl_ordem_min, 1);
-            if (this.ev.flag_temp_desloc_excedido) {
-              flags.push('Temp. Desloc. Excedido');
-            }
-        } else if (label === 'Partida' && this.ev.temp_prep_os_min !== undefined) {
-            durationMin = Math.max(this.ev.temp_prep_os_min, 1);
-            // Escuro quando o backend flagou como acima do limite (temp_prep_alto = > 10 min)
-            if (this.ev.flags?.includes('temp_prep_alto')) {
-              flags.push('Temp. Partida ≥ 10min');
-            }
-        } else if ((label === '1º Despacho' || label === 'Entre OS' || label === 'Desl. Intervalo' || label === 'Antes Log Off') && this.ev.sem_os_details !== undefined) {
-            // Mapear tipo de detalhe sem_os correspondente
-            const detailType =
-              label === '1º Despacho' ? 'inicio_jornada' :
-              label === 'Desl. Intervalo' ? 'intervalo_deslocamento' :
-              label === 'Antes Log Off' ? 'fim_jornada' : 'entre_ordens';
-
-            const matchedDetail = this.ev.sem_os_details?.find((s: any) => {
-              if (s.type !== detailType) return false;
-              // 'inicio_jornada' always measures from Início Cal. to first dispatch;
-              // when Log In exists the segment starts from log_in, not inicio_calendario,
-              // so skip the `from` check and match only on the endpoint (despachada).
-              // 'fim_jornada' matches on the log_off endpoint (to).
-              if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
-              return s.from === p1.raw && s.to === p2.raw;
-            });
-
-            if ((label === '1º Despacho' || label === 'Antes Log Off') && matchedDetail) {
-              durationMin = Math.max(matchedDetail.min, 1);
-            }
-
-            // Flag de intensidade: acima_media quando há referência global, sempre para fim_jornada
-            if (matchedDetail) {
-              if (detailType === 'fim_jornada') {
-                // fim_jornada só é criado pelo backend quando já excede o threshold — sempre mais forte
-                flags.push('acima_media');
-              } else {
-                const globalAvg: number | undefined = matchedDetail.global_avg_min;
-                if (globalAvg !== undefined && globalAvg > 0 && durationMin > globalAvg) {
-                  flags.push('acima_media');
-                }
-              }
-            }
-        } else if (label === 'Log In') {
-            const icalTs = this.parseDt(this.ev.inicio_calendario ?? '');
-            const linTs = this.parseDt(this.ev.log_in || this.ev.log_in_corrigido || '');
-            if (icalTs > 0 && linTs > 0) {
-              const diff = Math.round((icalTs - linTs) / 60000);
-              overrideDuration = `${diff}min`;
-              if (diff < -8) flags.push('login_atrasado');
-            }
-        }
-
-        rawSegments.push({
-            label,
-            durationMin,
-            overrideDuration,
-            isInterval,
-            startTime: this.extractTime(p1.raw),
-            endTime: this.extractTime(p2.raw),
-            startLabel: p1.label,
-            endLabel: p2.label,
-            flags
-        });
-    }
-
-    // Remove Partida segments when hidePartida is enabled
-    const filteredSegments = this.hidePartida
-      ? rawSegments.filter((s) => s.label !== 'Partida')
-      : rawSegments;
-
-    // Merge adjacent segments with same label (exceto se tiverem flags diferentes)
-    const merged: TimelineSegment[] = [];
-    if (filteredSegments.length > 0) {
-        let current = filteredSegments[0];
-        for (let i = 1; i < filteredSegments.length; i++) {
-            const canMerge = 
-              filteredSegments[i].label === current.label && 
-              filteredSegments[i].isInterval === current.isInterval &&
-              JSON.stringify(filteredSegments[i].flags) === JSON.stringify(current.flags);
-            
-            if (canMerge) {
-                current.durationMin += filteredSegments[i].durationMin;
-                current.endTime = filteredSegments[i].endTime;
-                current.endLabel = filteredSegments[i].endLabel;
-            } else {
-                merged.push(current);
-                current = filteredSegments[i];
-            }
-        }
-        merged.push(current);
-    }
-
-    this.segments = merged;
+    this.segments = buildTimelineSegments(this.ev, this.hidePartida ?? false);
   }
 }
