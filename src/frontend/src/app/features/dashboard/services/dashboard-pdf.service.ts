@@ -52,8 +52,214 @@ export interface SemOsDetail {
   [key: string]: unknown;
 }
 
+interface TlSegment {
+  label: string;
+  durationMin: number;
+  isInterval: boolean;
+  startTime: string;
+  endTime: string;
+  startLabel: string;
+  endLabel: string;
+  flags: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class DashboardPdfService {
+
+  private static readonly TIMELINE_IDLE_LABELS = new Set([
+    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
+  ]);
+
+  private tlFlexGrow(min: number): number {
+    return min <= 8 ? 8 : Math.sqrt(min) * 3;
+  }
+
+  private buildTlSegments(ev: any, hidePartida: boolean): TlSegment[] {
+    if (!ev) return [];
+
+    const parseDt = (dtStr: string): number => {
+      if (!dtStr) return 0;
+      const [d, t] = dtStr.split(' ');
+      if (!d || !t) return 0;
+      const [day, mon, yr] = d.split('/');
+      const [hr, min, sec] = t.split(':');
+      return new Date(+yr, +mon - 1, +day, +hr, +min, +(sec || '0')).getTime();
+    };
+
+    const extractTime = (raw: string): string => {
+      if (!raw) return '';
+      const parts = raw.split(' ');
+      if (parts.length < 2) return '';
+      const tp = parts[1].split(':');
+      const dp = parts[0].split('/');
+      if (tp.length >= 2 && dp.length >= 2) return `${tp[0]}:${tp[1]} ${dp[0]}/${dp[1]}`;
+      return '';
+    };
+
+    const logIn = ev.log_in || ev.log_in_corrigido;
+    const despachada = ev.despachada || ev.hora_primeiro_despacho;
+    const aCaminho = ev.a_caminho || ev.hora_primeiro_deslocamento;
+
+    const prevLibTs = ev.prev_liberada ? parseDt(ev.prev_liberada) : 0;
+    const despTs = despachada ? parseDt(despachada) : 0;
+    const despAfterPrevLib = prevLibTs > 0 && despTs > 0 && prevLibTs > despTs;
+
+    const pts: { key: string; ts: number; label: string; raw: string }[] = [];
+    const addPt = (key: string, val: string | undefined, label: string) => {
+      if (val) { const ts = parseDt(val); if (ts > 0) pts.push({ key, ts, label, raw: val }); }
+    };
+
+    if (ev.prev_liberada) {
+      addPt('prev_liberada', ev.prev_liberada, 'Lib. Anterior');
+    } else {
+      addPt('inicio_calendario', ev.inicio_calendario, 'Início Cal.');
+      addPt('log_in', logIn, 'Log In');
+    }
+    if (!despAfterPrevLib) addPt('despachada', despachada, 'Despachada');
+    addPt('a_caminho', aCaminho, 'A Caminho');
+    addPt('no_local', ev.no_local, 'No Local');
+    addPt('liberada', ev.liberada, 'Liberada');
+    addPt('inicio_intervalo', ev.inicio_intervalo, 'Início Intervalo');
+    addPt('fim_intervalo', ev.fim_intervalo, 'Fim Intervalo');
+    const fimJornada = ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
+    if (fimJornada?.to) addPt('log_off', fimJornada.to, 'Log Off');
+
+    const seen = new Set<string>();
+    const uniquePts = pts.filter((p) => seen.has(p.key) ? false : (seen.add(p.key), true));
+    uniquePts.sort((a, b) => a.ts - b.ts);
+
+    const isInInterval = (tsMain: number) => {
+      const iS = uniquePts.find((p) => p.key === 'inicio_intervalo');
+      const iE = uniquePts.find((p) => p.key === 'fim_intervalo');
+      return iS && iE ? tsMain >= iS.ts && tsMain < iE.ts : false;
+    };
+
+    const labelMap: Record<string, string> = {
+      'inicio_calendario_despachada': '1º Despacho',
+      'log_in_despachada': '1º Despacho',
+      'prev_liberada_despachada': 'Entre OS',
+      'liberada_despachada': 'Entre OS',
+      'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
+      'fim_intervalo_despachada': 'Entre OS',
+      'liberada_log_off': 'Antes Log Off',
+      'despachada_a_caminho': 'Partida',
+      'fim_intervalo_a_caminho': 'Partida',
+      'prev_liberada_a_caminho': 'Partida',
+      'liberada_a_caminho': 'Partida',
+      'a_caminho_no_local': 'Deslocamento',
+      'no_local_liberada': 'Reparo',
+    };
+
+    const rawSegs: TlSegment[] = [];
+    for (let i = 0; i < uniquePts.length - 1; i++) {
+      const p1 = uniquePts[i], p2 = uniquePts[i + 1];
+      let dur = Math.round((p2.ts - p1.ts) / 60000);
+      if (dur < 0) continue;
+      const interval = isInInterval(p1.ts + (p2.ts - p1.ts) / 2);
+      const label = interval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
+      const flags: string[] = [];
+
+      if (label === 'Reparo' && ev.tr_ordem_min !== undefined) {
+        dur = Math.max(ev.tr_ordem_min, 1);
+        if (ev.flag_temp_reparo_excedido) flags.push('Temp. Reparo > 20%HD');
+      } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
+        dur = Math.max(ev.tl_ordem_min, 1);
+        if (ev.flag_temp_desloc_excedido) flags.push('Temp. Desloc. Excedido');
+      } else if (label === 'Partida' && ev.temp_prep_os_min !== undefined) {
+        dur = Math.max(ev.temp_prep_os_min, 1);
+        if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥ 10min');
+      } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
+        const detType: Record<string, string> = { '1º Despacho': 'inicio_jornada', 'Desl. Intervalo': 'intervalo_deslocamento', 'Antes Log Off': 'fim_jornada', 'Entre OS': 'entre_ordens' };
+        const md = ev.sem_os_details?.find((s: any) => {
+          if (s.type !== detType[label]) return false;
+          if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
+          return s.from === p1.raw && s.to === p2.raw;
+        });
+        if ((label === '1º Despacho' || label === 'Antes Log Off') && md) dur = Math.max(md.min, 1);
+        if (md) {
+          if (detType[label] === 'fim_jornada') flags.push('acima_media');
+          else { const g: number | undefined = md.global_avg_min; if (g !== undefined && g > 0 && dur > g) flags.push('acima_media'); }
+        }
+      }
+      rawSegs.push({ label, durationMin: dur, isInterval: interval, startTime: extractTime(p1.raw), endTime: extractTime(p2.raw), startLabel: p1.label, endLabel: p2.label, flags });
+    }
+
+    const filtered = hidePartida ? rawSegs.filter((s) => s.label !== 'Partida') : rawSegs;
+    const merged: TlSegment[] = [];
+    if (filtered.length > 0) {
+      let cur = { ...filtered[0] };
+      for (let i = 1; i < filtered.length; i++) {
+        const s = filtered[i];
+        if (s.label === cur.label && s.isInterval === cur.isInterval && JSON.stringify(s.flags) === JSON.stringify(cur.flags)) {
+          cur = { ...cur, durationMin: cur.durationMin + s.durationMin, endTime: s.endTime, endLabel: s.endLabel };
+        } else { merged.push(cur); cur = { ...s }; }
+      }
+      merged.push(cur);
+    }
+    return merged;
+  }
+
+  private buildTimelinePdfBlock(ev: any, hidePartida = false): any | null {
+    const segs = this.buildTlSegments(ev, hidePartida);
+    if (!segs.length) return null;
+
+    const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
+    const getFill = (s: TlSegment): string =>
+      s.isInterval ? '#fde68a' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
+    const getTxtColor = (s: TlSegment): string =>
+      s.isInterval ? '#78350f' : IDLE.has(s.label) ? '#7f1d1d' : '#1e3a8a';
+
+    const totalGrow = segs.reduce((sum, s) => sum + this.tlFlexGrow(s.durationMin), 0);
+    const TOTAL_W = 500;
+    const widths = segs.map((s) => Math.max(16, Math.round((this.tlFlexGrow(s.durationMin) / totalGrow) * TOTAL_W)));
+
+    const barRow = segs.map((s) => ({
+      stack: [
+        { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
+        { text: `${s.durationMin}m`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
+      ],
+      fillColor: getFill(s),
+    }));
+
+    const LINE_H = 14;
+    const mkMarker = (label: string, time: string, align: 'left' | 'right' = 'left') => ({
+      columns: [
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 1.5, lineColor: '#9ca3af' }], width: 3 },
+        { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: align },
+      ],
+      columnGap: 2,
+    });
+
+    const timeRow = segs.map((s, i) => {
+      const isLast = i === segs.length - 1;
+      if (isLast) {
+        return {
+          columns: [
+            { ...mkMarker(s.startLabel ?? '', s.startTime ?? ''), width: '*' },
+            { ...mkMarker(s.endLabel ?? '', s.endTime ?? ''), width: 'auto' },
+          ],
+        };
+      }
+      return mkMarker(s.startLabel ?? '', s.startTime ?? '');
+    });
+
+    return {
+      table: {
+        widths,
+        body: [barRow, timeRow],
+      },
+      layout: {
+        hLineWidth: () => 0,
+        vLineWidth: (i: number) => (i > 0 && i < segs.length ? 1 : 0),
+        vLineColor: () => '#ffffff',
+        paddingLeft: () => 2,
+        paddingRight: () => 2,
+        paddingTop: () => 2,
+        paddingBottom: () => 2,
+      },
+      margin: [0, 4, 0, 8],
+    };
+  }
 
   /**
    * Filtra o relatório por prefixo de equipe (para gerar PDFs segmentados por base).
@@ -602,19 +808,14 @@ export class DashboardPdfService {
           if (analysis.flaggedOrders?.length > 0) {
             analysis.flaggedOrders.forEach((ev: any, evIdx: number, evArr: any[]) => {
               const orderItems: any[] = [];
-              if (ev.classe || ev.causa) {
-                orderItems.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? '  \u00b7  ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
-              }
-              if (ev.prev_liberada) {
-                orderItems.push(tl(`OS Ant. (${ev.prev_nr_ordem || '\u2014'})`, `Desp.: ${ev.prev_despachada || '\u2014'}`, `Lib.: ${ev.prev_liberada}`));
-                orderItems.push(tl('OS Atual', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
-              } else {
-                orderItems.push(tl('Jornada', `Inicio Cal.: ${ev.inicio_calendario || '\u2014'}`, `Log In: ${ev.log_in || '\u2014'}`));
-                orderItems.push(tl('1\u00aa OS', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
-              }
-              if (ev.inicio_intervalo) {
-                orderItems.push(tl('Intervalo', ev.inicio_intervalo, ev.fim_intervalo || '\u2014'));
-              }
+              const ccParts: string[] = [];
+              if (ev.classe) ccParts.push(`Classe: ${ev.classe}`);
+              if (ev.classe && ev.causa) ccParts.push('  \u00b7  ');
+              if (ev.causa) ccParts.push(`Causa: ${ev.causa}`);
+              if (ev.prev_liberada) ccParts.push(`${ccParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+              if (ccParts.length > 0) orderItems.push({ text: ccParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
+              const osDiaTl = this.buildTimelinePdfBlock(ev);
+              if (osDiaTl) orderItems.push(osDiaTl);
               if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
               if (ev.flags?.includes('tl_excede_hd')) orderItems.push(alertItem(`Tempo de Deslocamento alto: ${helpers.osDiaAlertBody('tl_excede_hd', ev)}`));
               if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
@@ -667,10 +868,14 @@ export class DashboardPdfService {
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const orderItems: any[] = [];
-            if (ev.classe || ev.causa) {
-              orderItems.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? '  \u00b7  ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
-            }
-            orderItems.push(tl('OS', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
+            const efCcParts: string[] = [];
+            if (ev.classe) efCcParts.push(`Classe: ${ev.classe}`);
+            if (ev.classe && ev.causa) efCcParts.push('  \u00b7  ');
+            if (ev.causa) efCcParts.push(`Causa: ${ev.causa}`);
+            if (ev.prev_liberada) efCcParts.push(`${efCcParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+            if (efCcParts.length > 0) orderItems.push({ text: efCcParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
+            const efTl = this.buildTimelinePdfBlock(ev, true);
+            if (efTl) orderItems.push(efTl);
             if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${helpers.eficienciaAlertBody('tr_muito_baixo', ev)}`));
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${helpers.eficienciaAlertBody('deslocamento_curto', ev)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.eficienciaAlertBody('tr_excede_hd', ev)}`));
@@ -726,19 +931,14 @@ export class DashboardPdfService {
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const orderItems: any[] = [];
-            if (ev.classe || ev.causa) {
-              orderItems.push({ text: [ev.classe ? `Classe: ${ev.classe}` : '', ev.classe && ev.causa ? '  \u00b7  ' : '', ev.causa ? `Causa: ${ev.causa}` : ''].join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
-            }
-            if (ev.prev_liberada) {
-              orderItems.push(tl(`OS Ant. (${ev.prev_nr_ordem || '\u2014'})`, `Desp.: ${ev.prev_despachada || '\u2014'}`, `Lib.: ${ev.prev_liberada}`));
-              orderItems.push(tl('OS Atual', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
-            } else {
-              orderItems.push(tl('Jornada', `Inicio Cal.: ${ev.inicio_calendario || '\u2014'}`, `Log In: ${ev.log_in || '\u2014'}`));
-              orderItems.push(tl('1\u00aa OS', `Despachada: ${ev.despachada || '\u2014'}`, `A Caminho: ${ev.a_caminho || '\u2014'}`, `No Local: ${ev.no_local || '\u2014'}`, `Liberada: ${ev.liberada || '\u2014'}`));
-            }
-            if (ev.inicio_intervalo) {
-              orderItems.push(tl('Intervalo', ev.inicio_intervalo, ev.fim_intervalo || '\u2014'));
-            }
+            const utilCcParts: string[] = [];
+            if (ev.classe) utilCcParts.push(`Classe: ${ev.classe}`);
+            if (ev.classe && ev.causa) utilCcParts.push('  \u00b7  ');
+            if (ev.causa) utilCcParts.push(`Causa: ${ev.causa}`);
+            if (ev.prev_liberada) utilCcParts.push(`${utilCcParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+            if (utilCcParts.length > 0) orderItems.push({ text: utilCcParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
+            const utilTl = this.buildTimelinePdfBlock(ev);
+            if (utilTl) orderItems.push(utilTl);
             if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
@@ -871,8 +1071,8 @@ export class DashboardPdfService {
           const teamItems: any[] = [chipRow(chips)];
           analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const dayItems: any[] = [];
-            dayItems.push(tl('Jornada', `Inicio Cal.: ${ev.inicio_calendario || '\u2014'}`, `Log In: ${ev.log_in_corrigido || '\u2014'}`));
-            dayItems.push(tl('1\u00aa OS', `Despachada: ${ev.hora_primeiro_despacho || '\u2014'}`, `A Caminho: ${ev.hora_primeiro_deslocamento || '\u2014'}`));
+            const deslocTl = this.buildTimelinePdfBlock(ev);
+            if (deslocTl) dayItems.push(deslocTl);
             if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${helpers.deslocAlertBody('despacho_tardio', ev)}`));
             if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${helpers.deslocAlertBody('desloc_lento', ev)}`));

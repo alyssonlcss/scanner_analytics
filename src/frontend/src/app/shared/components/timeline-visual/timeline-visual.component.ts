@@ -134,46 +134,19 @@ interface TimelineSegment {
     .time-marker {
       position: absolute;
       top: 100%;
-      margin-top: 18px;
+      margin-top: 4px;
       font-size: 0.62rem;
       color: #4b5563;
       font-weight: 600;
       line-height: 1.4;
       white-space: nowrap;
-    }
-    .time-marker::before {
-      content: '';
-      position: absolute;
-      bottom: 100%;
-      width: 1px;
-      height: 18px;
-      background: #9ca3af;
+      border-left: 2px solid #9ca3af;
+      padding-left: 3px;
     }
     .start-marker {
       left: 0;
-      transform: translateX(-10%);
-    }
-    .start-marker::before {
-      left: 0;
-    }
-    .timeline-segment:first-child .start-marker {
-      transform: translateX(0);
-    }
-    .timeline-segment:first-child .start-marker::before {
-      left: 0;
     }
     .end-marker {
-      right: 0;
-      transform: translateX(10%);
-    }
-    .end-marker::before {
-      right: 0;
-      left: auto;
-    }
-    .timeline-segment:last-child .end-marker {
-      transform: translateX(0);
-    }
-    .timeline-segment:last-child .end-marker::before {
       right: 0;
     }
   `]
