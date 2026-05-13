@@ -22,12 +22,12 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
           
           <!-- ConteÃºdo da barra (label - minutos) -->
           <div class="segment-bar-content">
-            <span *ngIf="seg.isInterval" class="interval-icon">â¸</span>
+
             <span class="seg-two-line">
               <span class="seg-name">{{ seg.label }}</span>
               <span class="seg-dur">{{ seg.overrideDuration ?? (seg.durationMin + 'min') }}</span>
             </span>
-            <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">âš </span>
+
           </div>
 
           <!-- Marcador de horÃ¡rio de inÃ­cio -->
