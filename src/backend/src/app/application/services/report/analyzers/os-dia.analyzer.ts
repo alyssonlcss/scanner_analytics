@@ -420,8 +420,13 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
             const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
             const despachadaDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
-            // When the interval started before the dispatch (interceptsDispatch case), Início Intervalo
-            // is the first event after Lib. Anterior — prioritize intervalo_deslocamento over entre_ordens.
+            // When the interval overlaps the dispatch window (interceptsDispatch case), Início Intervalo
+            // is the first event after Lib. Anterior — calculateSemOsValue already returns
+            // minutesBetween(inicioIntervalo, prevLiberada), so semOsMin is the exact pre-interval time.
+            //
+            // When the interval fits fully within the entre-ordens window (insideTolerance case),
+            // semOsMin includes BOTH the pre-interval travel AND the post-interval wait. We must split
+            // them into separate sem_os_details entries so the report is accurate.
             if (
               hasIntervaloDeslocamento &&
               semOsIntervalApplied[i] &&
@@ -429,12 +434,45 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
               despachadaDate &&
               inicioIntervaloDate.getTime() < despachadaDate.getTime()
             ) {
-              semOsDetails.push({
-                type: 'intervalo_deslocamento',
-                min:  round2(semOsMin),
-                from: prevLibStr,
-                to:   inicioIntervaloRaw || undefined,
-              });
+              // interceptsDispatch: despachada falls inside the interval → semOsMin is already the
+              // exact pre-interval travel time (minutesBetween(inicioIntervalo, prevLiberada)).
+              const isInterceptsDispatch = Boolean(
+                fimIntervaloDate && despachadaDate.getTime() < fimIntervaloDate.getTime(),
+              );
+              if (isInterceptsDispatch) {
+                semOsDetails.push({
+                  type: 'intervalo_deslocamento',
+                  min:  round2(semOsMin),
+                  from: prevLibStr,
+                  to:   inicioIntervaloRaw || undefined,
+                });
+              } else {
+                // insideTolerance: the interval fits entirely between prevLiberada and despachada.
+                // Split into: pre-interval travel (prevLiberada → inicioIntervalo) and
+                //             post-interval wait  (fimIntervalo → despachada).
+                const deslocIntervalMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate!));
+                if (deslocIntervalMin >= SEM_OS_THRESHOLD_MIN) {
+                  semOsDetails.push({
+                    type: 'intervalo_deslocamento',
+                    min:  deslocIntervalMin,
+                    from: prevLibStr,
+                    to:   inicioIntervaloRaw || undefined,
+                  });
+                }
+                if (fimIntervaloDate) {
+                  const postIntervalMin = round2(minutesBetween(despachadaDate, fimIntervaloDate));
+                  if (postIntervalMin >= SEM_OS_THRESHOLD_MIN) {
+                    semOsDetails.push({
+                      type: 'entre_ordens',
+                      min:  postIntervalMin,
+                      from: fimIntervaloRaw || undefined,
+                      to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+                      global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
+                      above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((postIntervalMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
+                    });
+                  }
+                }
+              }
             } else {
               semOsDetails.push({
                 type: 'entre_ordens',
@@ -449,10 +487,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             }
           }
         }
-        // Only add intervalo_deslocamento when the interval was NOT already absorbed into the entre_ordens
-        // discount (semOsIntervalApplied[i] === true). When interceptsDispatch or insideTolerance fires,
-        // calculateSemOsValue returns minutesBetween(inicioIntervalo, prevLiberada), which is the exact same
-        // window that intervalo_deslocamento would report — causing two sub-flags to point to the same time.
+        // Only add intervalo_deslocamento when the interval was NOT already handled above
+        // (semOsIntervalApplied[i] === true covers both interceptsDispatch and insideTolerance).
         if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate && !semOsIntervalApplied[i]) {
           const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
           if (intMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
