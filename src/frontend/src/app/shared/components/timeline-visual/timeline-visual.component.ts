@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 interface TimelineSegment {
   label: string;
   durationMin: number;
-  barText?: string;
+  overrideDuration?: string;
   isInterval?: boolean;
   startTime?: string;
   endTime?: string;
@@ -34,10 +34,9 @@ interface TimelineSegment {
           <!-- Conteúdo da barra (label - minutos) -->
           <div class="segment-bar-content">
             <span *ngIf="seg.isInterval" class="interval-icon">⏸</span>
-            <span *ngIf="seg.barText !== undefined">{{ seg.barText }}</span>
-            <span *ngIf="seg.barText === undefined" class="seg-two-line">
+            <span class="seg-two-line">
               <span class="seg-name">{{ seg.label }}</span>
-              <span class="seg-dur">{{ seg.durationMin }}min</span>
+              <span class="seg-dur">{{ seg.overrideDuration ?? (seg.durationMin + 'min') }}</span>
             </span>
             <span *ngIf="seg.flags && seg.flags.length > 0" class="flag-indicator" [title]="seg.flags.join(', ')">⚠</span>
           </div>
@@ -250,7 +249,7 @@ export class TimelineVisualComponent implements OnInit {
   }
 
   isLoginAlarmSegment(seg: TimelineSegment): boolean {
-    return seg.label === 'LogIn' && (seg.flags?.length ?? 0) > 0;
+    return seg.label === 'Log In' && (seg.flags?.length ?? 0) > 0;
   }
 
   private buildTimeline() {
@@ -337,8 +336,8 @@ export class TimelineVisualComponent implements OnInit {
             label = 'INTERVALO';
         } else {
             // Lógica customizada de negócio (Sem Ordem e suas subflags)
-            if (p1.key === 'inicio_calendario' && p2.key === 'log_in') label = 'LogIn';
-            else if (p1.key === 'log_in' && p2.key === 'inicio_calendario') label = 'LogIn';
+            if (p1.key === 'inicio_calendario' && p2.key === 'log_in') label = 'Log In';
+            else if (p1.key === 'log_in' && p2.key === 'inicio_calendario') label = 'Log In';
             else if (p1.key === 'inicio_calendario' && p2.key === 'despachada') label = '1º Despacho';
             else if (p1.key === 'log_in' && p2.key === 'despachada') label = '1º Despacho';
             else if (p1.key === 'prev_liberada' && p2.key === 'despachada') label = 'Entre OS';
@@ -358,7 +357,7 @@ export class TimelineVisualComponent implements OnInit {
 
         // Sincronizar com valores calculados (regras de negócio)
         const flags: string[] = [];
-        let barText: string | undefined;
+        let overrideDuration: string | undefined;
         
         if (label === 'Reparo' && this.ev.tr_ordem_min !== undefined) {
             durationMin = Math.max(this.ev.tr_ordem_min, 1);
@@ -409,12 +408,12 @@ export class TimelineVisualComponent implements OnInit {
                 }
               }
             }
-        } else if (label === 'LogIn') {
+        } else if (label === 'Log In') {
             const icalTs = this.parseDt(this.ev.inicio_calendario ?? '');
             const linTs = this.parseDt(this.ev.log_in || this.ev.log_in_corrigido || '');
             if (icalTs > 0 && linTs > 0) {
               const diff = Math.round((icalTs - linTs) / 60000);
-              barText = `Log In: ${diff}min`;
+              overrideDuration = `${diff}min`;
               if (diff < -8) flags.push('login_atrasado');
             }
         }
@@ -422,7 +421,7 @@ export class TimelineVisualComponent implements OnInit {
         rawSegments.push({
             label,
             durationMin,
-            barText,
+            overrideDuration,
             isInterval,
             startTime: this.extractTime(p1.raw),
             endTime: this.extractTime(p2.raw),

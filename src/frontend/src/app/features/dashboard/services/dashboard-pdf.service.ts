@@ -55,7 +55,7 @@ export interface SemOsDetail {
 interface TlSegment {
   label: string;
   durationMin: number;
-  barText?: string;
+  overrideDuration?: string;
   isInterval: boolean;
   startTime: string;
   endTime: string;
@@ -137,8 +137,8 @@ export class DashboardPdfService {
     };
 
     const labelMap: Record<string, string> = {
-      'inicio_calendario_log_in': 'LogIn',
-      'log_in_inicio_calendario': 'LogIn',
+      'inicio_calendario_log_in': 'Log In',
+      'log_in_inicio_calendario': 'Log In',
       'inicio_calendario_despachada': '1º Despacho',
       'log_in_despachada': '1º Despacho',
       'prev_liberada_despachada': 'Entre OS',
@@ -162,7 +162,7 @@ export class DashboardPdfService {
       const interval = isInInterval(p1.ts + (p2.ts - p1.ts) / 2);
       const label = interval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
       const flags: string[] = [];
-      let barText: string | undefined;
+      let overrideDuration: string | undefined;
 
       if (label === 'Reparo' && ev.tr_ordem_min !== undefined) {
         dur = Math.max(ev.tr_ordem_min, 1);
@@ -185,16 +185,16 @@ export class DashboardPdfService {
           if (detType[label] === 'fim_jornada') flags.push('acima_media');
           else { const g: number | undefined = md.global_avg_min; if (g !== undefined && g > 0 && dur > g) flags.push('acima_media'); }
         }
-      } else if (label === 'LogIn') {
+      } else if (label === 'Log In') {
         const icalPt = uniquePts.find(p => p.key === 'inicio_calendario');
         const linPt = uniquePts.find(p => p.key === 'log_in');
         if (icalPt && linPt) {
           const diff = Math.round((icalPt.ts - linPt.ts) / 60000);
-          barText = `Log In: ${diff}min`;
+          overrideDuration = `${diff}min`;
           if (diff < -8) flags.push('login_atrasado');
         }
       }
-      rawSegs.push({ label, durationMin: dur, barText, isInterval: interval, startTime: extractTime(p1.raw), endTime: extractTime(p2.raw), startLabel: p1.label, endLabel: p2.label, flags });
+      rawSegs.push({ label, durationMin: dur, overrideDuration, isInterval: interval, startTime: extractTime(p1.raw), endTime: extractTime(p2.raw), startLabel: p1.label, endLabel: p2.label, flags });
     }
 
     const filtered = hidePartida ? rawSegs.filter((s) => s.label !== 'Partida') : rawSegs;
@@ -217,7 +217,7 @@ export class DashboardPdfService {
     if (!segs.length) return null;
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
-    const isRepairAlarm = (s: TlSegment): boolean => (s.label === 'Reparo' || s.label === 'LogIn') && (s.flags?.length ?? 0) > 0;
+    const isRepairAlarm = (s: TlSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
     const getFill = (s: TlSegment): string =>
       s.isInterval ? '#fde68a' : isRepairAlarm(s) ? '#fca5a5' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TlSegment): string =>
@@ -231,7 +231,7 @@ export class DashboardPdfService {
     const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
 
     // 2. Mínimo para caber o texto em uma linha.
-    const minWidths = segs.map(s => Math.ceil((s.barText ?? s.label).length * CHAR_W + 4));
+    const minWidths = segs.map(s => Math.ceil(Math.max(s.label.length, (s.overrideDuration ?? `${s.durationMin}min`).length) * CHAR_W + 4));
 
     // 3. Aplica mínimos (boost segmentos estreitos demais).
     let widths = segs.map((_, i) => Math.max(minWidths[i], Math.round(rawWidths[i])));
@@ -248,12 +248,10 @@ export class DashboardPdfService {
     }
 
     const barRow = segs.map((s) => ({
-      stack: s.barText !== undefined
-        ? [{ text: s.barText, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const }]
-        : [
-            { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
-            { text: `${s.durationMin}min`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
-          ],
+      stack: [
+          { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
+          { text: s.overrideDuration ?? `${s.durationMin}min`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
+        ],
       fillColor: getFill(s),
     }));
 
