@@ -440,18 +440,21 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 fimIntervaloDate && despachadaDate.getTime() < fimIntervaloDate.getTime(),
               );
               if (isInterceptsDispatch) {
-                semOsDetails.push({
-                  type: 'intervalo_deslocamento',
-                  min:  round2(semOsMin),
-                  from: prevLibStr,
-                  to:   inicioIntervaloRaw || undefined,
-                });
+                const interceptMin = round2(semOsMin);
+                if (interceptMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+                  semOsDetails.push({
+                    type: 'intervalo_deslocamento',
+                    min:  interceptMin,
+                    from: prevLibStr,
+                    to:   inicioIntervaloRaw || undefined,
+                  });
+                }
               } else {
                 // insideTolerance: the interval fits entirely between prevLiberada and despachada.
                 // Split into: pre-interval travel (prevLiberada → inicioIntervalo) and
                 //             post-interval wait  (fimIntervalo → despachada).
                 const deslocIntervalMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate!));
-                if (deslocIntervalMin >= SEM_OS_THRESHOLD_MIN) {
+                if (deslocIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
                   semOsDetails.push({
                     type: 'intervalo_deslocamento',
                     min:  deslocIntervalMin,
@@ -461,7 +464,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 }
                 if (fimIntervaloDate) {
                   const postIntervalMin = round2(minutesBetween(despachadaDate, fimIntervaloDate));
-                  if (postIntervalMin >= SEM_OS_THRESHOLD_MIN) {
+                  if (postIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
                     semOsDetails.push({
                       type: 'entre_ordens',
                       min:  postIntervalMin,
