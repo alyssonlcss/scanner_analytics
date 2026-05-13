@@ -1,5 +1,5 @@
 ﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
-// Software proprietÃ¡rio e confidencial. Uso nÃ£o autorizado Ã© proibido.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import { Injectable } from '@angular/core';
 import type { GeneratedReport, ReportKpiInsight } from '../../../core/api/scanner-api.service';
 import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../../shared/utils/timeline-segment.utils';
@@ -57,7 +57,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1Âº Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
+    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
   ]);
 
   private buildTimelinePdfBlock(ev: any, hidePartida = false): any | null {
@@ -71,17 +71,17 @@ export class DashboardPdfService {
     const getTxtColor = (s: TimelineSegment): string =>
       s.isInterval ? '#78350f' : (isRepairAlarm(s) || IDLE.has(s.label)) ? '#7f1d1d' : '#1e3a8a';
 
-    // 1. Larguras proporcionais puras (mesma lÃ³gica do flex-grow da web).
+    // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt
     const TOTAL_W = 500;
     const grows = segs.map(s => tlFlexGrow(s.durationMin));
     const totalGrow = grows.reduce((a, b) => a + b, 0);
     const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
 
-    // 2. MÃ­nimo para caber o texto em uma linha.
+    // 2. Mínimo para caber o texto em uma linha.
     const minWidths = segs.map(s => Math.ceil(Math.max(s.label.length, (s.overrideDuration ?? `${s.durationMin}min`).length) * CHAR_W + 4));
 
-    // 3. Aplica mÃ­nimos (boost segmentos estreitos demais).
+    // 3. Aplica mínimos (boost segmentos estreitos demais).
     let widths = segs.map((_, i) => Math.max(minWidths[i], Math.round(rawWidths[i])));
 
     // 4. Se os boosts causaram estouro, reduz proporcionalmente os segmentos com folga.
@@ -147,7 +147,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Filtra o relatÃ³rio por prefixo de equipe (para gerar PDFs segmentados por base).
+   * Filtra o relatório por prefixo de equipe (para gerar PDFs segmentados por base).
    */
   filterReportByTeamPrefix(report: GeneratedReport, prefix: string): GeneratedReport {
     const matches = (team: string): boolean => team.toUpperCase().startsWith(prefix);
@@ -175,7 +175,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Renderiza um emoji como Data URL PNG (compatÃ­vel com pdfmake).
+   * Renderiza um emoji como Data URL PNG (compatível com pdfmake).
    */
   renderEmojiDataUrl(emoji: string, pxSize: number): string {
     try {
@@ -197,7 +197,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Renderiza um sÃ­mbolo Unicode (nÃ£o-emoji) colorido como PNG para pdfmake.
+   * Renderiza um símbolo Unicode (não-emoji) colorido como PNG para pdfmake.
    */
   renderSymbolDataUrl(symbol: string, pxSize: number, color: string): string {
     try {
@@ -220,7 +220,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * Remove / substitui emojis que o Roboto nÃ£o consegue renderizar no pdfmake.
+   * Remove / substitui emojis que o Roboto não consegue renderizar no pdfmake.
    */
   stripEmojiForPdf(text: string): string {
     return text
@@ -244,7 +244,7 @@ export class DashboardPdfService {
   }
 
   /**
-   * ConstrÃ³i a definiÃ§Ã£o completa do documento PDF para pdfmake.
+   * Constrói a definição completa do documento PDF para pdfmake.
    */
   buildPdfDocDef(section: PdfSection, helpers: PdfHelpers): any {
     const { report, title, subtitle, dateRangeLabel } = section;
@@ -267,7 +267,7 @@ export class DashboardPdfService {
       kpi.direction === 'higher-is-better' ? value >= kpi.metaTarget : value <= kpi.metaTarget;
 
     const fmt = (v: number | undefined | null, dec = 1): string =>
-      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : 'â€”';
+      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : '–';
 
     const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
     const es = report.executiveSummary;
@@ -284,12 +284,12 @@ export class DashboardPdfService {
 
     // Cover
     const cover: any[] = [
-      { text: 'RelatÃ³rio AnalÃ­tico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
+      { text: 'Relatório Analítico de Campo', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
       { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
       subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
       { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 2] },
-      dateRangeLabel ? { text: `PerÃ­odo de referÃªncia: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
-      { text: 'Autor: Alysson Pinheiro â€” Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
+      dateRangeLabel ? { text: `Período de referência: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
+      { text: 'Autor: Alysson Pinheiro – Analista de Dados', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
     ];
 
     const content: any[] = [...cover.filter(Boolean)];
@@ -303,7 +303,7 @@ export class DashboardPdfService {
             { stack: [{ text: `${es.totalTeams}`, fontSize: 20, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, color: MUTED }], alignment: 'center' as const },
             es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 20, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, color: MUTED }], alignment: 'center' as const } : {},
             { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 20, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, color: MUTED }], alignment: 'center' as const },
-            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes crÃ­ticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
           ],
           columnGap: 12,
           margin: [0, 0, 0, 8],
@@ -335,7 +335,7 @@ export class DashboardPdfService {
       }
       if (es.topActionIssues.length > 0) {
         const shortLabel = (s: string): string => s.split(':')[0].trim();
-        content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' Â· ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
+        content.push({ text: `Recorrentes: ${es.topActionIssues.map(shortLabel).join(' · ')}`, fontSize: 7.5, color: GRAY, margin: [0, 8, 0, 0] });
       }
       const alertBadges: string[] = [];
       if (es.retornoBaseAlertCount > 0) alertBadges.push(`âš  ${es.retornoBaseAlertCount} equipe(s) com Retorno a Base acima da meta`);
@@ -348,13 +348,13 @@ export class DashboardPdfService {
 
     // KPI sections
     report.kpis.filter((kpi) => kpi.topTeams.length > 0 || kpi.opportunityTeams.length > 0).forEach((kpi) => {
-      const dec = ['OS Dia', 'EficiÃªncia', 'UtilizaÃ§Ã£o'].includes(kpi.kpi) ? 1 : 0;
+      const dec = ['OS Dia', 'Eficiência', 'Utilização'].includes(kpi.kpi) ? 1 : 0;
       const dirUp = kpi.direction === 'higher-is-better';
-      const suffix = kpi.kpi === 'EficiÃªncia' || kpi.kpi === 'UtilizaÃ§Ã£o' ? '%' : '';
+      const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
 
       const allTeams: Array<{ team: string; value: number; group: string }> = [
         ...kpi.topTeams.map((t) => ({ ...t, group: 'top' })),
-        { team: 'MÃ©dia geral', value: kpi.average, group: 'avg' },
+        { team: 'Média geral', value: kpi.average, group: 'avg' },
         ...kpi.opportunityTeams.map((t) => ({ ...t, group: 'opp' })),
       ];
 
@@ -432,28 +432,28 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('OS/Dia'), th('Ordens'), th('Jornadas'), th('Dias ociosos'), th('Ocioso mÃ©d.'), th('Temp. Prep.')],
+              [th('Equipe'), th('OS/Dia'), th('Ordens'), th('Jornadas'), th('Dias ociosos'), th('Ocioso méd.'), th('Temp. Prep.')],
               ...report.specialAnalysis.osDiaAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(fmt(a.osDiaValue), { color: isAbove(kpi, a.osDiaValue) ? BLUE : RED, bold: true }),
                 td(`${a.totalOrders}`),
                 td(`${a.totalJornadas}`),
                 td(`${a.idleDays}`),
-                td(a.idleDays > 0 ? `${Math.round(a.idleAvgMin)} min` : 'â€”'),
-                td(a.tempPrepTotalMin > 0 ? `${Math.round(a.tempPrepTotalMin)} min` : 'â€”'),
+                td(a.idleDays > 0 ? `${Math.round(a.idleAvgMin)} min` : '–'),
+                td(a.tempPrepTotalMin > 0 ? `${Math.round(a.tempPrepTotalMin)} min` : '–'),
               ]),
             ],
           },
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === 'UtilizaÃ§Ã£o' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+      } else if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('UtilizaÃ§Ã£o'), th('Ordens'), th('Jornadas'), th('Abaixo meta'), th('Temp. Prep.'), th('Sem OS')],
+              [th('Equipe'), th('Utilização'), th('Ordens'), th('Jornadas'), th('Abaixo meta'), th('Temp. Prep.'), th('Sem OS')],
               ...report.specialAnalysis.utilizacaoAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.utilizacaoValue, 0)}%`, { color: isAbove(kpi, a.utilizacaoValue) ? BLUE : RED, bold: true }),
@@ -474,7 +474,7 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('TME IMP'), th('MÃ©dia TME'), th('MÃ©dia global'), th('Ordens'), th('TME muito alto')],
+              [th('Equipe'), th('TME IMP'), th('Média TME'), th('Média global'), th('Ordens'), th('TME muito alto')],
               ...report.specialAnalysis.tmeImpAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.tmeImpValue, 0)} min`, { color: isAbove(kpi, a.tmeImpValue) ? BLUE : RED, bold: true }),
@@ -488,13 +488,13 @@ export class DashboardPdfService {
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === '1Âº Login' && report.specialAnalysis.primeiroLoginAnalysis?.length) {
+      } else if (kpi.kpi === '1º Login' && report.specialAnalysis.primeiroLoginAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('1Âº Login'), th('MÃ©dia login'), th('Dias totais'), th('Acima meta'), th('Login tardio')],
+              [th('Equipe'), th('1º Login'), th('Média login'), th('Dias totais'), th('Acima meta'), th('Login tardio')],
               ...report.specialAnalysis.primeiroLoginAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.primeiroLoginValue, 0)} min`, { color: isAbove(kpi, a.primeiroLoginValue) ? BLUE : RED, bold: true }),
@@ -508,13 +508,13 @@ export class DashboardPdfService {
           layout: 'lightHorizontalLines',
           margin: [0, 10, 0, 0],
         };
-      } else if (kpi.kpi === '1Âº Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis?.length) {
+      } else if (kpi.kpi === '1º Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis?.length) {
         analysisTable = {
           table: {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('1Âº Desloc.'), th('MÃ©dia desloc.'), th('Dias totais'), th('Acima meta'), th('Desloc. lento')],
+              [th('Equipe'), th('1º Desloc.'), th('Média desloc.'), th('Dias totais'), th('Acima meta'), th('Desloc. lento')],
               ...report.specialAnalysis.primeiroDeslocAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.primeiroDeslocValue, 0)} min`, { color: isAbove(kpi, a.primeiroDeslocValue) ? BLUE : RED, bold: true }),
@@ -534,7 +534,7 @@ export class DashboardPdfService {
             headerRows: 1,
             widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              [th('Equipe'), th('Retorno Base'), th('MÃ©dia retorno'), th('Dias totais'), th('Acima meta'), th('Retorno alto')],
+              [th('Equipe'), th('Retorno Base'), th('Média retorno'), th('Dias totais'), th('Acima meta'), th('Retorno alto')],
               ...report.specialAnalysis.retornoBaseAnalysis.map((a) => [
                 td(a.team, { bold: true, alignment: 'left' as const }),
                 td(`${fmt(a.retornoBaseValue, 0)} min`, { color: isAbove(kpi, a.retornoBaseValue) ? BLUE : RED, bold: true }),
@@ -663,7 +663,7 @@ export class DashboardPdfService {
       // OS Dia drill-down
       if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis?.length) {
         const osDiaList = report.specialAnalysis.osDiaAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        const osDiaDrillHead = osDiaList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” OS Dia') : null;
+        const osDiaDrillHead = osDiaList.length > 0 ? drillHead('Análise Detalhada – OS Dia') : null;
         osDiaList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `OS/Dia ${fmt(analysis.osDiaValue)}`,
@@ -684,11 +684,11 @@ export class DashboardPdfService {
               teamItems.push({ text: `! ${idleText1}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
             }
             teamItems.push(chipRow([
-              `HD MÃ©dio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `Temp. Partida MÃ©dio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
-              `SemOrdem MÃ©dio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
-              `Ocioso MÃ©dio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) â€” limite: 10%`,
-              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras MÃ©d/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) – limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
             ]));
           }
           if (analysis.flaggedOrders?.length > 0) {
@@ -730,26 +730,26 @@ export class DashboardPdfService {
         });
       }
 
-      // EficiÃªncia drill-down
-      if (kpi.kpi === 'EficiÃªncia' && kpi.evidenceAnalysis?.length) {
+      // Eficiência drill-down
+      if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis?.length) {
         const efList = kpi.evidenceAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || (a.summary?.countTempoPadraoVazio ?? 0) > 0);
-        const efDrillHead = efList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” EficiÃªncia (Top 3 e 3 Abaixo do PadrÃ£o)') : null;
+        const efDrillHead = efList.length > 0 ? drillHead('Análise Detalhada – Eficiência (Top 3 e 3 Abaixo do Padrão)') : null;
         efList.forEach((analysis: any, analysisIdx: number) => {
           const isTop = analysis.analysisType === 'top_performer';
           const teamBarColor = isTop ? BLUE : RED;
           const chips: string[] = [
-            `MÃ©dia ${analysis.averageEficiencia}%`,
-            `TL MÃ©dio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
-            `TR MÃ©dio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
+            `Média ${analysis.averageEficiencia}%`,
+            `TL Médio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
+            `TR Médio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
           ];
-          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. PadrÃ£o MÃ©dio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
+          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. Padrão Médio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
           if (analysis.summary?.countDeslocamentoCurto > 0) chips.push(`TL Curto: ${analysis.summary.countDeslocamentoCurto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.flags?.length > 0) {
             teamItems.push(chipRow([
               `TL Global: ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min`,
               `TR Global: ${analysis.globalAvgExecucaoMin?.toFixed(1)} min`,
-              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min â€” 25% global)`] : []),
+              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min – 25% global)`] : []),
             ]));
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
@@ -765,14 +765,14 @@ export class DashboardPdfService {
             if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${helpers.eficienciaAlertBody('tr_muito_baixo', ev)}`));
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${helpers.eficienciaAlertBody('deslocamento_curto', ev)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.eficienciaAlertBody('tr_excede_hd', ev)}`));
-            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo PadrÃ£o ausente: ${helpers.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
+            if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${helpers.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.eficienciaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           if (analysis.summary?.countTempoPadraoVazio > 0) {
-            teamItems.push({ text: `Equipe penalizada por ausÃªncia de Tempo PadrÃ£o: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrÃ£o.${analysis.simulatedEficiencia != null ? ` SimulaÃ§Ã£o com TR mÃ©dio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
+            teamItems.push({ text: `Equipe penalizada por ausência de Tempo Padrão: ${analysis.summary.countTempoPadraoVazio} ordem(ns) sem tempo padrão.${analysis.simulatedEficiencia != null ? ` Simulação com TR médio global: ${analysis.simulatedEficiencia?.toFixed(1)}% vs. atual ${analysis.eficienciaValue}%.` : ''}`, fontSize: 7, color: RED, margin: [0, 3, 0, 2] });
           }
           const efHdr = cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop);
           const efBlock = indentBlock(teamItems, teamBarColor, 8);
@@ -784,13 +784,13 @@ export class DashboardPdfService {
         });
       }
 
-      // UtilizaÃ§Ã£o drill-down
-      if (kpi.kpi === 'UtilizaÃ§Ã£o' && report.specialAnalysis.utilizacaoAnalysis?.length) {
+      // Utilização drill-down
+      if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis?.length) {
         const utilList = report.specialAnalysis.utilizacaoAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0 || !!a.idleAnalysis);
-        const utilDrillHead = utilList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” UtilizaÃ§Ã£o (3 Abaixo do PadrÃ£o)') : null;
+        const utilDrillHead = utilList.length > 0 ? drillHead('Análise Detalhada – Utilização (3 Abaixo do Padrão)') : null;
         utilList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `UtilizaÃ§Ã£o: ${analysis.utilizacaoValue}%`,
+            `Utilização: ${analysis.utilizacaoValue}%`,
             `Meta: ${analysis.metaTarget}%`,
             `Total OS: ${analysis.totalOrders} em ${analysis.totalJornadas} dias`,
           ];
@@ -808,11 +808,11 @@ export class DashboardPdfService {
               teamItems.push({ text: `! ${idleText2}`, fontSize: 7.5, bold: true, color: RED, margin: [0, 2, 0, 2] });
             }
             teamItems.push(chipRow([
-              `HD MÃ©dio/dia: ${Math.round(analysis.hdTotalMin)} min`,
-              `Temp. Partida MÃ©dio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
-              `SemOrdem MÃ©dio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
-              `Ocioso MÃ©dio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) â€” limite: 10%`,
-              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras MÃ©d/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
+              `HD Médio/dia: ${Math.round(analysis.hdTotalMin)} min`,
+              `Temp. Partida Médio/dia: ${Math.round(analysis.tempPrepTotalMin)} min`,
+              `SemOrdem Médio/dia: ${Math.round(analysis.semOrdemTotalMin)} min`,
+              `Ocioso Médio/dia: ${Math.round(analysis.idleAnalysis.idleMin)} min (${analysis.idleAnalysis.idlePct?.toFixed(1)}%) – limite: 10%`,
+              ...(analysis.idleAnalysis.horasExtras > 0 ? [`Horas Extras Méd/dia: ${Math.round(analysis.idleAnalysis.horasExtras)} min`] : []),
             ]));
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
@@ -853,13 +853,13 @@ export class DashboardPdfService {
       // TME IMP drill-down
       if (kpi.kpi === 'TME IMP' && kpi.tmeImpAnalysis?.length) {
         const tmeList = kpi.tmeImpAnalysis.filter((a: any) => (a.flaggedOrders?.length ?? 0) > 0);
-        const tmeDrillHead = tmeList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” TME IMP (Ordens com TME Elevado)') : null;
+        const tmeDrillHead = tmeList.length > 0 ? drillHead('Análise Detalhada – TME IMP (Ordens com TME Elevado)') : null;
         tmeList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `MÃ©dia equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
-            `MÃ©dia global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
             `Total OS: ${analysis.totalOrders}`,
           ];
           if (analysis.summary?.countTmeMuitoAlto > 0) chips.push(`TME\u22651.5\u00d7avg: ${analysis.summary.countTmeMuitoAlto}`);
@@ -893,16 +893,16 @@ export class DashboardPdfService {
         });
       }
 
-      // 1Âº Login drill-down
-      if (kpi.kpi === '1Âº Login' && kpi.primeiroLoginAnalysis?.length) {
+      // 1º Login drill-down
+      if (kpi.kpi === '1º Login' && kpi.primeiroLoginAnalysis?.length) {
         const loginList = kpi.primeiroLoginAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const loginDrillHead = loginList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” 1Âº Login (Dias Acima da Meta)') : null;
+        const loginDrillHead = loginList.length > 0 ? drillHead('Análise Detalhada – 1º Login (Dias Acima da Meta)') : null;
         loginList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `MÃ©dia equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
-            `MÃ©dia global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
             `Dias com atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countLoginMuitoTardio > 0) chips.push(`Login>16min: ${analysis.summary.countLoginMuitoTardio}`);
@@ -939,16 +939,16 @@ export class DashboardPdfService {
         });
       }
 
-      // 1Âº Desloc. drill-down
-      if (kpi.kpi === '1Âº Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
+      // 1º Desloc. drill-down
+      if (kpi.kpi === '1º Desloc.' && kpi.primeiroDeslocAnalysis?.length) {
         const deslocList = kpi.primeiroDeslocAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const deslocDrillHead = deslocList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” 1Âº Desloc. (Dias Acima da Meta)') : null;
+        const deslocDrillHead = deslocList.length > 0 ? drillHead('Análise Detalhada – 1º Desloc. (Dias Acima da Meta)') : null;
         deslocList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `MÃ©dia equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
-            `MÃ©dia global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countDeslocMuitoLento > 0) chips.push(`Desloc.>37min: ${analysis.summary.countDeslocMuitoLento}`);
@@ -993,13 +993,13 @@ export class DashboardPdfService {
       // Retorno Base drill-down
       if (kpi.kpi === 'Retorno Base' && kpi.retornoBaseAnalysis?.length) {
         const retornoList = kpi.retornoBaseAnalysis.filter((a: any) => (a.flaggedDays?.length ?? 0) > 0);
-        const retornoDrillHead = retornoList.length > 0 ? drillHead('AnÃ¡lise Detalhada â€” Retorno Base (Dias Acima da Meta)') : null;
+        const retornoDrillHead = retornoList.length > 0 ? drillHead('Análise Detalhada – Retorno Base (Dias Acima da Meta)') : null;
         retornoList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
             `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `MÃ©dia equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
-            `MÃ©dia global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
+            `Média global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countRetornoMuitoAlto > 0) chips.push(`Retorno>60min: ${analysis.summary.countRetornoMuitoAlto}`);
@@ -1052,11 +1052,11 @@ export class DashboardPdfService {
               [th('Equipe'), th('Rank'), th('Dias'), th('OS/Dia\n4,4'), th('Efic.\n100%'), th('Util.\n85%'), th('TME\n20'), th('Login\n8'), th('Desloc\n25'), th('Ret.\n40'), th('Score')],
               ...report.teamScorecard.map((row) => [
                 td(row.team, { bold: true, alignment: 'left' as const, fillColor: row.kpisBelowMeta >= 4 ? '#fff1f2' : row.kpisBelowMeta === 3 ? '#fffbeb' : null }),
-                td(`${row.classificacao ?? 'â€”'}`, { color: GRAY }),
-                td(`${row.diasTrabalhados ?? 'â€”'}`, { color: GRAY }),
+                td(`${row.classificacao ?? '–'}`, { color: GRAY }),
+                td(`${row.diasTrabalhados ?? '–'}`, { color: GRAY }),
                 td(fmt(row.kpis.osDia), { color: row.kpiStatus.osDia === 'above' ? BLUE : row.kpiStatus.osDia === 'below' ? RED : DARK, bold: true }),
-                td(row.kpis.eficiencia != null ? `${fmt(row.kpis.eficiencia, 0)}%` : 'â€”', { color: row.kpiStatus.eficiencia === 'above' ? BLUE : row.kpiStatus.eficiencia === 'below' ? RED : DARK, bold: true }),
-                td(row.kpis.utilizacao != null ? `${fmt(row.kpis.utilizacao, 0)}%` : 'â€”', { color: row.kpiStatus.utilizacao === 'above' ? BLUE : row.kpiStatus.utilizacao === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.eficiencia != null ? `${fmt(row.kpis.eficiencia, 0)}%` : '–', { color: row.kpiStatus.eficiencia === 'above' ? BLUE : row.kpiStatus.eficiencia === 'below' ? RED : DARK, bold: true }),
+                td(row.kpis.utilizacao != null ? `${fmt(row.kpis.utilizacao, 0)}%` : '–', { color: row.kpiStatus.utilizacao === 'above' ? BLUE : row.kpiStatus.utilizacao === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.tmeImp, 0), { color: row.kpiStatus.tmeImp === 'above' ? BLUE : row.kpiStatus.tmeImp === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.primeiroLogin, 0), { color: row.kpiStatus.primeiroLogin === 'above' ? BLUE : row.kpiStatus.primeiroLogin === 'below' ? RED : DARK, bold: true }),
                 td(fmt(row.kpis.primeiroDesloc, 0), { color: row.kpiStatus.primeiroDesloc === 'above' ? BLUE : row.kpiStatus.primeiroDesloc === 'below' ? RED : DARK, bold: true }),
@@ -1074,7 +1074,7 @@ export class DashboardPdfService {
     if (report.deviations.mostRecurring.length > 0) {
       content.push(
         { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 14, 0, 0], pageBreak: 'after' },
-        { text: 'Desvios de PadrÃ£o Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8] },
+        { text: 'Desvios de Padrão Operacional', style: 'sectionHeader', margin: [0, 16, 0, 8] },
         {
           columns: [
             {
@@ -1101,7 +1101,7 @@ export class DashboardPdfService {
                     widths: ['auto', '*'],
                     body: report.deviations.teamBreakdown.map((t) => [
                       td(t.team, { bold: true, alignment: 'left' as const }),
-                      td(t.deviations.join(' Â· '), { color: GRAY }),
+                      td(t.deviations.join(' · '), { color: GRAY }),
                     ]),
                   },
                   layout: 'lightHorizontalLines',
