@@ -223,6 +223,11 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
               hd_total_min: round2(hdMin),
               hd_pct_tr: hdPctTr,
               tempo_padrao_min: tpMin !== null && Number.isFinite(tpMin) ? round2(tpMin) : undefined,
+              global_avg_tr_min: round2(globalAvgExecucao),
+              flag_temp_reparo_excedido: (
+                globalAvgExecucao > 0 && trMin !== null && Number.isFinite(trMin) && trMin > globalAvgExecucao &&
+                tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 && trMin > tpMin
+              ) ? true : undefined,
               flags: orderFlags,
             });
           }
@@ -245,6 +250,7 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
               hd_total_min: round2(hdMin),
               hd_pct_tr: hdPctTr,
               tempo_padrao_min: undefined,
+              global_avg_tr_min: round2(globalAvgExecucao),
               flags: ['tempo_padrao_vazio'],
             });
           }

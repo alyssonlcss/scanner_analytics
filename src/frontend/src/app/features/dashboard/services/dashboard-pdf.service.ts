@@ -161,7 +161,7 @@ export class DashboardPdfService {
 
       if (label === 'Reparo' && ev.tr_ordem_min !== undefined) {
         dur = Math.max(ev.tr_ordem_min, 1);
-        if (ev.flag_temp_reparo_excedido) flags.push('Temp. Reparo > 20%HD');
+        if (ev.flag_temp_reparo_excedido) flags.push('TR > Média Global e M300');
       } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
         dur = Math.max(ev.tl_ordem_min, 1);
         if (ev.flag_temp_desloc_excedido) flags.push('Temp. Desloc. Excedido');
@@ -204,10 +204,11 @@ export class DashboardPdfService {
     if (!segs.length) return null;
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
+    const isRepairAlarm = (s: TlSegment): boolean => s.label === 'Reparo' && (s.flags?.length ?? 0) > 0;
     const getFill = (s: TlSegment): string =>
-      s.isInterval ? '#fde68a' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
+      s.isInterval ? '#fde68a' : isRepairAlarm(s) ? '#fca5a5' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TlSegment): string =>
-      s.isInterval ? '#78350f' : IDLE.has(s.label) ? '#7f1d1d' : '#1e3a8a';
+      s.isInterval ? '#78350f' : (isRepairAlarm(s) || IDLE.has(s.label)) ? '#7f1d1d' : '#1e3a8a';
 
     const totalGrow = segs.reduce((sum, s) => sum + this.tlFlexGrow(s.durationMin), 0);
     const TOTAL_W = 500;
@@ -700,12 +701,13 @@ export class DashboardPdfService {
         margin: [0, 1, 0, 1],
       });
 
-      const orderHead = (nr_ordem: string, flags: string[], labelFn: (f: string) => string, extra?: string): any => ({
+      const orderHead = (nr_ordem: string, flags: string[], labelFn: (f: string) => string, extra?: string, isPrimeiraOs?: boolean): any => ({
         text: [
           { text: `OS ${nr_ordem}${extra ? ' | ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
           { text: '    ', fontSize: 7 },
+          ...(isPrimeiraOs ? [{ text: '1ª OS', bold: true, color: BLUE, fontSize: 6.5 }] : []),
           ...flags.flatMap((f, i) => [
-            ...(i > 0 ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
+            ...(i > 0 || isPrimeiraOs ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
             { text: labelFn(f), bold: true, color: RED, fontSize: 6.5 },
           ]),
         ],
@@ -830,7 +832,7 @@ export class DashboardPdfService {
                   orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
                 });
               }
-              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined)];
+              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
               teamItems.push({ stack: orderBlock, unbreakable: true });
               if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
@@ -883,7 +885,7 @@ export class DashboardPdfService {
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${helpers.eficienciaAlertBody('deslocamento_curto', ev)}`));
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.eficienciaAlertBody('tr_excede_hd', ev)}`));
             if (ev.flags?.includes('tempo_padrao_vazio')) orderItems.push(alertItem(`Tempo Padrão ausente: ${helpers.eficienciaAlertBody('tempo_padrao_vazio', ev)}`));
-            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.eficienciaFlagLabel(f), ev.date_ref || undefined)];
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.eficienciaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
@@ -951,7 +953,7 @@ export class DashboardPdfService {
                 orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
-            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined)];
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());

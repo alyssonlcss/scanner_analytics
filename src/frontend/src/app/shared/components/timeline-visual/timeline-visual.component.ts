@@ -26,6 +26,7 @@ interface TimelineSegment {
           [class.segment-interval]="seg.isInterval"
           [class.segment-idle]="!seg.isInterval && isIdleSegment(seg)"
           [class.segment-idle--high]="!seg.isInterval && isIdleHighSegment(seg)"
+          [class.segment-repair-alarm]="!seg.isInterval && isRepairAlarmSegment(seg)"
           [style.flex-grow]="getFlexGrow(seg.durationMin)"
           [title]="seg.startTime + ' → ' + seg.endTime">
           
@@ -102,6 +103,11 @@ interface TimelineSegment {
       border-right-color: #fff !important;
     }
     .segment-idle--high {
+      background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%) !important;
+      color: #7f1d1d !important;
+      border-right-color: #fff !important;
+    }
+    .segment-repair-alarm {
       background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%) !important;
       color: #7f1d1d !important;
       border-right-color: #fff !important;
@@ -220,6 +226,10 @@ export class TimelineVisualComponent implements OnInit {
     return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && ((seg.flags?.length ?? 0) > 0);
   }
 
+  isRepairAlarmSegment(seg: TimelineSegment): boolean {
+    return seg.label === 'Reparo' && (seg.flags?.length ?? 0) > 0;
+  }
+
   private buildTimeline() {
     if (!this.ev) return;
 
@@ -327,7 +337,7 @@ export class TimelineVisualComponent implements OnInit {
         if (label === 'Reparo' && this.ev.tr_ordem_min !== undefined) {
             durationMin = Math.max(this.ev.tr_ordem_min, 1);
             if (this.ev.flag_temp_reparo_excedido) {
-              flags.push('Temp. Reparo > 20%HD');
+              flags.push('TR > Média Global e M300');
             }
         } else if (label === 'Deslocamento' && this.ev.tl_ordem_min !== undefined) {
             durationMin = Math.max(this.ev.tl_ordem_min, 1);

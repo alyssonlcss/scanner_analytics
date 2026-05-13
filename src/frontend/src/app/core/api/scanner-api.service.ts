@@ -97,6 +97,7 @@ export interface OsDiaOrderEvidence {
   hd_pct_tr: number;
   hd_pct_tl: number;
   global_avg_tl_min: number;
+  global_avg_tr_min: number;
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
@@ -119,6 +120,8 @@ export interface OsDiaOrderEvidence {
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
+  /** True when TR exceeds the global average repair time AND exceeds the M300 standard time. */
+  flag_temp_reparo_excedido?: boolean;
   /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
   entreOsAfterIntervalo?: { min: number; from: string; to: string };
 }
@@ -164,10 +167,13 @@ export interface EficienciaOrderEvidence {
   hd_total_min: number;
   hd_pct_tr: number;
   tempo_padrao_min?: number;
+  global_avg_tr_min?: number;
   prev_liberada?: string;
   flags: Array<'deslocamento_curto' | 'tr_excede_hd' | 'tempo_padrao_vazio' | 'tr_muito_baixo'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
+  /** True when TR exceeds the global average repair time AND exceeds the M300 standard time. */
+  flag_temp_reparo_excedido?: boolean;
 }
 
 export interface EficienciaTeamAnalysis {

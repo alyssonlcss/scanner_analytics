@@ -107,6 +107,20 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
     // Flag TL when it exceeds 25% above the global average (not % of HD)
     const TL_ABOVE_AVG_THRESHOLD = 1.25;
 
+    // Global avg TR across ALL rows (used as threshold for flag_temp_reparo_excedido)
+    let globalTrSum = 0;
+    let globalTrCount = 0;
+    if (trOrdemCol) {
+      for (const row of deslocRows) {
+        const v = parseNumber(String(row[trOrdemCol] ?? ''));
+        if (v !== null && Number.isFinite(v) && v > 0) {
+          globalTrSum += v;
+          globalTrCount++;
+        }
+      }
+    }
+    const globalAvgTrMin = globalTrCount > 0 ? round2(globalTrSum / globalTrCount) : 0;
+
     // Global avg of 1º Despacho (inicio_jornada) across all rows
     let globalIJSum = 0, globalIJCount = 0;
     if (firstDespachoCol) {
@@ -476,8 +490,14 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           hd_pct_tr:         hdPctTr,
           hd_pct_tl:         hdPctTl,
           global_avg_tl_min: globalAvgTlMin,
+          global_avg_tr_min: globalAvgTrMin,
           tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
           temp_prep_os_min:  Number.isFinite(tempPrepOs) ? round2(tempPrepOs) : undefined,
+          flag_temp_reparo_excedido: (
+            globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
+            tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+            trOrdemMin > tempoPadraoRaw
+          ) ? true : undefined,
           sem_os_details:    semOsDetails.length > 0 ? semOsDetails : undefined,
           sem_os_total_min:  semOsTotalMin,
           flags:             uniqueFlags,
@@ -550,7 +570,13 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             hd_pct_tr:         hdPctTr,
             hd_pct_tl:         hdPctTl,
             global_avg_tl_min: globalAvgTlMin,
+            global_avg_tr_min: globalAvgTrMin,
             tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
+            flag_temp_reparo_excedido: (
+              globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
+              tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+              trOrdemMin > tempoPadraoRaw
+            ) ? true : undefined,
             sem_os_details:    [fimDetail],
             sem_os_total_min:  round2(semOsFimJornadaMin),
             flags:             ['sem_os_alto'],
