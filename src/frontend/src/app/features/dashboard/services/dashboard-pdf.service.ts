@@ -222,9 +222,13 @@ export class DashboardPdfService {
     }));
 
     const LINE_H = 14;
-    const mkLineCol = () => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 0.8, lineColor: '#9ca3af' }], width: 1 });
+    const mkLineCol = () => ({ canvas: [{ type: 'line', x1: 1, y1: 0, x2: 1, y2: LINE_H, lineWidth: 0.8, lineColor: '#9ca3af' }], width: 2 });
     const mkLeftMarker = (label: string, time: string) => ({
       columns: [mkLineCol(), { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3 }],
+      columnGap: 1,
+    });
+    const mkRightMarker = (label: string, time: string) => ({
+      columns: [{ text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: 'right' as const }, mkLineCol()],
       columnGap: 1,
     });
 
@@ -234,14 +238,8 @@ export class DashboardPdfService {
         return {
           columns: [
             { ...mkLeftMarker(s.startLabel ?? '', s.startTime ?? ''), width: 'auto' },
-            {
-              columns: [
-                { text: `${s.endLabel ?? ''}\n${s.endTime ?? ''}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: 'right' as const, width: '*' },
-                mkLineCol(),
-              ],
-              columnGap: 0,
-              width: '*',
-            },
+            { width: '*', text: '' },
+            { ...mkRightMarker(s.endLabel ?? '', s.endTime ?? ''), width: 'auto' },
           ],
         };
       }
