@@ -148,6 +148,11 @@ interface TimelineSegment {
     }
     .end-marker {
       right: 0;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      padding-left: 0;
+      padding-right: 3px;
+      text-align: right;
     }
   `]
 })

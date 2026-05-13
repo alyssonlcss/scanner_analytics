@@ -222,13 +222,12 @@ export class DashboardPdfService {
     }));
 
     const LINE_H = 14;
-    const mkMarker = (label: string, time: string, align: 'left' | 'right' = 'left') => ({
-      columns: [
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 1.5, lineColor: '#9ca3af' }], width: 3 },
-        { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: align },
-      ],
-      columnGap: 2,
-    });
+    const mkMarker = (label: string, time: string, align: 'left' | 'right' = 'left') => {
+      const lineCol = { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0, y2: LINE_H, lineWidth: 0.8, lineColor: '#9ca3af' }], width: 1 };
+      const textCol = { text: `${label}\n${time}`, fontSize: 4.5, color: '#6b7280', lineHeight: 1.3, alignment: align };
+      const cols = align === 'right' ? [textCol, lineCol] : [lineCol, textCol];
+      return { columns: cols, columnGap: 0.5 };
+    };
 
     const timeRow = segs.map((s, i) => {
       const isLast = i === segs.length - 1;
