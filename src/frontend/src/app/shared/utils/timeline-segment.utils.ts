@@ -140,8 +140,9 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
         if (detType[label] === 'fim_jornada') {
           flags.push('acima_media');
         } else {
+          const SEM_OS_LIMIT = 10;
           const g: number | undefined = md.global_avg_min;
-          if (g !== undefined && g > 0 && durationMin > g) flags.push('acima_media');
+          if (g !== undefined && g > 0 && durationMin > g && durationMin > SEM_OS_LIMIT) flags.push('acima_media');
         }
       }
     } else if (label === 'Log In') {
