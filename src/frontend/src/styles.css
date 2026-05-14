@@ -24,6 +24,11 @@
   box-sizing: border-box;
 }
 
+.flag-min {
+  color: var(--error);
+  font-weight: 700;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

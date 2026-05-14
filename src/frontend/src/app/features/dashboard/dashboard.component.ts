@@ -8,6 +8,7 @@ import { forkJoin } from 'rxjs';
 import { type GeneratedReport, type ReportKpiInsight, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { DashboardPdfService } from './services/dashboard-pdf.service';
 import { DashboardChartService } from './services/dashboard-chart.service';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TocNavComponent } from '../../shared/toc/toc-nav.component';
 import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
@@ -543,13 +544,13 @@ type SavedFilterState = {
                                   <strong>Tempo de Deslocamento alto:</strong> {{ osDiaAlertBody('tl_excede_hd', ev) }}
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> {{ tempPrepAltoText(ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
-                                  <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
+                                  <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
-                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}) — {{ (((eo.min - 10) / 10) * 100).toFixed(0) }}% acima do limite (10 min).</li>
+                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
                               </ul>
@@ -630,16 +631,16 @@ type SavedFilterState = {
                               <app-timeline-visual [ev]="ev" [hidePartida]="true"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo muito baixo:</strong> {{ eficienciaAlertBody('tr_muito_baixo', ev) }}
+                                  <strong>Tempo de Reparo muito baixo:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('tr_muito_baixo', ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('deslocamento_curto')" class="osdia-ev-alert">
-                                  <strong>Deslocamento (TL) muito curto:</strong> {{ eficienciaAlertBody('deslocamento_curto', ev) }}
+                                  <strong>Deslocamento (TL) muito curto:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('deslocamento_curto', ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
-                                  <strong>Tempo de Reparo alto:</strong> {{ eficienciaAlertBody('tr_excede_hd', ev) }}
+                                  <strong>Tempo de Reparo alto:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('tr_excede_hd', ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('tempo_padrao_vazio')" class="osdia-ev-alert">
-                                  <strong>Tempo Padrão ausente:</strong> {{ eficienciaAlertBody('tempo_padrao_vazio', ev) }}
+                                  <strong>Tempo Padrão ausente:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('tempo_padrao_vazio', ev))"></span>
                                 </li>
                               </ul>
                             </div>
@@ -743,13 +744,13 @@ type SavedFilterState = {
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> {{ tempPrepAltoText(ev) }}
+                                  <strong>Tempo de Partida/OS elevado:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
-                                  <strong>Sem Ordem/OS:</strong> {{ osDiaAlertBody('sem_os_alto', ev) }}
+                                  <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> {{ semOsDetailBody(d) }}</li>
-                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> {{ eo.min }} min sem nova OS — Fim Intervalo ({{ eo.from }}) até Despachada ({{ eo.to }}) — {{ (((eo.min - 10) / 10) * 100).toFixed(0) }}% acima do limite (10 min).</li>
+                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
+                                    <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
                               </ul>
@@ -842,13 +843,13 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('tme_muito_alto')" class="osdia-ev-alert">
-                              <strong>TME IMP elevado:</strong> {{ tmeImpAlertBody('tme_muito_alto', ev) }}
+                              <strong>TME IMP elevado:</strong> <span [innerHTML]="highlightMin(tmeImpAlertBody('tme_muito_alto', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('sem_deslocamento')" class="osdia-ev-alert">
-                              <strong>Sem registro de deslocamento:</strong> {{ tmeImpAlertBody('sem_deslocamento', ev) }}
+                              <strong>Sem registro de deslocamento:</strong> <span [innerHTML]="highlightMin(tmeImpAlertBody('sem_deslocamento', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('sem_execucao')" class="osdia-ev-alert">
-                              <strong>Sem TR Ordem:</strong> {{ tmeImpAlertBody('sem_execucao', ev) }}
+                              <strong>Sem TR Ordem:</strong> <span [innerHTML]="highlightMin(tmeImpAlertBody('sem_execucao', ev))"></span>
                             </li>
                           </ul>
                         </div>
@@ -909,10 +910,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login muito tardio:</strong> {{ loginAlertBody('login_muito_tardio', ev) }}
+                              <strong>Login muito tardio:</strong> <span [innerHTML]="highlightMin(loginAlertBody('login_muito_tardio', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('login_tardio') && !ev.flags.includes('login_muito_tardio')" class="osdia-ev-alert">
-                              <strong>Login tardio:</strong> {{ loginAlertBody('login_tardio', ev) }}
+                              <strong>Login tardio:</strong> <span [innerHTML]="highlightMin(loginAlertBody('login_tardio', ev))"></span>
                             </li>
                           </ul>
                         </div>
@@ -969,16 +970,16 @@ type SavedFilterState = {
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
-                              <strong>Despacho tardio:</strong> {{ deslocAlertBody('despacho_tardio', ev) }}
+                              <strong>Despacho tardio:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('despacho_tardio', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Tempo de Partida:</strong> {{ deslocAlertBody('desloc_muito_lento', ev) }}
+                              <strong>Tempo de Partida:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_muito_lento', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento lento:</strong> {{ deslocAlertBody('desloc_lento', ev) }}
+                              <strong>Deslocamento lento:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_lento', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
-                              <strong>Sem deslocamento registrado:</strong> {{ deslocAlertBody('sem_desloc_registrado', ev) }}
+                              <strong>Sem deslocamento registrado:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('sem_desloc_registrado', ev))"></span>
                             </li>
                           </ul>
                         </div>
@@ -1039,10 +1040,10 @@ type SavedFilterState = {
                           </div>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno muito alto:</strong> {{ retornoAlertBody('retorno_muito_alto', ev) }}
+                              <strong>Retorno muito alto:</strong> <span [innerHTML]="highlightMin(retornoAlertBody('retorno_muito_alto', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
-                              <strong>Retorno acima da meta:</strong> {{ retornoAlertBody('retorno_alto', ev) }}
+                              <strong>Retorno acima da meta:</strong> <span [innerHTML]="highlightMin(retornoAlertBody('retorno_alto', ev))"></span>
                             </li>
                           </ul>
                         </div>
@@ -4582,6 +4583,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private readonly zone = inject(NgZone);
   private readonly pdfService = inject(DashboardPdfService);
     private readonly chartService = inject(DashboardChartService);
+  private readonly sanitizer = inject(DomSanitizer);
   protected readonly allOption = ALL_OPTION;
 
   @ViewChild('sliderFill')    private sliderFillRef?: ElementRef<HTMLDivElement>;
@@ -5354,19 +5356,34 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     switch (d.type) {
       case 'inicio_jornada':
         return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
-      case 'entre_ordens':
-        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      case 'entre_ordens': {
+        const mEO = Math.round(d.min);
+        return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(mEO)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      }
       case 'fim_jornada': {
         const rbDiscount = d.retorno_base_discounted ?? 0;
         const pctRb = rbDiscount > 0 ? Math.round((d.min / rbDiscount) * 100) : undefined;
         const rbPart = pctRb !== undefined ? ` — ${pctRb}% acima do retorno base` : '';
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}${rbPart}.`;
       }
-      case 'intervalo_deslocamento':
-        return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      case 'intervalo_deslocamento': {
+        const mID = Math.round(d.min);
+        return `Desl. Intervalo: ${mID} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(mID)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      }
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
     }
+  }
+
+  protected highlightMin(text: string): SafeHtml {
+    const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tagged = esc.replace(/(\d+(?:[.,]\d+)?) min\b/g, '<strong class="flag-min">$1 min</strong>');
+    return this.sanitizer.bypassSecurityTrustHtml(tagged);
+  }
+
+  protected formatEntreOsText(eo: { min: number; from?: string; to?: string }): string {
+    const m = Math.round(eo.min);
+    return `${m} min sem nova OS — Fim Intervalo (${eo.from ?? '—'}) até Despachada (${eo.to ?? '—'}) — ${Math.round(((m - 10) / 10) * 100)}% acima do limite (10 min).`;
   }
 
   protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {

@@ -24,8 +24,9 @@ export function semOsDetailText(d: {
         return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctIJ}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       case 'entre_ordens': {
-        const pctEO = Math.round((d.min - 10) / 10 * 100);
-        return `Entre OS: ${d.min} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctEO}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+        const mEO = Math.round(d.min);
+        const pctEO = Math.round((mEO - 10) / 10 * 100);
+        return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctEO}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       case 'fim_jornada': {
         const rbDiscount = d.retorno_base_discounted ?? 0;
@@ -34,8 +35,9 @@ export function semOsDetailText(d: {
         return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}${rbPart}.`;
       }
       case 'intervalo_deslocamento': {
-        const pctID = Math.round((d.min - 10) / 10 * 100);
-        return `Desl. Intervalo: ${d.min} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctID}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+        const mID = Math.round(d.min);
+        const pctID = Math.round((mID - 10) / 10 * 100);
+        return `Desl. Intervalo: ${mID} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctID}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;
@@ -71,7 +73,7 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
             break;
           }
           case 'sem_os_alto':
-            alertTexts[flag] = `${ev.sem_os_total_min} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
+            alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;
         }
       }

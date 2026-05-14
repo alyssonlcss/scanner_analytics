@@ -595,6 +595,13 @@ export class DashboardPdfService {
         margin: [0, 6, 0, 2],
       });
 
+      const minRuns = (text: string): any[] => {
+        const parts = text.split(/(\d+(?:[.,]\d+)? min\b)/);
+        return parts.flatMap((p, i) =>
+          p ? [i % 2 === 1 ? { text: p, bold: true, color: RED } : { text: p, color: DARK }] : []
+        );
+      };
+
       const alertItem = (text: string): any => {
         const cleaned = helpers.stripEmojiForPdf(text);
         const sep = cleaned.indexOf(': ');
@@ -603,7 +610,7 @@ export class DashboardPdfService {
         const warnUrl = helpers.renderSymbolDataUrl('\u26A0', 7, RED);
         const labelRuns: any[] = [
           { text: label + (body ? ': ' : ''), bold: true, color: RED },
-          ...(body ? [{ text: body, color: DARK }] : []),
+          ...(body ? minRuns(body) : []),
         ];
         if (warnUrl) {
           return {
@@ -710,7 +717,7 @@ export class DashboardPdfService {
                 ev.sem_os_details.forEach((d: any, di: number) => {
                   const semLabel = helpers.semOsDetailLabel(d);
                   const semBody = helpers.semOsDetailBody(d);
-                  orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
+                  orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
                 });
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
@@ -831,7 +838,7 @@ export class DashboardPdfService {
               ev.sem_os_details.forEach((d: any, di: number) => {
                 const semLabel = helpers.semOsDetailLabel(d);
                 const semBody = helpers.semOsDetailBody(d);
-                orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ' + semBody, color: DARK }] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
+                orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
