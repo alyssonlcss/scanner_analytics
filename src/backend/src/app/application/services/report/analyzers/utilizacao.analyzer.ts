@@ -409,8 +409,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
             const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
             const despachadaDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
-            // When the interval started before the dispatch (interceptsDispatch case), Início Intervalo
-            // is the first event after Lib. Anterior — prioritize intervalo_deslocamento over entre_ordens.
+            // When the interval overlaps the dispatch window (interceptsDispatch case), calculateSemOsValue
+            // already returns minutesBetween(inicioIntervalo, prevLiberada) as semOsMin — the exact
+            // pre-interval travel time.
+            // When the interval fits fully within the entre-ordens window (insideTolerance case),
+            // semOsMin is the total discounted gap. We must split it into separate entries.
             if (
               hasIntervaloDeslocamento &&
               semOsIntervalApplied[i] &&
@@ -418,17 +421,55 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               despachadaDate &&
               inicioIntervaloDate.getTime() < despachadaDate.getTime()
             ) {
-              const overPct = globalAvgIntervaloDeslocMin > 0 && intervaloDeslocMin !== null
-                ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
-                : undefined;
-              semOsDetails.push({
-                type: 'intervalo_deslocamento',
-                min:  round2(semOsMin),
-                from: prevLibStr,
-                to:   inicioIntervaloRaw || undefined,
-                global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
-                above_avg_pct: overPct,
-              });
+              const isInterceptsDispatch = Boolean(
+                fimIntervaloDate && despachadaDate.getTime() < fimIntervaloDate.getTime(),
+              );
+              if (isInterceptsDispatch) {
+                // semOsMin IS the pre-interval travel time (minutesBetween(inicioIntervalo, prevLiberada)).
+                const interceptMin = round2(semOsMin);
+                if (interceptMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+                  const overPct = globalAvgIntervaloDeslocMin > 0
+                    ? round2(((interceptMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
+                    : undefined;
+                  semOsDetails.push({
+                    type: 'intervalo_deslocamento',
+                    min:  interceptMin,
+                    from: prevLibStr,
+                    to:   inicioIntervaloRaw || undefined,
+                    global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
+                    above_avg_pct: overPct,
+                  });
+                }
+              } else {
+                // insideTolerance: split into pre-interval travel (prevLiberada → inicioIntervalo)
+                // and post-interval wait (fimIntervalo → despachada).
+                if (intervaloDeslocMin !== null && intervaloDeslocMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+                  const overPct = globalAvgIntervaloDeslocMin > 0
+                    ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
+                    : undefined;
+                  semOsDetails.push({
+                    type: 'intervalo_deslocamento',
+                    min:  intervaloDeslocMin,
+                    from: prevLibStr,
+                    to:   inicioIntervaloRaw || undefined,
+                    global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
+                    above_avg_pct: overPct,
+                  });
+                }
+                if (fimIntervaloDate) {
+                  const postIntervalMin = round2(minutesBetween(despachadaDate, fimIntervaloDate));
+                  if (postIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+                    semOsDetails.push({
+                      type: 'entre_ordens',
+                      min:  postIntervalMin,
+                      from: fimIntervaloRaw || undefined,
+                      to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
+                      global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
+                      above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((postIntervalMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
+                    });
+                  }
+                }
+              }
             } else {
               semOsDetails.push({
                 type: 'entre_ordens',
