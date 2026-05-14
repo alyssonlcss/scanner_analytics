@@ -210,7 +210,7 @@ export function buildActionPlans(
           if (trExcede.length > 0) {
             const worst = trExcede.slice().sort((a, b) => (b.tr_ordem_min ?? 0) - (a.tr_ordem_min ?? 0))[0];
             issues.push(
-              `Temp. Reparo>20%HD: ${trExcede.length} OS com tempo de reparo acima de 20% da jornada — pior caso OS ${worst.nr_ordem ?? '—'}` +
+              `Temp. Reparo>20%HD: ${trExcede.length} OS com tempo de reparo acima de 20% da jornada — caso crítico OS ${worst.nr_ordem ?? '—'}` +
               ` (${worst.tr_ordem_min ?? '?'} min, ${worst.hd_pct_tr ?? '?'}% da HD de ${worst.hd_total_min ?? '?'} min).` +
               kpiCtx(kpiLabelTrTl),
             );
@@ -313,7 +313,7 @@ export function buildActionPlans(
         const tlAlto = globalAvgTl > 0 && avgTl > globalAvgTl;
         const worst = trBaixoOrders.slice().sort((a, b) => a.tr_ordem_min - b.tr_ordem_min)[0];
         issues.push(
-          `Temp. Reparo muito baixo: ${trBaixoOrders.length} OS com tempo de execução muito abaixo da média global (${round2(globalAvgExec)} min) — pior caso OS ${worst.nr_ordem} com ${worst.tr_ordem_min} min.` +
+          `Temp. Reparo muito baixo: ${trBaixoOrders.length} OS com tempo de execução muito abaixo da média global (${round2(globalAvgExec)} min) — caso crítico OS ${worst.nr_ordem} com ${worst.tr_ordem_min} min.` +
           (tlAlto ? ` TL médio dessas OS (${avgTl} min) acima da média global (${round2(globalAvgTl)} min) — reforça hipótese de erro de apontamento.` : '') +
           kpiCtx('Eficiência'),
         );
@@ -376,7 +376,7 @@ export function buildActionPlans(
               .filter((o) => o.flags.includes('tme_muito_alto'))
               .sort((a, b) => b.tme_imp_min - a.tme_imp_min)[0];
             issues.push(
-              `TME IMP elevado: ${tme.summary.countTmeMuitoAlto} OS com tempo improdutivo (No Local → Liberada) acima de 1,5× a média — pior caso OS ${worst.nr_ordem}` +
+              `TME IMP elevado: ${tme.summary.countTmeMuitoAlto} OS com tempo improdutivo (No Local → Liberada) acima de 1,5× a média — caso crítico OS ${worst.nr_ordem}` +
               ` com ${round2(worst.tme_imp_min)} min (vs. média da equipe ${round2(worst.team_avg_tme_min)} min).` +
               kpiCtx('TME IMP'),
             );
@@ -423,7 +423,7 @@ export function buildActionPlans(
               .filter((d) => d.flags.includes('login_muito_tardio'))
               .sort((a, b) => b.primeiro_login_min - a.primeiro_login_min)[0];
             issues.push(
-              `Login muito tardio: ${login.summary.countLoginMuitoTardio} dia(s) com acesso ao sistema com mais do dobro da meta de ${login.metaTarget} min — pior caso ${worst.date_ref} com ${round2(worst.primeiro_login_min)} min. Atrasa o primeiro despacho e reduz os atendimentos possíveis no dia.` +
+              `Login muito tardio: ${login.summary.countLoginMuitoTardio} dia(s) com acesso ao sistema com mais do dobro da meta de ${login.metaTarget} min — caso crítico ${worst.date_ref} com ${round2(worst.primeiro_login_min)} min. Atrasa o primeiro despacho e reduz os atendimentos possíveis no dia.` +
               kpiCtx('1º Login'),
             );
             recommendations.push(
@@ -457,7 +457,7 @@ export function buildActionPlans(
               .filter((d) => d.flags.includes('desloc_muito_lento'))
               .sort((a, b) => b.primeiro_desloc_min - a.primeiro_desloc_min)[0];
             issues.push(
-              `1º Desloc. muito lento: ${desloc.summary.countDeslocMuitoLento} dia(s) com mais de 1,5× a meta de ${desloc.metaTarget} min entre o primeiro despacho e "A Caminho" — pior caso ${worst.date_ref} com ${round2(worst.primeiro_desloc_min)} min parado antes de sair.` +
+              `1º Desloc. muito lento: ${desloc.summary.countDeslocMuitoLento} dia(s) com mais de 1,5× a meta de ${desloc.metaTarget} min entre o primeiro despacho e "A Caminho" — caso crítico ${worst.date_ref} com ${round2(worst.primeiro_desloc_min)} min parado antes de sair.` +
               kpiCtx('1º Desloc.'),
             );
             recommendations.push(
@@ -507,7 +507,7 @@ export function buildActionPlans(
               .filter((d) => d.flags.includes('retorno_muito_alto'))
               .sort((a, b) => b.retorno_base_min - a.retorno_base_min)[0];
             issues.push(
-              `Retorno Base muito alto: ${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno acima de 1,5× a meta de ${retorno.metaTarget} min — pior caso ${worst.date_ref} com ${round2(worst.retorno_base_min)} min. Esse tempo é descontado diretamente na Utilização.` +
+              `Retorno Base muito alto: ${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno acima de 1,5× a meta de ${retorno.metaTarget} min — caso crítico ${worst.date_ref} com ${round2(worst.retorno_base_min)} min. Esse tempo é descontado diretamente na Utilização.` +
               kpiCtx('Retorno Base'),
             );
             recommendations.push(

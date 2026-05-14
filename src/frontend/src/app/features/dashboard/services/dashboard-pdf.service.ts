@@ -326,7 +326,7 @@ export class DashboardPdfService {
                 width: 200,
               },
               { text: `${a.teamsBelowMeta}/${es.totalTeams}`, bold: true, color: RED, fontSize: 7.5, width: 40, alignment: 'right' as const },
-              { text: `pior: ${a.worst.team} (${a.worst.value})`, fontSize: 7, color: GRAY, width: '*' },
+              { text: `crítico: ${a.worst.team} (${a.worst.value})`, fontSize: 7, color: GRAY, width: '*' },
             ],
             columnGap: 8,
             margin: [0, 0, 0, 3],

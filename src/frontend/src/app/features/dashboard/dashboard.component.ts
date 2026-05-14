@@ -387,7 +387,7 @@ type SavedFilterState = {
                     <div class="exec-kpi-bar" [style.width.%]="(alert.teamsBelowMeta / es.totalTeams) * 100"></div>
                   </div>
                   <span class="exec-kpi-count">{{ alert.teamsBelowMeta }}/{{ es.totalTeams }}</span>
-                  <span class="exec-kpi-worst">pior: <strong>{{ alert.worst.team }}</strong> ({{ alert.worst.value }})</span>
+                  <span class="exec-kpi-worst">crítico: <strong>{{ alert.worst.team }}</strong> ({{ alert.worst.value }})</span>
                 </div>
               </div>
 
