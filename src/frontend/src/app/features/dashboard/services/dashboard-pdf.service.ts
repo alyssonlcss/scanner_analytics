@@ -57,7 +57,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off',
+    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
   ]);
 
   private buildTimelinePdfBlock(ev: any, hidePartida = false): any | null {

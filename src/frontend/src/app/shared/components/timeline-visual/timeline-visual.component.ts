@@ -184,7 +184,7 @@ export class TimelineVisualComponent implements OnInit {
     return tlFlexGrow(durationMin);
   }
 
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Antes Log Off']);
+  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
     return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
