@@ -382,7 +382,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         );
         if (intervaloDeslocAboveGlobalAvg) flags.push('sem_os_alto');
 
-        const uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
+        let uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
         if (uniqueFlags.length === 0) continue;
 
         const intervaloNaJanela = Boolean(
@@ -501,6 +501,13 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         }
 
         const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
+
+        // If no sem_os sub-flag qualified individually, suppress sem_os_alto to avoid an
+        // empty "Sem Ordem/OS:" header in the report.
+        if (semOsDetails.length === 0 && uniqueFlags.includes('sem_os_alto')) {
+          uniqueFlags = uniqueFlags.filter((f) => f !== 'sem_os_alto') as UtilizacaoOrderEvidence['flags'];
+          if (uniqueFlags.length === 0) continue;
+        }
 
         evidences.push({
           date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
