@@ -236,7 +236,7 @@ export interface UtilizacaoOrderEvidence {
     body?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'temp_prep_alto' | 'sem_os_alto'>;
+  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
   /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
