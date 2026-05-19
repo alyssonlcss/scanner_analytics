@@ -3,6 +3,7 @@ import type { UtilizacaoTeamAnalysis, UtilizacaoOrderEvidence, KpiInsight } from
 import { createAccessor, parseNumber, normalizeToken, round2, parseDateTimeBr, minutesBetween } from '../csv-utils.js';
 import { calculateTempPrepValue, calculateSemOsValue } from '../builders/team-stats.builder.js';
 import { selectTopUtilizacaoEvidences } from './os-dia.analyzer.js';
+import { enrichUtilizacaoEvidence } from './enrich-utils.js';
 
 import { countDistinctDates, mergeEvidenceFlags } from './os-dia.analyzer.js';
 export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): UtilizacaoTeamAnalysis[] {
@@ -356,6 +357,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;
         if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) flags.push('temp_prep_alto');
         if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) flags.push('sem_os_alto');
+        if (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD) flags.push('tr_excede_hd');
 
         const prevLiberadaDate   = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
         const aCaminhoDate       = parseDateTimeBr(String(row[caminhoCol] ?? ''));
@@ -618,7 +620,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
             sem_os_details:    [fimDetail],
             sem_os_total_min:  round2(semOsFimJornadaMin),
-            flags:             ['sem_os_alto'],
+            flags:             (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD)
+              ? ['sem_os_alto', 'tr_excede_hd']
+              : ['sem_os_alto'],
           });
         }
       }
@@ -632,6 +636,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       if (!Array.from(grouped.values()).some((g) => g.team === team)) continue;
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
+      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(
+        distinctDates > 7 ? selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders,
+      );
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
@@ -672,10 +679,10 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         idleDays,
         idleAvgMin,
         jornadasAbaixoMeta,
-        flaggedOrders: distinctDates > 7 ? selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders,
+        flaggedOrders: enrichedFlaggedOrders,
         summary: {
-          countTempPrepAlto: flaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
-          countSemOsAlto:    flaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
+          countTempPrepAlto: enrichedFlaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
+          countSemOsAlto:    enrichedFlaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
         },
         idleAnalysis,
       });

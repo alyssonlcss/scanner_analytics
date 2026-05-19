@@ -94,6 +94,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
     'despachada_inicio_intervalo': 'Desl. Intervalo',
+    'no_local_inicio_intervalo': 'Desl. Intervalo',
     'fim_intervalo_despachada': 'Entre OS',
     'liberada_log_off': 'Antes Log Off',
     'despachada_a_caminho': 'Partida',
@@ -102,6 +103,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
     'liberada_a_caminho': 'Partida',
     'a_caminho_no_local': 'Deslocamento',
     'no_local_liberada': 'Reparo',
+    'fim_intervalo_liberada': 'Reparo',
   };
 
   const rawSegs: TimelineSegment[] = [];
@@ -115,8 +117,12 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
     const flags: string[] = [];
     let overrideDuration: string | undefined;
 
-    if (label === 'Reparo' && ev.tr_ordem_min !== undefined) {
-      durationMin = Math.max(ev.tr_ordem_min, 1);
+    if (label === 'Reparo') {
+      // Override duration only for the direct no_local→liberada case (no interval inside).
+      // For fim_intervalo→liberada keep the calculated segment duration.
+      if (p1.key === 'no_local' && p2.key === 'liberada' && ev.tr_ordem_min !== undefined) {
+        durationMin = Math.max(ev.tr_ordem_min, 1);
+      }
       if (ev.flag_temp_reparo_excedido) flags.push('TR > Média Global e M300');
     } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
       durationMin = Math.max(ev.tl_ordem_min, 1);

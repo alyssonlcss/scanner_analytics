@@ -737,6 +737,9 @@ type SavedFilterState = {
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
                               <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
+                                <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
+                                  <strong>Tempo de Reparo alto:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('tr_excede_hd', ev))"></span>
+                                </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
                                   <strong>Tempo de Partida/OS elevado:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>

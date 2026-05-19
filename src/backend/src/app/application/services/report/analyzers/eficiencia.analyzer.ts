@@ -56,6 +56,8 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
     const tempoPadraoCol = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
     const hdTotalCol = deslocAcc.resolve(['HD Total', 'HD_Total']);
     const dateCol = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const inicioIntervaloCol = deslocAcc.resolve(['Inicio_Intervalo', 'Inicio Intervalo', 'Início Intervalo', 'Início_Intervalo']);
+    const fimIntervaloCol    = deslocAcc.resolve(['Fim_Intervalo', 'Fim Intervalo']);
 
     if (!teamCol || !aCaminhoCol || !noLocalCol || !liberadaCol) {
       return [];
@@ -218,6 +220,8 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
               a_caminho: String(row[aCaminhoCol] ?? '').trim(),
               no_local: String(row[noLocalCol] ?? '').trim(),
               liberada: String(row[liberadaCol] ?? '').trim(),
+              inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() || undefined : undefined,
+              fim_intervalo:    fimIntervaloCol    ? String(row[fimIntervaloCol]    ?? '').trim() || undefined : undefined,
               tl_ordem_min: tlMin !== null && Number.isFinite(tlMin) ? round2(tlMin) : 0,
               tr_ordem_min: trMin !== null && Number.isFinite(trMin) ? round2(trMin) : 0,
               hd_total_min: round2(hdMin),

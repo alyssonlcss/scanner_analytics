@@ -236,6 +236,8 @@ export interface EficienciaOrderEvidence {
   a_caminho: string;
   no_local: string;
   liberada: string;
+  inicio_intervalo?: string;
+  fim_intervalo?: string;
   tl_ordem_min: number;
   tr_ordem_min: number;
   hd_total_min: number;
@@ -310,7 +312,8 @@ export interface UtilizacaoOrderEvidence {
     from_label?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'temp_prep_alto' | 'sem_os_alto'>;
+  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd'>;
+  alertTexts?: Record<string, string>;
 }
 
 export interface UtilizacaoTeamAnalysis {

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
 // Software proprietário e confidencial. Uso não autorizado é proibido.
-import type { OsDiaOrderEvidence, EficienciaOrderEvidence, TmeImpOrderEvidence, PrimeiroLoginDayEvidence, PrimeiroDeslocDayEvidence, RetornoBaseDayEvidence } from '../types.js';
+import type { OsDiaOrderEvidence, EficienciaOrderEvidence, TmeImpOrderEvidence, PrimeiroLoginDayEvidence, PrimeiroDeslocDayEvidence, RetornoBaseDayEvidence, UtilizacaoOrderEvidence } from '../types.js';
 
 export function nfBr(v: number, minDec = 1, maxDec = 1): string {
     return v.toLocaleString('pt-BR', { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
@@ -59,9 +59,29 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
       const alertTexts: Record<string, string> = {};
       for (const flag of ev.flags) {
         switch (flag) {
-          case 'tr_excede_hd':
-            alertTexts[flag] = `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+          case 'tr_excede_hd': {
+            // Compute effective TR by subtracting the interval when it falls within the repair window.
+            let trEfetivo = ev.tr_ordem_min;
+            let intervalNote = '';
+            if (ev.no_local && ev.inicio_intervalo && ev.fim_intervalo) {
+              const noLocalTs  = parseDt(ev.no_local);
+              const iniIntTs   = parseDt(ev.inicio_intervalo);
+              const fimIntTs   = parseDt(ev.fim_intervalo);
+              const liberadaTs = parseDt(ev.liberada);
+              if (noLocalTs > 0 && iniIntTs > 0 && fimIntTs > 0 && liberadaTs > 0 &&
+                  iniIntTs >= noLocalTs && fimIntTs <= liberadaTs) {
+                // Effective = Fim Intervalo → Liberada (the actual "Reparo" segment).
+                trEfetivo = Math.round((liberadaTs - fimIntTs) / 60000);
+                const totalDiscounted = ev.tr_ordem_min - trEfetivo;
+                intervalNote = ` (efetivo: ${trEfetivo} min, descontados ${totalDiscounted} min)`;
+              }
+            }
+            const hdPct = ev.hd_total_min > 0
+              ? Math.round(trEfetivo / ev.hd_total_min * 10000) / 100
+              : ev.hd_pct_tr;
+            alertTexts[flag] = `esta OS apresentou TR Ordem: ${ev.tr_ordem_min} min${intervalNote} — ${hdPct}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
             break;
+          }
           case 'tl_excede_hd':
             alertTexts[flag] = `o técnico passou ${ev.tl_ordem_min} min em deslocamento nesta OS — ${ev.global_avg_tl_min > 0 ? nfBr((ev.tl_ordem_min - ev.global_avg_tl_min) / ev.global_avg_tl_min * 100, 0, 0) : '?'}% acima da média geral de ${nfBr(ev.global_avg_tl_min)} min, representando ${ev.hd_pct_tl}% da jornada de ${ev.hd_total_min} min. Deslocamentos muito longos consomem boa parte do dia e diminuem o número de OS atendidas.`;
             break;
@@ -124,9 +144,34 @@ export function enrichEficienciaEvidence(
           case 'deslocamento_curto':
             alertTexts[flag] = `o tempo de deslocamento desta OS foi de apenas ${ev.tl_ordem_min} min — inferior a 25% da média geral de ${nfBr(analysis.globalAvgDeslocamentoMin)} min. Pode indicar atendimento sem deslocamento real ou lançamento incorreto no sistema.`;
             break;
-          case 'tr_excede_hd':
-            alertTexts[flag] = `esta OS consumiu ${ev.tr_ordem_min} min — ${ev.hd_pct_tr}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+          case 'tr_excede_hd': {
+            let trEfetivo = ev.tr_ordem_min;
+            let intervalNote = '';
+            if (ev.no_local && ev.inicio_intervalo && ev.fim_intervalo) {
+              const parseDt2 = (s: string): number => {
+                const parts = s.split(' ');
+                if (parts.length < 2) return 0;
+                const [day, mon, yr] = (parts[0] ?? '').split('/');
+                const [hr, min, sec] = (parts[1] ?? '').split(':');
+                return new Date(+(yr ?? 0), +(mon ?? 1) - 1, +(day ?? 1), +(hr ?? 0), +(min ?? 0), +(sec ?? 0)).getTime();
+              };
+              const noLocalTs  = parseDt2(ev.no_local);
+              const iniIntTs   = parseDt2(ev.inicio_intervalo);
+              const fimIntTs   = parseDt2(ev.fim_intervalo);
+              const liberadaTs = parseDt2(ev.liberada);
+              if (noLocalTs > 0 && iniIntTs > 0 && fimIntTs > 0 && liberadaTs > 0 &&
+                  iniIntTs >= noLocalTs && fimIntTs <= liberadaTs) {
+                trEfetivo = Math.round((liberadaTs - fimIntTs) / 60000);
+                const totalDiscounted = ev.tr_ordem_min - trEfetivo;
+                intervalNote = ` (efetivo: ${trEfetivo} min, descontados ${totalDiscounted} min)`;
+              }
+            }
+            const hdPct = ev.hd_total_min > 0
+              ? Math.round(trEfetivo / ev.hd_total_min * 10000) / 100
+              : ev.hd_pct_tr;
+            alertTexts[flag] = `esta OS apresentou TR Ordem: ${ev.tr_ordem_min} min${intervalNote} — ${hdPct}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
             break;
+          }
           case 'tempo_padrao_vazio':
             alertTexts[flag] = `esta OS foi atendida em ${ev.tr_ordem_min} min, mas não tem tempo padrão definido no M300. Sem esse dado, a eficiência é calculada como zero, prejudicando o resultado da equipe mesmo que o atendimento tenha sido realizado.`;
             break;
@@ -136,9 +181,71 @@ export function enrichEficienciaEvidence(
     });
   }
 
-  /** Enriches TME IMP evidence items with pre-computed alertTexts. */
-export function enrichTmeImpEvidence(orders: TmeImpOrderEvidence[]): TmeImpOrderEvidence[] {
+  /** Enriches Utilização evidence items with pre-computed alertTexts. */
+export function enrichUtilizacaoEvidence(orders: UtilizacaoOrderEvidence[]): UtilizacaoOrderEvidence[] {
+    const parseDt = (s: string): number => {
+      const parts = s.split(' ');
+      if (parts.length < 2) return 0;
+      const [day, mon, yr] = (parts[0] ?? '').split('/');
+      const [hr, min, sec] = (parts[1] ?? '').split(':');
+      return new Date(+(yr ?? 0), +(mon ?? 1) - 1, +(day ?? 1), +(hr ?? 0), +(min ?? 0), +(sec ?? 0)).getTime();
+    };
+
     return orders.map((ev) => {
+      const alertTexts: Record<string, string> = {};
+      for (const flag of ev.flags) {
+        switch (flag) {
+          case 'tr_excede_hd': {
+            let trEfetivo = ev.tr_ordem_min;
+            let intervalNote = '';
+            if (ev.no_local && ev.inicio_intervalo && ev.fim_intervalo) {
+              const noLocalTs  = parseDt(ev.no_local);
+              const iniIntTs   = parseDt(ev.inicio_intervalo);
+              const fimIntTs   = parseDt(ev.fim_intervalo);
+              const liberadaTs = parseDt(ev.liberada);
+              if (noLocalTs > 0 && iniIntTs > 0 && fimIntTs > 0 && liberadaTs > 0 &&
+                  iniIntTs >= noLocalTs && fimIntTs <= liberadaTs) {
+                trEfetivo = Math.round((liberadaTs - fimIntTs) / 60000);
+                const totalDiscounted = ev.tr_ordem_min - trEfetivo;
+                intervalNote = ` (efetivo: ${trEfetivo} min, descontados ${totalDiscounted} min)`;
+              }
+            }
+            const hdPct = ev.hd_total_min > 0
+              ? Math.round(trEfetivo / ev.hd_total_min * 10000) / 100
+              : ev.hd_pct_tr;
+            alertTexts[flag] = `esta OS apresentou TR Ordem: ${ev.tr_ordem_min} min${intervalNote} — ${hdPct}% da jornada de ${ev.hd_total_min} min, acima do limite de 20%. Tempo previsto no M300: ${ev.tempo_padrao_min !== undefined ? ev.tempo_padrao_min + ' min' : 'não cadastrado'}. Uma OS com atendimento muito longo reduz a capacidade de realizar outros chamados no dia.`;
+            break;
+          }
+          case 'temp_prep_alto': {
+            const tempPrepMin = ev.temp_prep_os_min ?? 0;
+            const limit = ev.prev_liberada ? 10 : 25;
+            const pct = Math.round((tempPrepMin - limit) / limit * 100);
+            const subject = ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS';
+            alertTexts[flag] = `o técnico levou ${tempPrepMin} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
+            break;
+          }
+          case 'sem_os_alto':
+            alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
+            break;
+        }
+      }
+
+      const enrichedDetails = ev.sem_os_details?.map((d) => {
+        const text = semOsDetailText(d);
+        const sep = text.indexOf(': ');
+        return { ...d, label: sep > -1 ? text.slice(0, sep) : text, body: sep > -1 ? text.slice(sep + 2) : '' };
+      });
+
+      return {
+        ...ev,
+        alertTexts,
+        sem_os_details: enrichedDetails ?? ev.sem_os_details,
+      };
+    });
+  }
+
+  /** Enriches TME IMP evidence items with pre-computed alertTexts. */
+export function enrichTmeImpEvidence(orders: TmeImpOrderEvidence[]): TmeImpOrderEvidence[] {    return orders.map((ev) => {
       const alertTexts: Record<string, string> = {};
       for (const flag of ev.flags) {
         switch (flag) {
