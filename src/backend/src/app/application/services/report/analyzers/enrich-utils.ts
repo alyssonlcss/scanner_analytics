@@ -11,7 +11,7 @@ export function semOsDetailText(d: {
     type: string; min: number; from?: string; to?: string;
     global_avg_min?: number; above_avg_pct?: number;
     interval_discounted?: boolean; retorno_base_discounted?: number;
-    retorno_base_used_row?: boolean; desp_anterior?: string;
+    retorno_base_used_row?: boolean; desp_anterior?: string; from_label?: string;
   }): string {
     const fmtAvg = (pct: number | undefined, avg: number | undefined): string => {
       if (!Number.isFinite(pct) || !Number.isFinite(avg) || (avg ?? 0) <= 0) return '';
@@ -37,7 +37,8 @@ export function semOsDetailText(d: {
       case 'intervalo_deslocamento': {
         const mID = Math.round(d.min);
         const pctID = Math.round((mID - 10) / 10 * 100);
-        return `Desl. Intervalo: ${mID} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctID}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+        const fromLabel = d.from_label ?? 'Lib. Anterior';
+        return `Desl. Intervalo: ${mID} min entre ${fromLabel} (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctID}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;

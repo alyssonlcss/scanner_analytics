@@ -522,15 +522,13 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
-                              <p class="osdia-ev-causa">
-                                <ng-container *ngIf="ev.classe || ev.causa">
-                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
-                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
-                                  <span class="osdia-ev-causa-sep"> — </span>
-                                </ng-container>
-                                <ng-container *ngIf="ev.prev_liberada">
-                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
+                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                <ng-container *ngIf="evDespAfterPrevLib(ev) as despTime">
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe || ev.causa"> · </span>
+                                  <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
                               <!-- Linha do tempo visual -->
@@ -617,15 +615,13 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ eficienciaFlagLabel(f) }}</span>
                               </div>
-                              <p class="osdia-ev-causa">
-                                <ng-container *ngIf="ev.classe || ev.causa">
-                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> &middot; </span>
-                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
-                                  <span class="osdia-ev-causa-sep"> — </span>
-                                </ng-container>
-                                <ng-container *ngIf="ev.prev_liberada">
-                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
+                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                <ng-container *ngIf="evDespAfterPrevLib(ev) as despTime">
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe || ev.causa"> · </span>
+                                  <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
                               <app-timeline-visual [ev]="ev" [hidePartida]="true"></app-timeline-visual>
@@ -728,15 +724,13 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                               </div>
                               <!-- Causa -->
-                              <p class="osdia-ev-causa">
-                                <ng-container *ngIf="ev.classe || ev.causa">
-                                  <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
-                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
-                                  <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
-                                  <span class="osdia-ev-causa-sep"> — </span>
-                                </ng-container>
-                                <ng-container *ngIf="ev.prev_liberada">
-                                  <span class="osdia-ev-origem"><strong>Lib. Anterior:</strong> {{ evPrevLiberadaTime(ev) }}<ng-container *ngIf="evDespAfterPrevLib(ev)"> — <strong>Desp.:</strong> {{ evDespAfterPrevLib(ev) }}</ng-container></span>
+                              <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
+                                <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
+                                <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
+                                <span *ngIf="ev.causa"><strong>Causa:</strong> {{ ev.causa }}</span>
+                                <ng-container *ngIf="evDespAfterPrevLib(ev) as despTime">
+                                  <span class="osdia-ev-causa-sep" *ngIf="ev.classe || ev.causa"> · </span>
+                                  <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
                               <!-- Linha do tempo visual -->
@@ -4651,6 +4645,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.dayLimitForMonthPosition(year, month, 'first');
   });
   protected readonly periodRangeLabel = computed(() => {
+    // Prefer the actual date range from the downloaded file data over the filter selection
+    const dataRange = this.reportData()?.dataDateRange;
+    if (dataRange) {
+      return dataRange.min === dataRange.max ? dataRange.min : `${dataRange.min} a ${dataRange.max}`;
+    }
+
     const monthAbbrevToNum: Record<string, string> = {
       jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',
       jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
@@ -5036,7 +5036,17 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     let dateSuffix = '';
     let dateRangeLabel = '';
-    if (activeMonths.length > 0 && activeYears.length > 0) {
+
+    // Prefer actual dates from the file data
+    const dataRange = section.report.dataDateRange;
+    if (dataRange) {
+      dateRangeLabel = dataRange.min === dataRange.max ? dataRange.min : `${dataRange.min} a ${dataRange.max}`;
+      // Build a compact suffix (dd-mm ... dd-mm) for the filename
+      const parsePart = (s: string, i: number) => s.split('/')[i] ?? '';
+      const startSuffix = `${parsePart(dataRange.min, 0)}-${parsePart(dataRange.min, 1)}`;
+      const endSuffix   = `${parsePart(dataRange.max, 0)}-${parsePart(dataRange.max, 1)}`;
+      dateSuffix = ` ${startSuffix === endSuffix ? startSuffix : `${startSuffix} ao ${endSuffix}`}`;
+    } else if (activeMonths.length > 0 && activeYears.length > 0) {
       const firstMonth = activeMonths[0].num;
       const lastMonth  = activeMonths[activeMonths.length - 1].num;
       const firstYear  = activeYears[0] ?? String(new Date().getFullYear());
@@ -5344,7 +5354,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; label?: string; body?: string }): string {
+  protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; from_label?: string; label?: string; body?: string }): string {
     // Always compute fresh (ignore pre-computed label/body) to ensure stats are always shown
     const SEM_OS_LIMIT = 10;
     const pctAbove = (min: number) => Math.round((min - SEM_OS_LIMIT) / SEM_OS_LIMIT * 100);
@@ -5368,7 +5378,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       }
       case 'intervalo_deslocamento': {
         const mID = Math.round(d.min);
-        return `Desl. Intervalo: ${mID} min entre Lib. Anterior (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(mID)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+        const fromLabel = d.from_label ?? 'Lib. Anterior';
+        return `Desl. Intervalo: ${mID} min entre ${fromLabel} (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(mID)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       default:
         return `${d.type}: ${d.min} min (${d.from ?? '—'} → ${d.to ?? '—'})`;

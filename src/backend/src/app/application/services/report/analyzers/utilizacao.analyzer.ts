@@ -487,16 +487,31 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         // Skip intervalo_deslocamento when the interval was already absorbed into entre_ordens
         // (semOsIntervalApplied[i] === true), to avoid two sub-flags pointing to the same time window.
         if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null && !semOsIntervalApplied[i] && intervaloDeslocMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+          // When the current OS has a Despachada between prevLiberada and inicioIntervalo,
+          // the "Desl. Intervalo" is measured from Despachada (not Lib. Anterior).
+          const despachadaAtualDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
+          const useDespachadaAsFrom = Boolean(
+            despachadaAtualDate && prevLiberadaDate && inicioIntervaloDate &&
+            despachadaAtualDate.getTime() > prevLiberadaDate.getTime() &&
+            despachadaAtualDate.getTime() < inicioIntervaloDate.getTime(),
+          );
+          const displayMin = useDespachadaAsFrom && despachadaAtualDate && inicioIntervaloDate
+            ? round2(minutesBetween(inicioIntervaloDate, despachadaAtualDate))
+            : intervaloDeslocMin;
+          const fromStr = useDespachadaAsFrom
+            ? (despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined)
+            : (prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined);
           const overPct = globalAvgIntervaloDeslocMin > 0
-            ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
+            ? round2(((displayMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
             : undefined;
           semOsDetails.push({
             type: 'intervalo_deslocamento',
-            min:  intervaloDeslocMin,
-            from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+            min:  displayMin,
+            from: fromStr,
             to:   inicioIntervaloRaw || undefined,
             global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
             above_avg_pct: overPct,
+            from_label: useDespachadaAsFrom ? 'Despachada' : 'Lib. Anterior',
           });
         }
 

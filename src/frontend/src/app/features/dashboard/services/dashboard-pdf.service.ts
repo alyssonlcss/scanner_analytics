@@ -2,7 +2,7 @@
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { Injectable } from '@angular/core';
 import type { GeneratedReport, ReportKpiInsight } from '../../../core/api/scanner-api.service';
-import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../../shared/utils/timeline-segment.utils';
+import { TimelineSegment, buildTimelineSegments, extractTime, parseDt, tlFlexGrow } from '../../../shared/utils/timeline-segment.utils';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfMake = require('pdfmake/build/pdfmake');
@@ -705,7 +705,14 @@ export class DashboardPdfService {
               if (ev.classe) ccParts.push(`Classe: ${ev.classe}`);
               if (ev.classe && ev.causa) ccParts.push('  \u00b7  ');
               if (ev.causa) ccParts.push(`Causa: ${ev.causa}`);
-              if (ev.prev_liberada) ccParts.push(`${ccParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+              const _osDiaDesp = ev.despachada || ev.hora_primeiro_despacho;
+              if (_osDiaDesp && ev.prev_liberada) {
+                const _osPrevTs = parseDt(ev.prev_liberada), _osDespTs = parseDt(_osDiaDesp);
+                if (_osPrevTs > 0 && _osDespTs > 0 && _osPrevTs > _osDespTs) {
+                  if (ccParts.length > 0) ccParts.push('  \u00b7  ');
+                  ccParts.push(`Desp.: ${extractTime(_osDiaDesp)}`);
+                }
+              }
               if (ccParts.length > 0) orderItems.push({ text: ccParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
               const osDiaTl = this.buildTimelinePdfBlock(ev);
               if (osDiaTl) orderItems.push(osDiaTl);
@@ -765,7 +772,14 @@ export class DashboardPdfService {
             if (ev.classe) efCcParts.push(`Classe: ${ev.classe}`);
             if (ev.classe && ev.causa) efCcParts.push('  \u00b7  ');
             if (ev.causa) efCcParts.push(`Causa: ${ev.causa}`);
-            if (ev.prev_liberada) efCcParts.push(`${efCcParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+            const _efDesp = ev.despachada || ev.hora_primeiro_despacho;
+            if (_efDesp && ev.prev_liberada) {
+              const _efPrevTs = parseDt(ev.prev_liberada), _efDespTs = parseDt(_efDesp);
+              if (_efPrevTs > 0 && _efDespTs > 0 && _efPrevTs > _efDespTs) {
+                if (efCcParts.length > 0) efCcParts.push('  \u00b7  ');
+                efCcParts.push(`Desp.: ${extractTime(_efDesp)}`);
+              }
+            }
             if (efCcParts.length > 0) orderItems.push({ text: efCcParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
             const efTl = this.buildTimelinePdfBlock(ev, true);
             if (efTl) orderItems.push(efTl);
@@ -828,7 +842,14 @@ export class DashboardPdfService {
             if (ev.classe) utilCcParts.push(`Classe: ${ev.classe}`);
             if (ev.classe && ev.causa) utilCcParts.push('  \u00b7  ');
             if (ev.causa) utilCcParts.push(`Causa: ${ev.causa}`);
-            if (ev.prev_liberada) utilCcParts.push(`${utilCcParts.length ? '  \u2014  ' : ''}Lib. Anterior: ${ev.prev_liberada}`);
+            const _utilDesp = ev.despachada || ev.hora_primeiro_despacho;
+            if (_utilDesp && ev.prev_liberada) {
+              const _utilPrevTs = parseDt(ev.prev_liberada), _utilDespTs = parseDt(_utilDesp);
+              if (_utilPrevTs > 0 && _utilDespTs > 0 && _utilPrevTs > _utilDespTs) {
+                if (utilCcParts.length > 0) utilCcParts.push('  \u00b7  ');
+                utilCcParts.push(`Desp.: ${extractTime(_utilDesp)}`);
+              }
+            }
             if (utilCcParts.length > 0) orderItems.push({ text: utilCcParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
             const utilTl = this.buildTimelinePdfBlock(ev);
             if (utilTl) orderItems.push(utilTl);

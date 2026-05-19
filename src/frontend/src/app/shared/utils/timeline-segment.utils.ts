@@ -93,6 +93,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
+    'despachada_inicio_intervalo': 'Desl. Intervalo',
     'fim_intervalo_despachada': 'Entre OS',
     'liberada_log_off': 'Antes Log Off',
     'despachada_a_caminho': 'Partida',

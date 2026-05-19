@@ -133,6 +133,8 @@ export interface GeneratedReport {
   flagMeta?: {
     labels: Record<string, string>;
   };
+  /** Actual date range found in the Data Referência column of the downloaded file (DD/MM/YYYY). */
+  dataDateRange?: { min: string; max: string } | null;
 }
 
 export interface TempSemOsRow {
@@ -181,6 +183,8 @@ export interface OsDiaOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
+    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada'). */
+    from_label?: string;
     /** Pre-computed label (e.g. "Entre OS", "1º Despacho"). */
     label?: string;
     /** Pre-computed body text describing the detail. */
@@ -302,6 +306,8 @@ export interface UtilizacaoOrderEvidence {
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
     desp_anterior?: string;
+    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada'). */
+    from_label?: string;
   }>;
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto'>;

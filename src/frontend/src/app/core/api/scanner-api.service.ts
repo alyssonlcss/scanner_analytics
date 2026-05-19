@@ -478,6 +478,8 @@ export interface GeneratedReport {
   flagMeta?: {
     labels: Record<string, string>;
   };
+  /** Actual date range found in the Data Referência column of the downloaded file (DD/MM/YYYY). */
+  dataDateRange?: { min: string; max: string } | null;
 }
 
 export interface ScannerReportGenerateResult {

@@ -212,6 +212,9 @@ export class PostDownloadReportService {
       tmeImpAnalysis, retornoBaseAnalysis,
     );
 
+    // Compute actual date range from Data Referência column in the deslocamentos file
+    const dataDateRange = this.computeDataDateRange(filtered.deslocamentos);
+
     const generatedAt = new Date().toISOString();
     const report: GeneratedReport = {
       generatedAt,
@@ -268,6 +271,7 @@ export class PostDownloadReportService {
           retorno_muito_alto:    'Retorno Muito Alto',
         },
       },
+      dataDateRange,
     };
 
     if (!params.skipSave) {
@@ -419,6 +423,38 @@ export class PostDownloadReportService {
 
       return true;
     };
+  }
+
+  /** Returns the min and max dates found in the Data Referência column (DD/MM/YYYY), or null if unavailable. */
+  private computeDataDateRange(rows: CsvRow[]): { min: string; max: string } | null {
+    if (rows.length === 0) return null;
+    const accessor = createAccessor(rows[0]);
+    const dateCol = accessor.resolve(['Data Referência', 'Data Referencia']);
+    if (!dateCol) return null;
+
+    // Convert DD/MM/YYYY → numeric YYYYMMDD for comparison
+    const toNum = (s: string): number => {
+      const parts = s.split('/');
+      if (parts.length !== 3) return NaN;
+      return parseInt(parts[2], 10) * 10000 + parseInt(parts[1], 10) * 100 + parseInt(parts[0], 10);
+    };
+
+    let minStr = '';
+    let maxStr = '';
+    let minNum = Infinity;
+    let maxNum = -Infinity;
+
+    for (const row of rows) {
+      const raw = (row[dateCol] ?? '').trim();
+      if (!raw) continue;
+      const n = toNum(raw);
+      if (Number.isNaN(n)) continue;
+      if (n < minNum) { minNum = n; minStr = raw; }
+      if (n > maxNum) { maxNum = n; maxStr = raw; }
+    }
+
+    if (!minStr || !maxStr) return null;
+    return { min: minStr, max: maxStr };
   }
 
 }

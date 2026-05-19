@@ -493,13 +493,26 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         // Only add intervalo_deslocamento when the interval was NOT already handled above
         // (semOsIntervalApplied[i] === true covers both interceptsDispatch and insideTolerance).
         if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate && !semOsIntervalApplied[i]) {
-          const intMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
+          // When the current OS has a Despachada between prevLiberada and inicioIntervalo,
+          // the "Desl. Intervalo" is measured from Despachada (not Lib. Anterior).
+          const despachadaAtualDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
+          const useDespachadaAsFrom = Boolean(
+            despachadaAtualDate &&
+            despachadaAtualDate.getTime() > prevLiberadaDate.getTime() &&
+            despachadaAtualDate.getTime() < inicioIntervaloDate.getTime(),
+          );
+          const intFrom  = useDespachadaAsFrom ? despachadaAtualDate! : prevLiberadaDate;
+          const intFromStr = useDespachadaAsFrom
+            ? (despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined)
+            : (prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined);
+          const intMin = round2(minutesBetween(inicioIntervaloDate, intFrom));
           if (intMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
             semOsDetails.push({
               type: 'intervalo_deslocamento',
               min:  intMin,
-              from: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+              from: intFromStr,
               to:   inicioIntervaloRaw || undefined,
+              from_label: useDespachadaAsFrom ? 'Despachada' : 'Lib. Anterior',
             });
           }
         }
