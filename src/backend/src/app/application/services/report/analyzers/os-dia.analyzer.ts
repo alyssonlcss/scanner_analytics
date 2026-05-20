@@ -104,8 +104,6 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       }
     }
     const globalAvgTlMin = globalTlCount > 0 ? round2(globalTlSum / globalTlCount) : 0;
-    // Flag TL when it exceeds 25% above the global average (not % of HD)
-    const TL_ABOVE_AVG_THRESHOLD = 1.25;
 
     // Global avg TR across ALL rows (used as threshold for flag_temp_reparo_excedido)
     let globalTrSum = 0;
@@ -354,7 +352,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         if (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD) {
           flags.push('tr_excede_hd');
         }
-        if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin * TL_ABOVE_AVG_THRESHOLD) {
+        if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin && hdTotalMin > 0 && tlOrdemMin > hdTotalMin * 0.20) {
           flags.push('tl_excede_hd');
         }
         const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;

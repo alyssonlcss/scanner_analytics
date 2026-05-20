@@ -66,10 +66,13 @@ export class DashboardPdfService {
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
     const isRepairAlarm = (s: TimelineSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
+    const isDeslocAlarm = (s: TimelineSegment): boolean => s.label === 'Deslocamento' && (s.flags?.length ?? 0) > 0;
     const getFill = (s: TimelineSegment): string =>
-      s.isInterval ? '#fde68a' : isRepairAlarm(s) ? '#fca5a5' : IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
+      s.isInterval ? '#fde68a' : isRepairAlarm(s) || isDeslocAlarm(s) ? '#fca5a5' :
+      s.label === 'Deslocamento' ? '#dbeafe' :
+      IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TimelineSegment): string =>
-      s.isInterval ? '#78350f' : (isRepairAlarm(s) || IDLE.has(s.label)) ? '#7f1d1d' : '#1e3a8a';
+      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || (IDLE.has(s.label) && s.label !== 'Deslocamento')) ? '#7f1d1d' : '#1e3a8a';
 
     // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt

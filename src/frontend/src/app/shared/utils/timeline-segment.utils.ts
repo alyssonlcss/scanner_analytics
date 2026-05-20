@@ -126,7 +126,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
       if (ev.flag_temp_reparo_excedido) flags.push('TR > Média Global e M300');
     } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
       durationMin = Math.max(ev.tl_ordem_min, 1);
-      if (ev.flag_temp_desloc_excedido) flags.push('Temp. Desloc. Excedido');
+      if (ev.flags?.includes('tl_excede_hd')) flags.push('Temp. Deslocamento Alto');
     } else if (label === 'Partida' && ev.temp_prep_os_min !== undefined) {
       durationMin = Math.max(ev.temp_prep_os_min, 1);
       if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥ 10min');

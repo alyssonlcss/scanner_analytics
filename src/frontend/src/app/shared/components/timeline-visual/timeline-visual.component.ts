@@ -187,7 +187,7 @@ export class TimelineVisualComponent implements OnInit {
   private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
-    return TimelineVisualComponent.IDLE_LABELS.has(seg.label);
+    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && seg.label !== 'Deslocamento';
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
