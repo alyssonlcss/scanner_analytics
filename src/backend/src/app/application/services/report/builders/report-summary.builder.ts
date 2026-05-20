@@ -657,7 +657,15 @@ export function buildTeamScorecard(rankingRows: CsvRow[], kpis: KpiInsight[]): T
 
       for (const { key, kpiName } of KPI_KEY_MAP) {
         const val = kpiValueMap.get(kpiName)?.get(team);
-        if (val === undefined) continue;
+        if (val === undefined) {
+          // TME IMP shown as — in the ranking means the team has no improdutivo orders,
+          // which is better than the meta — count it as achieved, not as a miss.
+          if (kpiName === 'TME IMP') {
+            (kpiStatus as Record<string, string>)[key] = 'above';
+            score++;
+          }
+          continue;
+        }
         (kpiValues as Record<string, number>)[key] = val;
         const threshold = KPI_THRESHOLDS.find((t) => normalizeToken(t.kpi) === normalizeToken(kpiName));
         if (!threshold) continue;
