@@ -248,19 +248,15 @@ export class DashboardPdfService {
 
   /**
    * Gera o PDF em memória como File (sem baixar automaticamente).
-   * Usa pdfmake.getBlob() que executa no Web Worker.
+   * pdfmake 0.3.x: getBlob() é async — retorna Promise<Blob>, não usa callback.
    */
-  generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers): Promise<File> {
+  async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers): Promise<File> {
     const docDef = this.buildPdfDocDef(section, helpers);
-    return new Promise<File>((resolve, reject) => {
-      pdfMake.createPdf(docDef).getBlob((blob: Blob) => {
-        if (!blob || blob.size === 0) {
-          reject(new Error('[PdfService] PDF gerado está vazio'));
-          return;
-        }
-        resolve(new File([blob], `${safeName}.pdf`, { type: 'application/pdf' }));
-      });
-    });
+    const blob: Blob = await pdfMake.createPdf(docDef).getBlob();
+    if (!blob || blob.size === 0) {
+      throw new Error('[PdfService] PDF gerado está vazio');
+    }
+    return new File([blob], `${safeName}.pdf`, { type: 'application/pdf' });
   }
 
   /**

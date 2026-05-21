@@ -388,6 +388,7 @@ type SavedFilterState = {
                   <div class="export-ready-file-list">
                     <div class="export-ready-file" *ngFor="let f of exportReadyFiles()">{{ f.name }}</div>
                   </div>
+                  <div class="export-error-row" *ngIf="exportError()">{{ exportError() }}</div>
                   <div class="export-ready-actions">
                     <button class="export-action-btn export-action-btn--share" (click)="shareReadyFiles()">
                       📤 Compartilhar agora
@@ -5204,15 +5205,54 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
-  /** Chamado pelo botão do step 'ready' — gesto fresco do usuário → navigator.share funciona. */
+  /** Chamado pelo botão do step 'ready' — gesto fresco do usuário.
+   *  1) Baixa cada arquivo para o disco via createObjectURL (equivale a pdfmake.download()).
+   *  2) Abre o Windows Share UI com os mesmos arquivos em memória.
+   */
   protected shareReadyFiles(): void {
     const files = this.exportReadyFiles();
     if (!files.length) return;
-    navigator.share({ files }).then(() => {
-      this.closeExportModal();
-    }).catch((e: any) => {
-      if (e?.name !== 'AbortError') console.warn('[Share] falhou:', e);
+
+    this.exportError.set('');
+
+    // Passo 1: baixar para o disco (idêntico ao que pdfmake.download() faz internamente)
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.name;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
     });
+
+    // Passo 2: abrir Windows Share UI com os mesmos arquivos
+    if (!navigator.share) {
+      // Share não suportado — arquivos já foram baixados, fechar modal
+      this.closeExportModal();
+      return;
+    }
+
+    if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
+      console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type}, ${f.size}b)`));
+      // Arquivos baixados — fechar modal
+      this.closeExportModal();
+      return;
+    }
+
+    navigator.share({ files })
+      .then(() => this.closeExportModal())
+      .catch((e: any) => {
+        if (e?.name === 'AbortError') {
+          // Usuário fechou o painel do Windows — ok, arquivos já foram baixados
+          this.closeExportModal();
+          return;
+        }
+        console.error('[Share] falhou:', e);
+        this.exportError.set(`PDFs baixados. Falha ao abrir painel de compartilhamento: ${e?.message ?? 'erro desconhecido'}`);
+      });
   }
 
   /**
