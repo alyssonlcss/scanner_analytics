@@ -130,16 +130,16 @@ type SavedFilterState = {
             <div class="rf-chip" *ngFor="let filter of reportFilterStates(); trackBy: trackByReportFilterKey"
                  (click)="toggleDropdown(filter.key, $event)">
               <span class="rf-chip-label">{{ filter.title }}</span>
-              <span class="rf-chip-value">{{ filter.value[0] }}</span>
+              <span class="rf-chip-value">{{ describeReportSelection(filter) }}</span>
               <svg class="rf-chip-arrow" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="rf-dropdown" *ngIf="openDropdownKey() === filter.key" (click)="$event.stopPropagation()">
                 <input *ngIf="filter.options.length > 8" class="rf-dropdown-search" type="text" placeholder="Buscar…"
                        [value]="dropdownSearch()" (input)="onDropdownSearch($event)" (click)="$event.stopPropagation()"/>
                 <div class="rf-dropdown-list">
                   <button *ngFor="let option of filteredDropdownOptions(filter)"
-                          class="rf-dropdown-option" [class.rf-dropdown-option-active]="filter.value[0] === option"
+                          class="rf-dropdown-option" [class.rf-dropdown-option-active]="isReportOptionSelected(filter, option)"
                           type="button" (click)="selectDropdownOption(filter.key, option, $event)">
-                    <span class="rf-opt-check" *ngIf="filter.value[0] === option">
+                    <span class="rf-opt-check" *ngIf="isReportOptionSelected(filter, option)">
                       <svg viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </span>
                     {{ option }}
@@ -5691,12 +5691,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return 'Nenhum valor selecionado';
     }
 
-    return filter.value.join(', ');
+    if (filter.value.length === 1) {
+      return filter.value[0];
+    }
+
+    return `${filter.value.length} selecionados`;
   }
 
-  protected toggleReportFilterOption(key: ReportFilterKey, option: string): void {
+  protected toggleReportFilterOption(key: ReportFilterKey, option: string, multiSelect = false): void {
     const filters = this.reportFilterStates();
-    const updated = filters.map((filter) => filter.key === key ? { ...filter, value: [option] } : filter);
+    const updated = filters.map((filter) => {
+      if (filter.key !== key) return filter;
+      if (!multiSelect) {
+        return { ...filter, value: [option] };
+      }
+      // Ctrl+click: toggle the option while keeping others
+      if (option === ALL_OPTION) {
+        return { ...filter, value: [ALL_OPTION] };
+      }
+      const current = filter.value.filter((v) => v !== ALL_OPTION);
+      const idx = current.indexOf(option);
+      const next = idx >= 0
+        ? current.filter((v) => v !== option)
+        : [...current, option];
+      return { ...filter, value: next.length > 0 ? next : [ALL_OPTION] };
+    });
     this.reportFilterStates.set(this.cascadeReportFilters(updated));
     this.scheduleInstantReportRefresh();
   }
@@ -5729,9 +5748,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected selectDropdownOption(key: ReportFilterKey, option: string, event: Event): void {
     event.stopPropagation();
-    this.toggleReportFilterOption(key, option);
-    this.openDropdownKey.set(null);
-    this.dropdownSearch.set('');
+    const isCtrl = (event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey;
+    this.toggleReportFilterOption(key, option, isCtrl);
+    if (!isCtrl) {
+      this.openDropdownKey.set(null);
+      this.dropdownSearch.set('');
+    }
   }
 
   protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
@@ -6210,18 +6232,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const tipoF = filters.find((f) => f.key === 'reportTipoEquipe');
     const equipeF = filters.find((f) => f.key === 'reportEquipe');
 
-    const selectedBase = baseF && !baseF.value.includes(ALL_OPTION) ? baseF.value[0] : null;
-    const selectedTipo = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value[0] : null;
-    const selectedEquipe = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value[0] : null;
+    const selectedBases = baseF && !baseF.value.includes(ALL_OPTION) ? baseF.value : [];
+    const selectedTipos = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value : [];
+    const selectedEquipes = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value : [];
 
-    // Build allowed prefixes from base + tipo
+    // Build allowed prefixes from selected bases + tipos
     const allowedPrefixes: string[] = [];
-    const bases = selectedBase ? [selectedBase] : REPORT_BASE_OPTIONS;
+    const bases = selectedBases.length > 0 ? selectedBases : REPORT_BASE_OPTIONS;
     for (const base of bases) {
       const mapping = REPORT_BASE_PREFIX_MAP[base];
       if (!mapping) continue;
-      if (!selectedTipo || selectedTipo === 'Própria') allowedPrefixes.push(mapping.own.toUpperCase());
-      if (!selectedTipo || selectedTipo === 'Parceira') allowedPrefixes.push(mapping.partner.toUpperCase());
+      if (selectedTipos.length === 0 || selectedTipos.includes('Própria')) allowedPrefixes.push(mapping.own.toUpperCase());
+      if (selectedTipos.length === 0 || selectedTipos.includes('Parceira')) allowedPrefixes.push(mapping.partner.toUpperCase());
     }
 
     // Filter equipe options
@@ -6230,26 +6252,28 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return allowedPrefixes.length === 0 || allowedPrefixes.some((p) => upper.startsWith(p));
     });
 
-    // If selected equipe no longer matches, reset to All
-    const equipeStillValid = selectedEquipe && filteredTeams.some((t) => t === selectedEquipe);
+    // Retain only selected equipes still present in filtered list
+    const validEquipes = selectedEquipes.filter((e) => filteredTeams.includes(e));
 
-    // Reverse: if equipe is selected, narrow Base and Tipo options
+    // Reverse: if equipes are selected, narrow Base and Tipo options
     let filteredBases = REPORT_BASE_OPTIONS;
     let filteredTypes = REPORT_TEAM_TYPE_OPTIONS;
 
-    if (selectedEquipe && equipeStillValid) {
-      const upper = selectedEquipe.toUpperCase();
+    if (validEquipes.length > 0) {
+      const uppers = validEquipes.map((e) => e.toUpperCase());
       filteredBases = REPORT_BASE_OPTIONS.filter((base) => {
         const m = REPORT_BASE_PREFIX_MAP[base];
-        return m && (upper.startsWith(m.own.toUpperCase()) || upper.startsWith(m.partner.toUpperCase()));
+        return m && uppers.some((upper) => upper.startsWith(m.own.toUpperCase()) || upper.startsWith(m.partner.toUpperCase()));
       });
       filteredTypes = REPORT_TEAM_TYPE_OPTIONS.filter((tipo) => {
         return REPORT_BASE_OPTIONS.some((base) => {
           const m = REPORT_BASE_PREFIX_MAP[base];
           if (!m) return false;
-          if (tipo === 'Própria') return upper.startsWith(m.own.toUpperCase());
-          if (tipo === 'Parceira') return upper.startsWith(m.partner.toUpperCase());
-          return false;
+          return uppers.some((upper) => {
+            if (tipo === 'Própria') return upper.startsWith(m.own.toUpperCase());
+            if (tipo === 'Parceira') return upper.startsWith(m.partner.toUpperCase());
+            return false;
+          });
         });
       });
     }
@@ -6259,23 +6283,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         return {
           ...f,
           options: this.withAllOption(filteredTeams),
-          value: equipeStillValid ? f.value : [ALL_OPTION],
+          value: validEquipes.length > 0 ? validEquipes : [ALL_OPTION],
         };
       }
       if (f.key === 'reportBase') {
-        const baseStillValid = selectedBase && filteredBases.includes(selectedBase);
+        const validBases = selectedBases.filter((b) => filteredBases.includes(b));
         return {
           ...f,
           options: this.withAllOption(filteredBases),
-          value: baseStillValid ? f.value : (selectedBase && !baseStillValid ? [ALL_OPTION] : f.value),
+          value: validBases.length > 0 ? validBases : (selectedBases.length > 0 ? [ALL_OPTION] : f.value),
         };
       }
       if (f.key === 'reportTipoEquipe') {
-        const tipoStillValid = selectedTipo && filteredTypes.includes(selectedTipo);
+        const validTipos = selectedTipos.filter((t) => filteredTypes.includes(t));
         return {
           ...f,
           options: this.withAllOption(filteredTypes),
-          value: tipoStillValid ? f.value : (selectedTipo && !tipoStillValid ? [ALL_OPTION] : f.value),
+          value: validTipos.length > 0 ? validTipos : (selectedTipos.length > 0 ? [ALL_OPTION] : f.value),
         };
       }
       return f;
