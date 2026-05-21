@@ -342,14 +342,14 @@ export async function createServer() {
   /**
    * Apaga todos os PDFs de um tipo de exportação específico da pasta Downloads do usuário.
    * Tipos: 'atual' | 'proprias' | 'parceiras'
-   * Padrão de nome: ScannerAnalytics_Atual_*.pdf, ScannerAnalytics_Proprias_*.pdf, etc.
+   * Padrão de nome: Atual_*.pdf, Proprias_*.pdf, Parceiras_*.pdf
    */
   server.post('/api/export/cleanup', async (request, reply) => {
     const schema = z.object({ type: z.enum(['atual', 'proprias', 'parceiras']) });
     const { type } = schema.parse(request.body);
 
     const typeLabel = type === 'atual' ? 'Atual' : type === 'proprias' ? 'Proprias' : 'Parceiras';
-    const prefix = `ScannerAnalytics_${typeLabel}_`;
+    const prefix = `${typeLabel}_`;
     const downloadsDir = join(homedir(), 'Downloads');
 
     try {

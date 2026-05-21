@@ -287,7 +287,7 @@ type SavedFilterState = {
                 <div class="export-modal-title-row">
                   <button *ngIf="exportModalStep() === 'bases'" class="export-modal-back" (click)="exportModalStep.set('mode')" aria-label="Voltar">← Voltar</button>
                   <h3 class="export-modal-title">
-                    {{ exportModalStep() === 'mode' ? 'Exportar Relatório PDF' : exportModalStep() === 'ready' ? 'Pronto para Compartilhar' : (exportModeType() === 'proprias' ? 'Próprias' : 'Parceiras') + ' — Selecione a Base' }}
+                    {{ exportModalStep() === 'mode' ? 'Exportar Relatório PDF' : (exportModeType() === 'proprias' ? 'Próprias' : 'Parceiras') + ' — Selecione a Base' }}
                   </h3>
                 </div>
                 <button class="export-modal-close" (click)="closeExportModal()" aria-label="Fechar">✕</button>
@@ -377,28 +377,6 @@ type SavedFilterState = {
                 </div>
               </ng-container>
 
-              <!-- Step 3: ready to share -->
-              <ng-container *ngIf="exportModalStep() === 'ready'">
-                <div class="export-ready-box">
-                  <span class="export-ready-icon">✅</span>
-                  <p class="export-ready-msg">
-                    {{ exportReadyFiles().length === 1 ? '1 PDF gerado' : exportReadyFiles().length + ' PDFs gerados' }}.
-                    Clique abaixo para abrir o painel de compartilhamento do Windows.
-                  </p>
-                  <div class="export-ready-file-list">
-                    <div class="export-ready-file" *ngFor="let f of exportReadyFiles()">{{ f.name }}</div>
-                  </div>
-                  <div class="export-error-row" *ngIf="exportError()">{{ exportError() }}</div>
-                  <div class="export-ready-actions">
-                    <button class="export-action-btn export-action-btn--share" (click)="shareReadyFiles()">
-                      📤 Compartilhar agora
-                    </button>
-                    <button class="export-action-btn export-action-btn--download" (click)="closeExportModal()">
-                      Fechar
-                    </button>
-                  </div>
-                </div>
-              </ng-container>
             </div>
 
             <!-- ======= MODO OPERACIONAL ======= -->
@@ -2595,54 +2573,6 @@ type SavedFilterState = {
         line-height: 1.4;
       }
 
-      /* ── Step "ready": arquivos prontos para compartilhar ── */
-      .export-ready-box {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
-        padding: 20px 16px;
-        text-align: center;
-      }
-
-      .export-ready-icon {
-        font-size: 2rem;
-      }
-
-      .export-ready-msg {
-        font-size: 0.88rem;
-        color: #334155;
-        margin: 0;
-        line-height: 1.5;
-      }
-
-      .export-ready-file-list {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .export-ready-file {
-        font-size: 0.74rem;
-        color: #64748b;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 5px 10px;
-        text-align: left;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .export-ready-actions {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        flex-wrap: wrap;
-      }
-
       .export-option-arrow {
         font-size: 1rem;
         color: #cbd5e1;
@@ -4769,11 +4699,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
   protected readonly exportModalOpen = signal(false);
-  protected readonly exportModalStep = signal<'mode' | 'bases' | 'ready'>('mode');
+  protected readonly exportModalStep = signal<'mode' | 'bases'>('mode');
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
   protected readonly exportLoading = signal(false);
   protected readonly exportError = signal('');
-  protected readonly exportReadyFiles = signal<File[]>([]);
   protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
   protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
   protected readonly reportBarHidden = signal(true);
@@ -5085,13 +5014,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportModalStep.set('mode');
     this.exportError.set('');
     this.exportLoading.set(false);
-    this.exportReadyFiles.set([]);
     this.exportModalOpen.set(true);
   }
 
   protected closeExportModal(): void {
     this.exportModalOpen.set(false);
-    this.exportReadyFiles.set([]);
   }
 
   /**
@@ -5135,10 +5062,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           } else {
             try {
               const file = await this.buildPdfFileForShare(section, 'atual');
+              this.downloadFileFromMemory(file);
+              await this.tryShare([file]);
               this.zone.run(() => {
                 this.exportLoading.set(false);
-                this.exportReadyFiles.set([file]);
-                this.exportModalStep.set('ready');
+                this.exportModalOpen.set(false);
               });
             } catch (pdfErr) {
               console.error('[PDF] Falha ao gerar PDF para compartilhamento:', pdfErr);
@@ -5184,10 +5112,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         } else {
           try {
             const files = await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et)));
+            files.forEach((f) => this.downloadFileFromMemory(f));
+            await this.tryShare(files);
             this.zone.run(() => {
               this.exportLoading.set(false);
-              this.exportReadyFiles.set(files);
-              this.exportModalStep.set('ready');
+              this.exportModalOpen.set(false);
             });
           } catch (pdfErr) {
             console.error('[PDF] Falha ao gerar PDFs para compartilhamento:', pdfErr);
@@ -5205,54 +5134,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
-  /** Chamado pelo botão do step 'ready' — gesto fresco do usuário.
-   *  1) Baixa cada arquivo para o disco via createObjectURL (equivale a pdfmake.download()).
-   *  2) Abre o Windows Share UI com os mesmos arquivos em memória.
-   */
-  protected shareReadyFiles(): void {
-    const files = this.exportReadyFiles();
-    if (!files.length) return;
+  /** Dispara download de um File em memória (equivalente ao que pdfmake.download() faz internamente). */
+  private downloadFileFromMemory(file: File): void {
+    const url = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = file.name;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
 
-    this.exportError.set('');
-
-    // Passo 1: baixar para o disco (idêntico ao que pdfmake.download() faz internamente)
-    files.forEach(file => {
-      const url = URL.createObjectURL(file);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = file.name;
-      anchor.style.display = 'none';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    });
-
-    // Passo 2: abrir Windows Share UI com os mesmos arquivos
-    if (!navigator.share) {
-      // Share não suportado — arquivos já foram baixados, fechar modal
-      this.closeExportModal();
-      return;
-    }
-
+  /** Tenta abrir o Windows Share UI com os arquivos gerados. Falha silenciosa se não suportado. */
+  private async tryShare(files: File[]): Promise<void> {
+    if (!navigator.share) return;
     if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
-      console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type}, ${f.size}b)`));
-      // Arquivos baixados — fechar modal
-      this.closeExportModal();
+      console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type})`));
       return;
     }
-
-    navigator.share({ files })
-      .then(() => this.closeExportModal())
-      .catch((e: any) => {
-        if (e?.name === 'AbortError') {
-          // Usuário fechou o painel do Windows — ok, arquivos já foram baixados
-          this.closeExportModal();
-          return;
-        }
-        console.error('[Share] falhou:', e);
-        this.exportError.set(`PDFs baixados. Falha ao abrir painel de compartilhamento: ${e?.message ?? 'erro desconhecido'}`);
-      });
+    try {
+      await navigator.share({ files });
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.warn('[Share] falhou:', e);
+    }
   }
 
   /**
@@ -5342,11 +5248,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       dateRangeLabel   = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
     }
 
-    const typePrefix = exportType === 'atual' ? 'ScannerAnalytics_Atual_'
-      : exportType === 'proprias' ? 'ScannerAnalytics_Proprias_'
-      : 'ScannerAnalytics_Parceiras_';
+    const typePrefix = exportType === 'atual' ? 'Atual_'
+      : exportType === 'proprias' ? 'Proprias_'
+      : 'Parceiras_';
 
-    const safeName = (typePrefix + `${section.title} - ${section.subtitle}${dateSuffix}`)
+    // Remove termos redundantes: o prefixo já indica o tipo.
+    // atual: título "Relatório Atual" é redundante → usar só o subtítulo (bases/equipes filtradas)
+    // proprias/parceiras: subtítulo "Equipes Próprias/Parceiras" é redundante → usar só o título (nome da base)
+    const namePart = exportType === 'atual' ? section.subtitle : section.title;
+
+    const safeName = (typePrefix + `${namePart}${dateSuffix}`)
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^\w\s-]/g, '').trim();
 
