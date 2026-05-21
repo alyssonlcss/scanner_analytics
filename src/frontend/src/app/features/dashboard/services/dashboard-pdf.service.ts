@@ -247,6 +247,23 @@ export class DashboardPdfService {
   }
 
   /**
+   * Gera o PDF em memória como File (sem baixar automaticamente).
+   * Usa pdfmake.getBlob() que executa no Web Worker.
+   */
+  generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers): Promise<File> {
+    const docDef = this.buildPdfDocDef(section, helpers);
+    return new Promise<File>((resolve, reject) => {
+      pdfMake.createPdf(docDef).getBlob((blob: Blob) => {
+        if (!blob || blob.size === 0) {
+          reject(new Error('[PdfService] PDF gerado está vazio'));
+          return;
+        }
+        resolve(new File([blob], `${safeName}.pdf`, { type: 'application/pdf' }));
+      });
+    });
+  }
+
+  /**
    * Constrói a definição completa do documento PDF para pdfmake.
    */
   buildPdfDocDef(section: PdfSection, helpers: PdfHelpers): any {

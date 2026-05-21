@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { TimelineVisualComponent } from '../../shared/components/timeline-visual/timeline-visual.component';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
-import { forkJoin } from 'rxjs';
+import { forkJoin, firstValueFrom } from 'rxjs';
 import { type GeneratedReport, type ReportKpiInsight, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
 import { DashboardPdfService } from './services/dashboard-pdf.service';
 import { DashboardChartService } from './services/dashboard-chart.service';
@@ -287,7 +287,7 @@ type SavedFilterState = {
                 <div class="export-modal-title-row">
                   <button *ngIf="exportModalStep() === 'bases'" class="export-modal-back" (click)="exportModalStep.set('mode')" aria-label="Voltar">← Voltar</button>
                   <h3 class="export-modal-title">
-                    {{ exportModalStep() === 'mode' ? 'Exportar Relatório PDF' : (exportModeType() === 'proprias' ? 'Próprias' : 'Parceiras') + ' — Selecione a Base' }}
+                    {{ exportModalStep() === 'mode' ? 'Exportar Relatório PDF' : exportModalStep() === 'ready' ? 'Pronto para Compartilhar' : (exportModeType() === 'proprias' ? 'Próprias' : 'Parceiras') + ' — Selecione a Base' }}
                   </h3>
                 </div>
                 <button class="export-modal-close" (click)="closeExportModal()" aria-label="Fechar">✕</button>
@@ -295,7 +295,7 @@ type SavedFilterState = {
 
               <!-- Step 1: choose export type -->
               <ng-container *ngIf="exportModalStep() === 'mode'">
-                <p class="export-modal-desc">Escolha o tipo de exportação. Todos os relatórios são gerados como arquivo PDF para download.</p>
+                <p class="export-modal-desc">Escolha o tipo de exportação. <strong>⬇ Baixar</strong> salva direto na pasta Downloads. <strong>📤 Compartilhar</strong> gera o PDF e abre o painel de compartilhamento do Windows.</p>
 
                 <!-- Loading overlay durante geração via API -->
                 <div class="export-loading-row" *ngIf="exportLoading()">
@@ -305,30 +305,61 @@ type SavedFilterState = {
                 <div class="export-error-row" *ngIf="exportError()">{{ exportError() }}</div>
 
                 <div class="export-modal-options" [class.export-modal-options--disabled]="exportLoading()">
-                  <button class="export-option-card" (click)="exportWithMode('current')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">📄</span>
-                    <div class="export-option-body">
-                      <span class="export-option-title">Relatório Atual</span>
-                      <span class="export-option-sub">Gera PDF com todos os dados e análises do relatório atual.</span>
+
+                  <div class="export-option-row">
+                    <div class="export-option-info">
+                      <span class="export-option-icon">📄</span>
+                      <div class="export-option-body">
+                        <span class="export-option-title">Relatório Atual</span>
+                        <span class="export-option-sub">PDF com todos os dados do relatório atual.</span>
+                      </div>
                     </div>
-                    <span class="export-option-arrow">→</span>
-                  </button>
-                  <button class="export-option-card" (click)="exportWithMode('proprias')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">🏢</span>
-                    <div class="export-option-body">
-                      <span class="export-option-title">Relatório Próprias</span>
-                      <span class="export-option-sub">4 arquivos por base com dados completos — equipes próprias (ITJ, ITK, TRR, ACU).</span>
+                    <div class="export-option-actions">
+                      <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('current', false)" [disabled]="exportLoading()" title="Baixar PDF">
+                        ⬇ Baixar
+                      </button>
+                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('current', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
+                        📤 Compartilhar
+                      </button>
                     </div>
-                    <span class="export-option-arrow">→</span>
-                  </button>
-                  <button class="export-option-card" (click)="exportWithMode('parceiras')" [disabled]="exportLoading()">
-                    <span class="export-option-icon">🤝</span>
-                    <div class="export-option-body">
-                      <span class="export-option-title">Relatório Parceiras</span>
-                      <span class="export-option-sub">4 arquivos por base com dados completos — equipes parceiras (ITE, IPK, IPT, ACA).</span>
+                  </div>
+
+                  <div class="export-option-row">
+                    <div class="export-option-info">
+                      <span class="export-option-icon">🏢</span>
+                      <div class="export-option-body">
+                        <span class="export-option-title">Relatório Próprias</span>
+                        <span class="export-option-sub">4 PDFs por base — equipes próprias (ITJ, ITK, TRR, ACU).</span>
+                      </div>
                     </div>
-                    <span class="export-option-arrow">→</span>
-                  </button>
+                    <div class="export-option-actions">
+                      <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('proprias', false)" [disabled]="exportLoading()" title="Baixar PDFs">
+                        ⬇ Baixar
+                      </button>
+                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('proprias', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
+                        📤 Compartilhar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="export-option-row">
+                    <div class="export-option-info">
+                      <span class="export-option-icon">🤝</span>
+                      <div class="export-option-body">
+                        <span class="export-option-title">Relatório Parceiras</span>
+                        <span class="export-option-sub">4 PDFs por base — equipes parceiras (ITE, IPK, IPT, ACA).</span>
+                      </div>
+                    </div>
+                    <div class="export-option-actions">
+                      <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('parceiras', false)" [disabled]="exportLoading()" title="Baixar PDFs">
+                        ⬇ Baixar
+                      </button>
+                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('parceiras', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
+                        📤 Compartilhar
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               </ng-container>
 
@@ -343,6 +374,28 @@ type SavedFilterState = {
                     </div>
                     <span class="export-base-action">Abrir PDF →</span>
                   </button>
+                </div>
+              </ng-container>
+
+              <!-- Step 3: ready to share -->
+              <ng-container *ngIf="exportModalStep() === 'ready'">
+                <div class="export-ready-box">
+                  <span class="export-ready-icon">✅</span>
+                  <p class="export-ready-msg">
+                    {{ exportReadyFiles().length === 1 ? '1 PDF gerado' : exportReadyFiles().length + ' PDFs gerados' }}.
+                    Clique abaixo para abrir o painel de compartilhamento do Windows.
+                  </p>
+                  <div class="export-ready-file-list">
+                    <div class="export-ready-file" *ngFor="let f of exportReadyFiles()">{{ f.name }}</div>
+                  </div>
+                  <div class="export-ready-actions">
+                    <button class="export-action-btn export-action-btn--share" (click)="shareReadyFiles()">
+                      📤 Compartilhar agora
+                    </button>
+                    <button class="export-action-btn export-action-btn--download" (click)="closeExportModal()">
+                      Fechar
+                    </button>
+                  </div>
                 </div>
               </ng-container>
             </div>
@@ -2394,6 +2447,73 @@ type SavedFilterState = {
         pointer-events: none;
       }
 
+      /* ── Linha de cada opção de exportação ── */
+      .export-option-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1.5px solid #e2e8f0;
+        background: #fff;
+      }
+
+      .export-option-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .export-option-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .export-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1.5px solid transparent;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 140ms, border-color 140ms, box-shadow 140ms;
+      }
+
+      .export-action-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .export-action-btn--download {
+        background: #f1f5f9;
+        border-color: #cbd5e1;
+        color: #334155;
+      }
+
+      .export-action-btn--download:hover:not(:disabled) {
+        background: #e2e8f0;
+        border-color: #94a3b8;
+      }
+
+      .export-action-btn--share {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+      }
+
+      .export-action-btn--share:hover:not(:disabled) {
+        background: #dbeafe;
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      }
+
       .export-loading-row {
         display: flex;
         align-items: center;
@@ -2472,6 +2592,54 @@ type SavedFilterState = {
         font-size: 0.72rem;
         color: #64748b;
         line-height: 1.4;
+      }
+
+      /* ── Step "ready": arquivos prontos para compartilhar ── */
+      .export-ready-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 20px 16px;
+        text-align: center;
+      }
+
+      .export-ready-icon {
+        font-size: 2rem;
+      }
+
+      .export-ready-msg {
+        font-size: 0.88rem;
+        color: #334155;
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      .export-ready-file-list {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .export-ready-file {
+        font-size: 0.74rem;
+        color: #64748b;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 5px 10px;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .export-ready-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
       }
 
       .export-option-arrow {
@@ -4600,10 +4768,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
   protected readonly exportModalOpen = signal(false);
-  protected readonly exportModalStep = signal<'mode' | 'bases'>('mode');
+  protected readonly exportModalStep = signal<'mode' | 'bases' | 'ready'>('mode');
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
   protected readonly exportLoading = signal(false);
   protected readonly exportError = signal('');
+  protected readonly exportReadyFiles = signal<File[]>([]);
   protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
   protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
   protected readonly reportBarHidden = signal(true);
@@ -4915,30 +5084,39 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportModalStep.set('mode');
     this.exportError.set('');
     this.exportLoading.set(false);
+    this.exportReadyFiles.set([]);
     this.exportModalOpen.set(true);
   }
 
   protected closeExportModal(): void {
     this.exportModalOpen.set(false);
+    this.exportReadyFiles.set([]);
   }
 
   /**
-   * Step 1: mode selection
-   * 'current'             → gera PDF completo
-   * 'proprias'/'parceiras' → chama API para cada base e baixa 4 PDFs
+   * Step 1: mode selection.
+   * shareAfter = false → baixa direto para Downloads (pdfmake.download).
+   * shareAfter = true  → gera File em memória e exibe botão de compartilhamento
+   *                      no modal (fresh user-gesture para navigator.share).
    */
-  protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras'): void {
+  protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras', shareAfter = false): void {
     const report = this.reportData();
     if (!report) return;
+
+    const exportType = mode === 'current' ? 'atual' : mode;
+
+    // Apaga PDFs antigos deste tipo na pasta Downloads (fire-and-forget)
+    this.api.cleanupExports(exportType).subscribe({
+      next: (r) => console.log(`[Cleanup] ${exportType}: ${r.deleted} arquivo(s) removido(s)`),
+      error: (e) => console.warn('[Cleanup] Não foi possível limpar arquivos anteriores:', e),
+    });
 
     if (mode === 'current') {
       const filters = this.buildReportFiltersPayload();
       this.exportLoading.set(true);
       this.exportError.set('');
       this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams } }).subscribe({
-        next: (result) => {
-          this.exportLoading.set(false);
-          this.exportModalOpen.set(false);
+        next: async (result) => {
           const hasTeams = filters.teams && filters.teams.length > 0;
           const subtitle = hasTeams
             ? filters.teams!.join(', ')
@@ -4946,7 +5124,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 filters.bases?.join(', ') || 'Todas as Bases',
                 filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
               ].join(' · ');
-          this.openPdfWindow({ report: result.generatedReport, title: 'Relatório Atual', subtitle });
+          const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
+          if (!shareAfter) {
+            this.downloadPdfDirect(section, 'atual');
+            this.zone.run(() => {
+              this.exportLoading.set(false);
+              this.exportModalOpen.set(false);
+            });
+          } else {
+            try {
+              const file = await this.buildPdfFileForShare(section, 'atual');
+              this.zone.run(() => {
+                this.exportLoading.set(false);
+                this.exportReadyFiles.set([file]);
+                this.exportModalStep.set('ready');
+              });
+            } catch (pdfErr) {
+              console.error('[PDF] Falha ao gerar PDF para compartilhamento:', pdfErr);
+              this.zone.run(() => {
+                this.exportLoading.set(false);
+                this.exportError.set('Falha ao gerar o PDF. Tente novamente.');
+              });
+            }
+          }
         },
         error: () => {
           this.exportLoading.set(false);
@@ -4958,6 +5158,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
+    const et = exportType as 'proprias' | 'parceiras';
 
     this.exportLoading.set(true);
     this.exportError.set('');
@@ -4967,13 +5168,34 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     );
 
     forkJoin(requests).subscribe({
-      next: (results) => {
-        this.exportLoading.set(false);
-        this.exportModalOpen.set(false);
-        results.forEach((result, i) => {
-          const base = this.reportBaseOptions[i];
-          this.openPdfWindow({ report: result.generatedReport, title: base, subtitle: typeLabel });
-        });
+      next: async (results) => {
+        const sections = results.map((result, i) => ({
+          report: result.generatedReport,
+          title: this.reportBaseOptions[i],
+          subtitle: typeLabel,
+        }));
+        if (!shareAfter) {
+          sections.forEach((s) => this.downloadPdfDirect(s, et));
+          this.zone.run(() => {
+            this.exportLoading.set(false);
+            this.exportModalOpen.set(false);
+          });
+        } else {
+          try {
+            const files = await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et)));
+            this.zone.run(() => {
+              this.exportLoading.set(false);
+              this.exportReadyFiles.set(files);
+              this.exportModalStep.set('ready');
+            });
+          } catch (pdfErr) {
+            console.error('[PDF] Falha ao gerar PDFs para compartilhamento:', pdfErr);
+            this.zone.run(() => {
+              this.exportLoading.set(false);
+              this.exportError.set('Falha ao gerar os PDFs. Tente novamente.');
+            });
+          }
+        }
       },
       error: () => {
         this.exportLoading.set(false);
@@ -4982,11 +5204,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  /** Chamado pelo botão do step 'ready' — gesto fresco do usuário → navigator.share funciona. */
+  protected shareReadyFiles(): void {
+    const files = this.exportReadyFiles();
+    if (!files.length) return;
+    navigator.share({ files }).then(() => {
+      this.closeExportModal();
+    }).catch((e: any) => {
+      if (e?.name !== 'AbortError') console.warn('[Share] falhou:', e);
+    });
+  }
+
   /**
    * @deprecated use exportWithMode; kept for template compatibility
    */
   protected exportBase(base: string): void {
     const mode = this.exportModeType();
+    const exportType: 'proprias' | 'parceiras' = mode === 'proprias' ? 'proprias' : 'parceiras';
     const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
 
@@ -4995,8 +5229,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } }).subscribe({
       next: (result) => {
+        const section = { report: result.generatedReport, title: base, subtitle: typeLabel };
+        this.downloadPdfDirect(section, exportType);
         this.exportLoading.set(false);
-        this.openPdfWindow({ report: result.generatedReport, title: base, subtitle: typeLabel });
+        this.exportModalOpen.set(false);
       },
       error: () => {
         this.exportLoading.set(false);
@@ -5021,7 +5257,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.pdfService.stripEmojiForPdf(text);
   }
 
-  private openPdfWindow(section: { report: GeneratedReport; title: string; subtitle: string }): void {
+  /**
+   * Constrói o nome seguro e o label de período para um PDF a partir do section + exportType.
+   */
+  private buildPdfFileName(
+    section: { report: GeneratedReport; title: string; subtitle: string },
+    exportType: 'atual' | 'proprias' | 'parceiras',
+  ): { safeName: string; dateRangeLabel: string } {
     const monthAbbrevToNum: Record<string, string> = {
       jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',
       jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
@@ -5040,11 +5282,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     let dateSuffix = '';
     let dateRangeLabel = '';
 
-    // Prefer actual dates from the file data
     const dataRange = section.report.dataDateRange;
     if (dataRange) {
       dateRangeLabel = dataRange.min === dataRange.max ? dataRange.min : `${dataRange.min} a ${dataRange.max}`;
-      // Build a compact suffix (dd-mm ... dd-mm) for the filename
       const parsePart = (s: string, i: number) => s.split('/')[i] ?? '';
       const startSuffix = `${parsePart(dataRange.min, 0)}-${parsePart(dataRange.min, 1)}`;
       const endSuffix   = `${parsePart(dataRange.max, 0)}-${parsePart(dataRange.max, 1)}`;
@@ -5062,12 +5302,39 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       dateRangeLabel   = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
     }
 
-    const safeName = `${section.title} - ${section.subtitle}${dateSuffix}`
+    const typePrefix = exportType === 'atual' ? 'ScannerAnalytics_Atual_'
+      : exportType === 'proprias' ? 'ScannerAnalytics_Proprias_'
+      : 'ScannerAnalytics_Parceiras_';
+
+    const safeName = (typePrefix + `${section.title} - ${section.subtitle}${dateSuffix}`)
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^\w\s-]/g, '').trim();
 
+    return { safeName, dateRangeLabel };
+  }
+
+  /**
+   * Baixa o PDF direto para Downloads via pdfmake.download() — não requer gesto de usuário.
+   */
+  private downloadPdfDirect(
+    section: { report: GeneratedReport; title: string; subtitle: string },
+    exportType: 'atual' | 'proprias' | 'parceiras',
+  ): void {
+    const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
     this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers());
   }
+
+  /**
+   * Gera o PDF como File em memória (para navigator.share). Não baixa automaticamente.
+   */
+  private buildPdfFileForShare(
+    section: { report: GeneratedReport; title: string; subtitle: string },
+    exportType: 'atual' | 'proprias' | 'parceiras',
+  ): Promise<File> {
+    const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
+    return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers());
+  }
+
 
   private buildPdfHelpers() {
     return {

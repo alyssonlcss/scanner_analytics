@@ -2,6 +2,7 @@
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
 
 import Fastify from 'fastify';
@@ -336,6 +337,31 @@ export async function createServer() {
     reply.type(contentType);
 
     return reply.send(createReadStream(job.exportFilePath));
+  });
+
+  /**
+   * Apaga todos os PDFs de um tipo de exportação específico da pasta Downloads do usuário.
+   * Tipos: 'atual' | 'proprias' | 'parceiras'
+   * Padrão de nome: ScannerAnalytics_Atual_*.pdf, ScannerAnalytics_Proprias_*.pdf, etc.
+   */
+  server.post('/api/export/cleanup', async (request, reply) => {
+    const schema = z.object({ type: z.enum(['atual', 'proprias', 'parceiras']) });
+    const { type } = schema.parse(request.body);
+
+    const typeLabel = type === 'atual' ? 'Atual' : type === 'proprias' ? 'Proprias' : 'Parceiras';
+    const prefix = `ScannerAnalytics_${typeLabel}_`;
+    const downloadsDir = join(homedir(), 'Downloads');
+
+    try {
+      const entries = await readdir(downloadsDir);
+      const toDelete = entries.filter(f => f.startsWith(prefix) && f.endsWith('.pdf'));
+      await Promise.all(toDelete.map(f => rm(join(downloadsDir, f), { force: true })));
+      server.log.info(`[export/cleanup] ${toDelete.length} arquivo(s) de "${type}" removidos: ${toDelete.join(', ') || 'nenhum'}`);
+      return reply.send({ deleted: toDelete.length, files: toDelete });
+    } catch (err) {
+      server.log.warn({ err }, '[export/cleanup] falha ao limpar Downloads — prosseguindo normalmente');
+      return reply.code(200).send({ deleted: 0, files: [], warning: 'cleanup skipped' });
+    }
   });
 
   server.get('/api/scanner/filters/:jobId', async (request, reply) => {
