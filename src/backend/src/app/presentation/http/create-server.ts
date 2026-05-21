@@ -340,23 +340,25 @@ export async function createServer() {
   });
 
   /**
-   * Apaga todos os PDFs de um tipo de exportação específico da pasta Downloads do usuário.
-   * Tipos: 'atual' | 'proprias' | 'parceiras'
+   * Apaga PDFs de exportação da pasta Downloads do usuário.
+   * Tipos: 'atual' | 'proprias' | 'parceiras' | 'all'
    * Padrão de nome: Atual_*.pdf, Proprias_*.pdf, Parceiras_*.pdf
+   * 'all' remove os três prefixos de uma vez.
    */
   server.post('/api/export/cleanup', async (request, reply) => {
-    const schema = z.object({ type: z.enum(['atual', 'proprias', 'parceiras']) });
+    const schema = z.object({ type: z.enum(['atual', 'proprias', 'parceiras', 'all']) });
     const { type } = schema.parse(request.body);
 
-    const typeLabel = type === 'atual' ? 'Atual' : type === 'proprias' ? 'Proprias' : 'Parceiras';
-    const prefix = `${typeLabel}_`;
+    const prefixes = type === 'all'
+      ? ['Atual_', 'Proprias_', 'Parceiras_']
+      : [type === 'atual' ? 'Atual_' : type === 'proprias' ? 'Proprias_' : 'Parceiras_'];
     const downloadsDir = join(homedir(), 'Downloads');
 
     try {
       const entries = await readdir(downloadsDir);
-      const toDelete = entries.filter(f => f.startsWith(prefix) && f.endsWith('.pdf'));
+      const toDelete = entries.filter(f => prefixes.some(p => f.startsWith(p)) && f.endsWith('.pdf'));
       await Promise.all(toDelete.map(f => rm(join(downloadsDir, f), { force: true })));
-      server.log.info(`[export/cleanup] ${toDelete.length} arquivo(s) de "${type}" removidos: ${toDelete.join(', ') || 'nenhum'}`);
+      server.log.info(`[export/cleanup] ${toDelete.length} arquivo(s) removidos: ${toDelete.join(', ') || 'nenhum'}`);
       return reply.send({ deleted: toDelete.length, files: toDelete });
     } catch (err) {
       server.log.warn({ err }, '[export/cleanup] falha ao limpar Downloads — prosseguindo normalmente');

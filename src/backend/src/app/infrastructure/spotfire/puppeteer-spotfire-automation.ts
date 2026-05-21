@@ -4839,6 +4839,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       request.signal,
     );
 
+    // Page.setDownloadBehavior é browser-wide (não por aba) nesta versão do CDP.
+    // Resetar imediatamente após o download evita que outros tabs (ex: frontend Angular)
+    // também salvem arquivos no outputDirectory em vez de ~/Downloads.
+    try {
+      const resetSession = await page.createCDPSession();
+      await resetSession.send('Page.setDownloadBehavior', { behavior: 'default' });
+      await resetSession.detach();
+    } catch {
+      // Não-crítico: session pode já estar encerrada
+    }
+
     this.log(`minimizing table "${tableTitle}" after download`);
     await this.raceAbort(this.ensureNoMaximizedVisualization(page), request.signal);
 
@@ -4979,7 +4990,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.log('waiting for download to complete...');
     const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
     this.log(`download result: ${downloadedFile ?? '(no file downloaded)'}`);
-    
+
+    try {
+      await cdpSession.send('Page.setDownloadBehavior', { behavior: 'default' });
+      await cdpSession.detach();
+    } catch { /* não-crítico */ }
+
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
   }
 

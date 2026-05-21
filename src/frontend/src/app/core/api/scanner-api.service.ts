@@ -635,7 +635,7 @@ export class ScannerApiService {
    * Apaga os PDFs gerados anteriormente de um tipo (atual/proprias/parceiras) da pasta Downloads.
    * O backend localiza arquivos com prefixo ScannerAnalytics_{Tipo}_ e os remove.
    */
-  public cleanupExports(type: 'atual' | 'proprias' | 'parceiras'): Observable<{ deleted: number; files: string[] }> {
+  public cleanupExports(type: 'atual' | 'proprias' | 'parceiras' | 'all'): Observable<{ deleted: number; files: string[] }> {
     return this.http.post<{ deleted: number; files: string[] }>(`${this.baseUrl}/export/cleanup`, { type });
   }
 

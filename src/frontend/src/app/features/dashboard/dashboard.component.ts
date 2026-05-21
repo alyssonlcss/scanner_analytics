@@ -5033,12 +5033,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const exportType = mode === 'current' ? 'atual' : mode;
 
-    // Apaga PDFs antigos deste tipo na pasta Downloads (fire-and-forget)
-    this.api.cleanupExports(exportType).subscribe({
-      next: (r) => console.log(`[Cleanup] ${exportType}: ${r.deleted} arquivo(s) removido(s)`),
-      error: (e) => console.warn('[Cleanup] Não foi possível limpar arquivos anteriores:', e),
-    });
-
     if (mode === 'current') {
       const filters = this.buildReportFiltersPayload();
       this.exportLoading.set(true);
@@ -6033,6 +6027,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               this.progressMessage.set('');
               this.setupAnimations();
               this.fetchAndUpdateTeams();
+              // Após o fluxo completo (download-data → generate → teams), apaga todos
+              // os PDFs antigos de uma vez. Os próximos exports serão do relatório atualizado.
+              this.api.cleanupExports('all').subscribe({
+                next: (r) => console.log(`[Cleanup] ${r.deleted} PDF(s) antigo(s) removido(s) de ~/Downloads`),
+                error: (e) => console.warn('[Cleanup] Não foi possível limpar PDFs anteriores:', e),
+              });
             },
             error: () => {
               this.loading.set(false);
