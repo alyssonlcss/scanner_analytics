@@ -656,7 +656,7 @@ type SavedFilterState = {
                                   <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
-                              <app-timeline-visual [ev]="ev" [hidePartida]="true"></app-timeline-visual>
+                              <app-timeline-visual [ev]="ev" [hidePartida]="true" [trimToACaminho]="true"></app-timeline-visual>
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_muito_baixo')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo muito baixo:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('tr_muito_baixo', ev))"></span>

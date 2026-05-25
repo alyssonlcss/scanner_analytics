@@ -60,8 +60,8 @@ export class DashboardPdfService {
     '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
   ]);
 
-  private buildTimelinePdfBlock(ev: any, hidePartida = false): any | null {
-    const segs = buildTimelineSegments(ev, hidePartida);
+  private buildTimelinePdfBlock(ev: any, hidePartida = false, trimToACaminho = false): any | null {
+    const segs = buildTimelineSegments(ev, hidePartida, trimToACaminho);
     if (!segs.length) return null;
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
@@ -797,7 +797,7 @@ export class DashboardPdfService {
               }
             }
             if (efCcParts.length > 0) orderItems.push({ text: efCcParts.join(''), fontSize: 7, color: GRAY, margin: [0, 0, 0, 2] });
-            const efTl = this.buildTimelinePdfBlock(ev, true);
+            const efTl = this.buildTimelinePdfBlock(ev, true, true);
             if (efTl) orderItems.push(efTl);
             if (ev.flags?.includes('tr_muito_baixo')) orderItems.push(alertItem(`Tempo de Reparo muito baixo: ${helpers.eficienciaAlertBody('tr_muito_baixo', ev)}`));
             if (ev.flags?.includes('deslocamento_curto')) orderItems.push(alertItem(`Deslocamento (TL) muito curto: ${helpers.eficienciaAlertBody('deslocamento_curto', ev)}`));

@@ -172,6 +172,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
 export class TimelineVisualComponent implements OnInit {
   @Input() ev: any;
   @Input() hidePartida: boolean = false;
+  @Input() trimToACaminho: boolean = false;
 
   segments: TimelineSegment[] = [];
 
@@ -204,6 +205,6 @@ export class TimelineVisualComponent implements OnInit {
 
   private buildTimeline() {
     if (!this.ev) return;
-    this.segments = buildTimelineSegments(this.ev, this.hidePartida ?? false);
+    this.segments = buildTimelineSegments(this.ev, this.hidePartida ?? false, this.trimToACaminho ?? false);
   }
 }

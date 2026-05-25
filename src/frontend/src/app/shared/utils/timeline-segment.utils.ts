@@ -44,7 +44,7 @@ export function tlFlexGrow(durationMin: number): number {
 }
 
 /** Constrói e mescla os segmentos de timeline a partir de um evento de evidência. */
-export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSegment[] {
+export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACaminho = false): TimelineSegment[] {
   if (!ev) return [];
 
   const logIn = ev.log_in || ev.log_in_corrigido;
@@ -78,6 +78,19 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean): TimelineSe
   const seen = new Set<string>();
   const uniquePts = pts.filter(p => seen.has(p.key) ? false : (seen.add(p.key), true));
   uniquePts.sort((a, b) => a.ts - b.ts);
+
+  if (trimToACaminho) {
+    const aCaminhoPt = uniquePts.find(p => p.key === 'a_caminho');
+    if (aCaminhoPt) {
+      const idx = uniquePts.indexOf(aCaminhoPt);
+      uniquePts.splice(0, idx);
+    }
+    // Also trim everything after 'liberada' so intervals/log-off don't appear
+    const liberadaIdx = uniquePts.findIndex(p => p.key === 'liberada');
+    if (liberadaIdx !== -1) {
+      uniquePts.splice(liberadaIdx + 1);
+    }
+  }
 
   const isInInterval = (tsMain: number): boolean => {
     const iS = uniquePts.find(p => p.key === 'inicio_intervalo');
