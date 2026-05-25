@@ -306,7 +306,7 @@ type SavedFilterState = {
 
                 <div class="export-modal-options" [class.export-modal-options--disabled]="exportLoading()">
 
-                  <div class="export-option-row">
+                  <div class="export-option-row" (mouseenter)="onOptionHover('current')">
                     <div class="export-option-info">
                       <span class="export-option-icon">📄</span>
                       <div class="export-option-body">
@@ -318,13 +318,15 @@ type SavedFilterState = {
                       <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('current', false)" [disabled]="exportLoading()" title="Baixar PDF">
                         ⬇ Baixar
                       </button>
-                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('current', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
-                        📤 Compartilhar
+                      <button class="export-action-btn export-action-btn--share"
+                        (click)="shareMode('current')"
+                        [disabled]="exportLoading() || !!preloadingModes()['current']" title="Compartilhar via Windows">
+                        {{ preloadingModes()['current'] ? '⏳ Preparando...' : '📤 Compartilhar' }}
                       </button>
                     </div>
                   </div>
 
-                  <div class="export-option-row">
+                  <div class="export-option-row" (mouseenter)="onOptionHover('proprias')">
                     <div class="export-option-info">
                       <span class="export-option-icon">🏢</span>
                       <div class="export-option-body">
@@ -336,13 +338,15 @@ type SavedFilterState = {
                       <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('proprias', false)" [disabled]="exportLoading()" title="Baixar PDFs">
                         ⬇ Baixar
                       </button>
-                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('proprias', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
-                        📤 Compartilhar
+                      <button class="export-action-btn export-action-btn--share"
+                        (click)="shareMode('proprias')"
+                        [disabled]="exportLoading() || !!preloadingModes()['proprias']" title="Compartilhar via Windows">
+                        {{ preloadingModes()['proprias'] ? '⏳ Preparando...' : '📤 Compartilhar' }}
                       </button>
                     </div>
                   </div>
 
-                  <div class="export-option-row">
+                  <div class="export-option-row" (mouseenter)="onOptionHover('parceiras')">
                     <div class="export-option-info">
                       <span class="export-option-icon">🤝</span>
                       <div class="export-option-body">
@@ -354,8 +358,10 @@ type SavedFilterState = {
                       <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('parceiras', false)" [disabled]="exportLoading()" title="Baixar PDFs">
                         ⬇ Baixar
                       </button>
-                      <button class="export-action-btn export-action-btn--share" (click)="exportWithMode('parceiras', true)" [disabled]="exportLoading()" title="Compartilhar via Windows">
-                        📤 Compartilhar
+                      <button class="export-action-btn export-action-btn--share"
+                        (click)="shareMode('parceiras')"
+                        [disabled]="exportLoading() || !!preloadingModes()['parceiras']" title="Compartilhar via Windows">
+                        {{ preloadingModes()['parceiras'] ? '⏳ Preparando...' : '📤 Compartilhar' }}
                       </button>
                     </div>
                   </div>
@@ -2526,6 +2532,22 @@ type SavedFilterState = {
         border-radius: 8px;
         padding: 10px 14px;
         margin-bottom: 14px;
+      }
+
+      .export-pending-share-row {
+        display: none; /* removido */
+      }
+
+      .export-action-btn--share-ready {
+        background: #16a34a !important;
+        border-color: #15803d !important;
+        color: #fff !important;
+        animation: share-pulse 1.4s ease-in-out infinite;
+      }
+
+      @keyframes share-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
+        50%       { box-shadow: 0 0 0 5px rgba(22,163,74,0); }
       }
 
       .export-option-card {
@@ -4703,6 +4725,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
   protected readonly exportLoading = signal(false);
   protected readonly exportError = signal('');
+  /** Arquivos prontos aguardando gesto do usuário para navigator.share. */
+  protected readonly pendingShareFiles = signal<File[] | null>(null);
+  /** Qual modo tem arquivos prontos para compartilhar (para saber qual botão realçar). */
+  protected readonly pendingShareMode = signal<'current' | 'proprias' | 'parceiras' | null>(null);
+  /** Arquivos pré-gerados em background por modo — prontos para navigator.share() direto. */
+  private readonly preloadedShareFiles = signal<Partial<Record<'current' | 'proprias' | 'parceiras', File[]>>>({});
+  /** Quais modos estão sendo pré-carregados (true = ainda carregando). */
+  protected readonly preloadingModes = signal<Partial<Record<'current' | 'proprias' | 'parceiras', boolean>>>({});
   protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
   protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
   protected readonly reportBarHidden = signal(true);
@@ -5014,18 +5044,122 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportModalStep.set('mode');
     this.exportError.set('');
     this.exportLoading.set(false);
+    this.pendingShareFiles.set(null);
+    this.pendingShareMode.set(null);
+    this.preloadedShareFiles.set({});
+    this.preloadingModes.set({});
     this.exportModalOpen.set(true);
   }
 
   protected closeExportModal(): void {
     this.exportModalOpen.set(false);
+    this.pendingShareFiles.set(null);
+    this.pendingShareMode.set(null);
+    this.preloadedShareFiles.set({});
+    this.preloadingModes.set({});
+  }
+
+  /**
+   * Chamado quando o botão "Compartilhar" já tem arquivos prontos (pendingShareMode).
+   * Nesse ponto temos um gesto fresco do usuário → navigator.share funciona.
+   */
+  protected async triggerPendingShare(): Promise<void> {
+    const files = this.pendingShareFiles();
+    if (!files) return;
+    await this.tryShare(files);
+    this.pendingShareFiles.set(null);
+    this.pendingShareMode.set(null);
+    this.exportModalOpen.set(false);
+  }
+
+  /**
+   * Pré-carrega arquivos PDF em background quando o modal abre.
+   * Ao concluir, armazena em preloadedShareFiles para que shareMode() possa
+   * chamar navigator.share() diretamente dentro do gesto do usuário (1 clique).
+   */
+  private preloadShareFiles(mode: 'current' | 'proprias' | 'parceiras'): void {
+    if (!this.reportData()) return;
+    this.preloadingModes.update(m => ({ ...m, [mode]: true }));
+
+    const markDone = (files?: File[]) => {
+      this.zone.run(() => {
+        this.preloadingModes.update(m => { const n = { ...m }; delete n[mode]; return n; });
+        if (files) this.preloadedShareFiles.update(m => ({ ...m, [mode]: files }));
+      });
+    };
+
+    if (mode === 'current') {
+      const filters = this.buildReportFiltersPayload();
+      this.api.exportData({
+        reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams },
+      }).subscribe({
+        next: async (result) => {
+          const hasTeams = filters.teams && filters.teams.length > 0;
+          const subtitle = hasTeams
+            ? filters.teams!.join(', ')
+            : [
+                filters.bases?.join(', ') || 'Todas as Bases',
+                filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
+              ].join(' · ');
+          const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
+          try { markDone([await this.buildPdfFileForShare(section, 'atual')]); } catch { markDone(); }
+        },
+        error: () => markDone(),
+      });
+    } else {
+      const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
+      const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
+      const et = mode as 'proprias' | 'parceiras';
+      const requests = this.reportBaseOptions.map((base) =>
+        this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
+      );
+      forkJoin(requests).subscribe({
+        next: async (results) => {
+          const sections = results.map((result, i) => ({
+            report: result.generatedReport,
+            title: this.reportBaseOptions[i],
+            subtitle: typeLabel,
+          }));
+          try {
+            markDone(await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et))));
+          } catch { markDone(); }
+        },
+        error: () => markDone(),
+      });
+    }
+  }
+
+  /**
+   * Handler do botão Compartilhar.
+   * Se os arquivos já foram pré-gerados via hover da linha → navigator.share() no 1º clique.
+   * Se não, inicia a pré-carga agora; o botão fica "⏳ Preparando..." até ficar pronto.
+   */
+  protected async shareMode(mode: 'current' | 'proprias' | 'parceiras'): Promise<void> {
+    const files = this.preloadedShareFiles()[mode];
+    if (files && files.length > 0) {
+      files.forEach(f => this.downloadFileFromMemory(f));
+      await this.tryShare(files);
+      this.exportModalOpen.set(false);
+      return;
+    }
+    if (!this.preloadingModes()[mode]) {
+      this.preloadShareFiles(mode);
+    }
+  }
+
+  /** Inicia a pré-carga de um modo quando o usuário passa o mouse sobre a linha da opção. */
+  protected onOptionHover(mode: 'current' | 'proprias' | 'parceiras'): void {
+    if (!this.preloadingModes()[mode] && !this.preloadedShareFiles()[mode]) {
+      this.preloadShareFiles(mode);
+    }
   }
 
   /**
    * Step 1: mode selection.
    * shareAfter = false → baixa direto para Downloads (pdfmake.download).
-   * shareAfter = true  → gera File em memória e exibe botão de compartilhamento
-   *                      no modal (fresh user-gesture para navigator.share).
+   * shareAfter = true  → gera Files em memória, baixa automaticamente e exibe
+   *                      botão de compartilhamento no modal (fresh user-gesture
+   *                      para navigator.share).
    */
   protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras', shareAfter = false): void {
     const report = this.reportData();
@@ -5057,10 +5191,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             try {
               const file = await this.buildPdfFileForShare(section, 'atual');
               this.downloadFileFromMemory(file);
-              await this.tryShare([file]);
+              const shared = await this.tryShare([file]);
               this.zone.run(() => {
                 this.exportLoading.set(false);
-                this.exportModalOpen.set(false);
+                if (shared) {
+                  this.exportModalOpen.set(false);
+                } else {
+                  this.pendingShareFiles.set([file]);
+                  this.pendingShareMode.set('current');
+                }
               });
             } catch (pdfErr) {
               console.error('[PDF] Falha ao gerar PDF para compartilhamento:', pdfErr);
@@ -5107,10 +5246,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           try {
             const files = await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et)));
             files.forEach((f) => this.downloadFileFromMemory(f));
-            await this.tryShare(files);
+            const shared = await this.tryShare(files);
             this.zone.run(() => {
               this.exportLoading.set(false);
-              this.exportModalOpen.set(false);
+              if (shared) {
+                this.exportModalOpen.set(false);
+              } else {
+                this.pendingShareFiles.set(files);
+                this.pendingShareMode.set(mode as 'proprias' | 'parceiras');
+              }
             });
           } catch (pdfErr) {
             console.error('[PDF] Falha ao gerar PDFs para compartilhamento:', pdfErr);
@@ -5141,17 +5285,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
-  /** Tenta abrir o Windows Share UI com os arquivos gerados. Falha silenciosa se não suportado. */
-  private async tryShare(files: File[]): Promise<void> {
-    if (!navigator.share) return;
+  /**
+   * Tenta abrir o Windows Share UI com os arquivos gerados.
+   * Retorna true se navigator.share foi invocado com sucesso, false caso contrário.
+   */
+  private async tryShare(files: File[]): Promise<boolean> {
+    if (!navigator.share) return false;
     if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
       console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type})`));
-      return;
+      return false;
     }
     try {
       await navigator.share({ files });
+      return true;
     } catch (e: any) {
       if (e?.name !== 'AbortError') console.warn('[Share] falhou:', e);
+      return false;
     }
   }
 
