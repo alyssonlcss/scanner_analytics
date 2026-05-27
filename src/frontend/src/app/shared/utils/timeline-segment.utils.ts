@@ -101,8 +101,8 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
   const labelMap: Record<string, string> = {
     'inicio_calendario_log_in': 'Log In',
     'log_in_inicio_calendario': 'Log In',
-    'inicio_calendario_despachada': '1º Despacho',
-    'log_in_despachada': '1º Despacho',
+    'inicio_calendario_despachada': ev.nr_ordem_despacho_anterior ? 'Despacho' : '1º Despacho',
+    'log_in_despachada': ev.nr_ordem_despacho_anterior ? 'Despacho' : '1º Despacho',
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
@@ -143,19 +143,20 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     } else if (label === 'Partida' && ev.temp_prep_os_min !== undefined) {
       durationMin = Math.max(ev.temp_prep_os_min, 1);
       if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥ 10min');
-    } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
+    } else if (['1º Despacho', 'Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
       const detType: Record<string, string> = {
         '1º Despacho': 'inicio_jornada',
+        'Despacho': 'inicio_jornada',
         'Desl. Intervalo': 'intervalo_deslocamento',
         'Antes Log Off': 'fim_jornada',
         'Entre OS': 'entre_ordens',
       };
       const md = ev.sem_os_details?.find((s: any) => {
         if (s.type !== detType[label]) return false;
-        if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
+        if (label === '1º Despacho' || label === 'Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
         return s.from === p1.raw && s.to === p2.raw;
       });
-      if ((label === '1º Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
+      if ((label === '1º Despacho' || label === 'Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
       if (md) {
         if (detType[label] === 'fim_jornada') {
           flags.push('acima_media');

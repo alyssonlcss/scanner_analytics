@@ -51,6 +51,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
     const logOffCorrigidoCol  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
     const retornoBaseCol      = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
     const horasExtrasCol      = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
+    // Timestamp of the first dispatch of the day (team-day aggregate)
+    const horaPrimDespachoTsCol = deslocAcc.resolve(['Hora 1º Despacho', 'Hora 1o Despacho']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) return [];
 
@@ -526,6 +528,23 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           if (uniqueFlags.length === 0) continue;
         }
 
+        // Detect prior-dispatch conflict for the first OS of the day (i === 0).
+        let nrOrdemDespachoAnterior: string | undefined;
+        let horaDespachoAnterior: string | undefined;
+        if (i === 0 && horaPrimDespachoTsCol && nrOrdemCol && despachadaCol) {
+          const hora1oDespachoRaw = String(row[horaPrimDespachoTsCol] ?? '').trim();
+          const thisDespachadaRaw = String(row[despachadaCol] ?? '').trim();
+          if (hora1oDespachoRaw && thisDespachadaRaw && hora1oDespachoRaw !== thisDespachadaRaw) {
+            const anteriorRow = ordered.find(
+              (r) => String(r[despachadaCol] ?? '').trim() === hora1oDespachoRaw,
+            );
+            if (anteriorRow) {
+              nrOrdemDespachoAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
+              horaDespachoAnterior = hora1oDespachoRaw || undefined;
+            }
+          }
+        }
+
         evidences.push({
           date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
           nr_ordem:          nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim()         : '',
@@ -552,6 +571,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           sem_os_details:    semOsDetails.length > 0 ? semOsDetails : undefined,
           sem_os_total_min:  semOsTotalMin,
           flags:             uniqueFlags,
+          nr_ordem_despacho_anterior: nrOrdemDespachoAnterior,
+          hora_despacho_anterior:     horaDespachoAnterior,
         });
       }
 

@@ -198,6 +198,14 @@ export interface OsDiaOrderEvidence {
   flag_temp_reparo_excedido?: boolean;
   /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */
   entreOsAfterIntervalo?: { min: number; from: string; to: string };
+  /**
+   * When set, indicates that another OS (this nr_ordem) was dispatched to the team
+   * BEFORE this OS's 'Despachada'. The segment label changes from '1º Despacho' to 'Despacho'
+   * and a warning flag is shown in the evidence card / PDF.
+   */
+  nr_ordem_despacho_anterior?: string;
+  /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
+  hora_despacho_anterior?: string;
 }
 
 export interface OsDiaTeamAnalysis {
@@ -314,6 +322,14 @@ export interface UtilizacaoOrderEvidence {
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd'>;
   alertTexts?: Record<string, string>;
+  /**
+   * When set, another OS (this nr_ordem) was dispatched to the team BEFORE this OS's
+   * first 'A Caminho'. Segment label changes from '1º Despacho' to 'Despacho' and
+   * a warning flag is shown in the evidence card / PDF.
+   */
+  nr_ordem_despacho_anterior?: string;
+  /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
+  hora_despacho_anterior?: string;
 }
 
 export interface UtilizacaoTeamAnalysis {
@@ -421,6 +437,14 @@ export interface PrimeiroDeslocDayEvidence {
   team_avg_desloc_min: number;
   global_avg_desloc_min: number;
   is_primeira_os_jornada: boolean;
+  /**
+   * When set, indicates that another OS (this nr_ordem) was dispatched to the team
+   * BEFORE the first 'A Caminho'. The segment label changes from '1º Despacho' to 'Despacho'
+   * and a warning flag is shown in the evidence card / PDF.
+   */
+  nr_ordem_despacho_anterior?: string;
+  /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
+  hora_despacho_anterior?: string;
   flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
   /** Pre-computed alert text per flag code. */
   alertTexts?: Record<string, string>;

@@ -21,8 +21,8 @@ export interface PdfHelpers {
   renderEmojiDataUrl: (emoji: string, pxSize: number) => string;
   renderSymbolDataUrl: (symbol: string, pxSize: number, color: string) => string;
   stripEmojiForPdf: (text: string) => string;
-  semOsDetailLabel: (d: SemOsDetail) => string;
-  semOsDetailBody: (d: SemOsDetail) => string;
+  semOsDetailLabel: (d: SemOsDetail, nrOrdemDespachoAnterior?: string) => string;
+  semOsDetailBody: (d: SemOsDetail, nrOrdemDespachoAnterior?: string) => string;
   osDiaFlagLabel: (flag: string) => string;
   eficienciaFlagLabel: (flag: string) => string;
   tmeImpFlagLabel: (flag: string) => string;
@@ -57,7 +57,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
+    '1º Despacho', 'Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
   ]);
 
   private buildTimelinePdfBlock(ev: any, hidePartida = false, trimToACaminho = false): any | null {
@@ -644,6 +644,52 @@ export class DashboardPdfService {
         };
       };
 
+      const AMBER = '#d97706';
+      const AMBER_DARK = '#92400e';
+      const alertWarnItem = (text: string): any => {
+        const sep = text.indexOf(': ');
+        const label = sep > -1 ? text.slice(0, sep) : text;
+        const body = sep > -1 ? text.slice(sep + 2) : '';
+        const warnUrl = helpers.renderSymbolDataUrl('\u26A0', 7, AMBER);
+        const labelRuns: any[] = [
+          { text: label + (body ? ': ' : ''), bold: true, color: AMBER_DARK },
+          ...(body ? [{ text: body, color: DARK }] : []),
+        ];
+        if (warnUrl) {
+          return {
+            columns: [
+              { image: warnUrl, width: 7, height: 7, margin: [0, 0, 3, 0] },
+              { text: labelRuns, fontSize: 7, width: '*' },
+            ],
+            margin: [0, 1, 0, 2],
+          };
+        }
+        return {
+          text: [{ text: '! ', bold: true, color: AMBER }, ...labelRuns],
+          fontSize: 7,
+          margin: [0, 1, 0, 2],
+        };
+      };
+
+      const alertWarnItemRuns = (label: string, bodyRuns: any[]): any => {
+        const warnUrl = helpers.renderSymbolDataUrl('\u26A0', 7, AMBER);
+        const labelRuns: any[] = [{ text: label + ': ', bold: true, color: AMBER_DARK }, ...bodyRuns];
+        if (warnUrl) {
+          return {
+            columns: [
+              { image: warnUrl, width: 7, height: 7, margin: [0, 0, 3, 0] },
+              { text: labelRuns, fontSize: 7, width: '*' },
+            ],
+            margin: [0, 1, 0, 2],
+          };
+        }
+        return {
+          text: [{ text: '! ', bold: true, color: AMBER }, ...labelRuns],
+          fontSize: 7,
+          margin: [0, 1, 0, 2],
+        };
+      };
+
       const cardDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 4, 0, 4] });
       const orderDivider = (): any => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#e2e8f0' }], margin: [0, 3, 0, 3] });
 
@@ -738,10 +784,18 @@ export class DashboardPdfService {
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
                 ev.sem_os_details.forEach((d: any, di: number) => {
-                  const semLabel = helpers.semOsDetailLabel(d);
-                  const semBody = helpers.semOsDetailBody(d);
+                  const semLabel = helpers.semOsDetailLabel(d, ev.nr_ordem_despacho_anterior);
+                  const semBody = helpers.semOsDetailBody(d, ev.nr_ordem_despacho_anterior);
                   orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
                 });
+              }
+              if (ev.nr_ordem_despacho_anterior) {
+                const horaFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');
+                orderItems.push(alertWarnItemRuns('Despacho anterior da 1ªOS', [
+                  { text: 'a OS ', color: DARK },
+                  { text: ev.nr_ordem_despacho_anterior, bold: true, color: AMBER_DARK },
+                  { text: `${horaFmt ? ' foi despachada em ' + horaFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
+                ]));
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
@@ -879,6 +933,14 @@ export class DashboardPdfService {
                 orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
+            if (ev.nr_ordem_despacho_anterior) {
+              const obsHoraFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');
+              orderItems.push(alertWarnItemRuns('Despacho anterior da 1ªOS', [
+                { text: 'a OS ', color: DARK },
+                { text: ev.nr_ordem_despacho_anterior, bold: true, color: AMBER_DARK },
+                { text: `${obsHoraFmt ? ' foi despachada em ' + obsHoraFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
+              ]));
+            }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
@@ -1008,6 +1070,14 @@ export class DashboardPdfService {
             if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${helpers.deslocAlertBody('desloc_lento', ev)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${helpers.deslocAlertBody('sem_desloc_registrado', ev)}`));
+            if (ev.nr_ordem_despacho_anterior) {
+              const horaFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');
+              dayItems.push(alertWarnItemRuns('Despacho anterior da 1ªOS', [
+                { text: 'a OS ', color: DARK },
+                { text: ev.nr_ordem_despacho_anterior, bold: true, color: AMBER_DARK },
+                { text: `${horaFmt ? ' foi despachada em ' + horaFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
+              ]));
+            }
             teamItems.push({ stack: [
               {
                 text: [

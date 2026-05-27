@@ -25,6 +25,9 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
     const inicioCalCol        = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
     const logInCorrigidoCol   = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
     const nrOrdemCol          = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
+    // Per-row columns for prior-dispatch conflict detection
+    const aCaminhoRowCol   = deslocAcc.resolve(['A_Caminho', 'A Caminho']);
+    const despachadaRowCol = deslocAcc.resolve(['Despachada']);
 
     if (!teamCol) return [];
 
@@ -58,16 +61,52 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
       }
       if (teamRows.length === 0) continue;
 
-      // Deduplicate by date
-      const seenDates = new Set<string>();
-      const jornadaRows: CsvRow[] = [];
+      // Build per-date groups for conflict detection (prior dispatch without A Caminho)
+      const dateGroups = new Map<string, CsvRow[]>();
       for (const row of teamRows) {
         const date = dateCol ? String(row[dateCol] ?? '').trim() : '';
-        if (!seenDates.has(date)) { seenDates.add(date); jornadaRows.push(row); }
+        if (!dateGroups.has(date)) dateGroups.set(date, []);
+        dateGroups.get(date)!.push(row);
+      }
+
+      // Resolve primary row per date and detect prior-dispatch conflicts
+      const jornadaData: Array<{ row: CsvRow; nrOrdemAnterior?: string; horaDespachoAnterior?: string }> = [];
+      for (const [, dateRows] of dateGroups.entries()) {
+        // Team-day aggregate columns (same value across all rows for this date)
+        const hora1oDespachoRaw = horaPrimDespachoCol ? String(dateRows[0][horaPrimDespachoCol] ?? '').trim() : '';
+        const hora1oDeslocRaw   = horaPrimDeslocCol   ? String(dateRows[0][horaPrimDeslocCol]   ?? '').trim() : '';
+
+        // Primary row: the row whose A_Caminho matches Hora 1º Deslocamento
+        // (= the "1ª OS com A Caminho" — the OS the team actually moved to first)
+        let primaryRow: CsvRow | undefined;
+        if (aCaminhoRowCol && hora1oDeslocRaw) {
+          primaryRow = dateRows.find((r) => String(r[aCaminhoRowCol] ?? '').trim() === hora1oDeslocRaw);
+        }
+        if (!primaryRow) primaryRow = dateRows[0]; // fallback
+
+        // Conflict detection: if Hora 1º Despacho != this OS's Despachada,
+        // another OS was dispatched first without the team going 'A Caminho' for it.
+        let nrOrdemAnterior: string | undefined;
+        if (despachadaRowCol && hora1oDespachoRaw) {
+          const primDespachada = String(primaryRow[despachadaRowCol] ?? '').trim();
+          if (primDespachada && hora1oDespachoRaw !== primDespachada) {
+            // Find the OS whose Despachada matches the first system dispatch (the "anterior" OS)
+            const anteriorRow = dateRows.find((r) => {
+              return despachadaRowCol
+                ? String(r[despachadaRowCol] ?? '').trim() === hora1oDespachoRaw
+                : false;
+            });
+            if (anteriorRow && nrOrdemCol) {
+              nrOrdemAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
+            }
+          }
+        }
+
+        jornadaData.push({ row: primaryRow, nrOrdemAnterior, horaDespachoAnterior: nrOrdemAnterior ? hora1oDespachoRaw : undefined });
       }
 
       const teamDeslocValues: number[] = [];
-      for (const row of jornadaRows) {
+      for (const { row } of jornadaData) {
         const v = primeiroDeslocCol ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
         if (v !== null && Number.isFinite(v) && v >= 0) teamDeslocValues.push(v);
       }
@@ -82,7 +121,7 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
       let countSemDeslocRegistrado = 0;
       let countDespachioTardio = 0;
 
-      for (const row of jornadaRows) {
+      for (const { row, nrOrdemAnterior, horaDespachoAnterior } of jornadaData) {
         const deslocMin    = primeiroDeslocCol   ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
         const horaDesloc   = horaPrimDeslocCol   ? String(row[horaPrimDeslocCol] ?? '').trim() : '';
         const horaDespacho = horaPrimDespachoCol ? String(row[horaPrimDespachoCol] ?? '').trim() : '';
@@ -152,6 +191,8 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
           team_avg_desloc_min:        round2(teamAvgDesloc),
           global_avg_desloc_min:      round2(globalAvgDesloc),
           is_primeira_os_jornada:     true,
+          nr_ordem_despacho_anterior: nrOrdemAnterior,
+          hora_despacho_anterior:     nrOrdemAnterior ? horaDespachoAnterior : undefined,
           flags,
         });
       }
@@ -165,7 +206,7 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
         gap: round2(deslocValue - DESLOC_META),
         avgDeslocMin: round2(teamAvgDesloc),
         globalAvgDeslocMin: round2(globalAvgDesloc),
-        totalDays: jornadaRows.length,
+        totalDays: jornadaData.length,
         diasAcimaMetaCount,
         flaggedDays: enrichDeslocEvidence(
           distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,

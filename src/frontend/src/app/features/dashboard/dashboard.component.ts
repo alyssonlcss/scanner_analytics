@@ -585,9 +585,12 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
+                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d, ev.nr_ordem_despacho_anterior) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d, ev.nr_ordem_despacho_anterior))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
+                                </li>
+                                <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
+                                  <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
                               </ul>
                             </div>
@@ -787,6 +790,9 @@ type SavedFilterState = {
                                     <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
+                                </li>
+                                <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
+                                  <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
                               </ul>
                             </div>
@@ -1015,6 +1021,9 @@ type SavedFilterState = {
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
                               <strong>Sem deslocamento registrado:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('sem_desloc_registrado', ev))"></span>
+                            </li>
+                            <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
+                              <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                             </li>
                           </ul>
                         </div>
@@ -3692,6 +3701,26 @@ type SavedFilterState = {
         top: 2px;
       }
 
+      .osdia-ev-alert--warn::before {
+        color: #d97706;
+      }
+
+      .osdia-ev-alert.osdia-ev-alert--warn strong {
+        color: #d97706;
+      }
+
+      .osdia-ev-obs-flag {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        border-left: 4px solid #d97706;
+        border-radius: 6px;
+        color: #92400e;
+        font-size: 0.74rem;
+        line-height: 1.5;
+        margin: 6px 0 4px;
+        padding: 6px 10px;
+      }
+
       /* KPI-specific event timelines (Login, Retorno Base, TME IMP) */
       .kpi-ev-timeline {
         display: flex;
@@ -5406,8 +5435,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       renderEmojiDataUrl: (e: string, s: number) => this.pdfService.renderEmojiDataUrl(e, s),
       renderSymbolDataUrl: (sym: string, s: number, c: string) => this.pdfService.renderSymbolDataUrl(sym, s, c),
       stripEmojiForPdf: (t: string) => this.pdfService.stripEmojiForPdf(t),
-      semOsDetailLabel: (d: any) => this.semOsDetailLabel(d),
-      semOsDetailBody: (d: any) => this.semOsDetailBody(d),
+      semOsDetailLabel: (d: any, nrOrdemDespachoAnterior?: string) => this.semOsDetailLabel(d, nrOrdemDespachoAnterior),
+      semOsDetailBody: (d: any, nrOrdemDespachoAnterior?: string) => this.semOsDetailBody(d, nrOrdemDespachoAnterior),
       osDiaFlagLabel: (f: string) => this.osDiaFlagLabel(f),
       eficienciaFlagLabel: (f: string) => this.eficienciaFlagLabel(f),
       tmeImpFlagLabel: (f: string) => this.tmeImpFlagLabel(f),
@@ -5689,7 +5718,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return ev.alertTexts?.[flag] ?? '';
   }
 
-  protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; from_label?: string; label?: string; body?: string }): string {
+  protected semOsDetailText(d: { type: string; min: number; from?: string; to?: string; global_avg_min?: number; above_avg_pct?: number; interval_discounted?: boolean; retorno_base_discounted?: number; retorno_base_used_row?: boolean; desp_anterior?: string; from_label?: string; label?: string; body?: string }, nrOrdemDespachoAnterior?: string): string {
     // Always compute fresh (ignore pre-computed label/body) to ensure stats are always shown
     const SEM_OS_LIMIT = 10;
     const pctAbove = (min: number) => Math.round((min - SEM_OS_LIMIT) / SEM_OS_LIMIT * 100);
@@ -5699,8 +5728,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return ` | ${this.nf(Math.abs(pct!), 0, 1)}% ${dir} da média geral (${this.nf(avg!)} min)`;
     };
     switch (d.type) {
-      case 'inicio_jornada':
-        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      case 'inicio_jornada': {
+        const label1d = nrOrdemDespachoAnterior ? 'Despacho' : '1º Despacho';
+        return `${label1d}: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+      }
       case 'entre_ordens': {
         const mEO = Math.round(d.min);
         return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(mEO)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
@@ -5727,20 +5758,26 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.sanitizer.bypassSecurityTrustHtml(tagged);
   }
 
+  protected formatDespachoHora(hora: string | undefined): string {
+    if (!hora) return '';
+    const m = hora.match(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2})/);
+    return m ? `${m[1]} ${m[2]}` : hora;
+  }
+
   protected formatEntreOsText(eo: { min: number; from?: string; to?: string }): string {
     const m = Math.round(eo.min);
     return `${m} min sem nova OS — Fim Intervalo (${eo.from ?? '—'}) até Despachada (${eo.to ?? '—'}) — ${Math.round(((m - 10) / 10) * 100)}% acima do limite (10 min).`;
   }
 
-  protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
-    const text = this.semOsDetailText(d);
+  protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
+    const text = this.semOsDetailText(d, nrOrdemDespachoAnterior);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(0, sep) : text;
   }
 
-  protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }): string {
+  protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
     // Always recompute fresh to ensure % stats are shown (ignore pre-computed d.body)
-    const text = this.semOsDetailText(d);
+    const text = this.semOsDetailText(d, nrOrdemDespachoAnterior);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(sep + 2) : '';
   }

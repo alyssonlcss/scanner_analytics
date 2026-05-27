@@ -86,6 +86,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
     const logOffCorrigidoCol2  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
     const retornoBaseCol       = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
     const horasExtrasCol       = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
+    // Timestamp of the first dispatch of the day (team-day aggregate) — different from the duration column firstDespachoCol
+    const horaPrimDespachoTsCol = deslocAcc.resolve(['Hora 1º Despacho', 'Hora 1o Despacho']);
 
     if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) {
       return [];
@@ -517,6 +519,26 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
         const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
 
+        // Detect prior-dispatch conflict for the first OS of the day (i === 0).
+        // If Hora 1º Despacho (team-day aggregate timestamp) differs from this OS's Despachada,
+        // another OS was dispatched first. Find that OS's Nr_Ordem to show the warning flag.
+        let nrOrdemDespachoAnterior: string | undefined;
+        let horaDespachoAnterior: string | undefined;
+        if (i === 0 && horaPrimDespachoTsCol && nrOrdemCol && despachadaCol) {
+          const hora1oDespachoRaw = String(row[horaPrimDespachoTsCol] ?? '').trim();
+          const thisDespachadaRaw = String(row[despachadaCol] ?? '').trim();
+          if (hora1oDespachoRaw && thisDespachadaRaw && hora1oDespachoRaw !== thisDespachadaRaw) {
+            // Find the row from this day's group whose Despachada matches Hora 1º Despacho
+            const anteriorRow = ordered.find(
+              (r) => String(r[despachadaCol] ?? '').trim() === hora1oDespachoRaw,
+            );
+            if (anteriorRow) {
+              nrOrdemDespachoAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
+              horaDespachoAnterior = hora1oDespachoRaw || undefined;
+            }
+          }
+        }
+
         evidences.push({
           source:           'Scanner 4.4 - CE M300',
           date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
@@ -551,6 +573,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           sem_os_details:    semOsDetails.length > 0 ? semOsDetails : undefined,
           sem_os_total_min:  semOsTotalMin,
           flags:             uniqueFlags,
+          nr_ordem_despacho_anterior: nrOrdemDespachoAnterior,
+          hora_despacho_anterior:     horaDespachoAnterior,
         });
       }
       // Add fim de jornada to the last order's evidence
