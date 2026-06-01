@@ -5718,6 +5718,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected deslocFlagLabel(flag: string): string {
+    if (flag === 'desloc_lento' || flag === 'desloc_muito_lento') return '1º Desloc. ≥25min';
     return this.reportData()?.flagMeta?.labels[flag] ?? flag;
   }
 
