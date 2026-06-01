@@ -57,7 +57,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
+    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off',
   ]);
 
   private buildTimelinePdfBlock(ev: any, hidePartida = false, trimToACaminho = false): any | null {
@@ -66,14 +66,14 @@ export class DashboardPdfService {
 
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
     const isRepairAlarm = (s: TimelineSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
-    const isDeslocAlarm = (s: TimelineSegment): boolean => s.label === 'Deslocamento' && (s.flags?.length ?? 0) > 0;
+    const isDeslocAlarm = (s: TimelineSegment): boolean => s.label === 'Deslocamento p/OS' && (s.flags?.length ?? 0) > 0;
     const isIdleLabel = (s: TimelineSegment): boolean => IDLE.has(s.label) || s.label.startsWith('1º Despacho:');
     const getFill = (s: TimelineSegment): string =>
       s.isInterval ? '#fde68a' : isRepairAlarm(s) || isDeslocAlarm(s) ? '#fca5a5' :
-      s.label === 'Deslocamento' ? '#dbeafe' :
+      s.label === 'Deslocamento p/OS' ? '#dbeafe' :
       isIdleLabel(s) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TimelineSegment): string =>
-      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || (isIdleLabel(s) && s.label !== 'Deslocamento')) ? '#7f1d1d' : '#1e3a8a';
+      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || (isIdleLabel(s) && s.label !== 'Deslocamento p/OS')) ? '#7f1d1d' : '#1e3a8a';
 
     // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt

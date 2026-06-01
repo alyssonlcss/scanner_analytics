@@ -122,7 +122,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     'fim_intervalo_a_caminho': 'Partida',
     'prev_liberada_a_caminho': 'Partida',
     'liberada_a_caminho': 'Partida',
-    'a_caminho_no_local': 'Deslocamento',
+    'a_caminho_no_local': 'Deslocamento p/OS',
     'no_local_liberada': 'Reparo',
     'fim_intervalo_liberada': 'Reparo',
   };
@@ -149,7 +149,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
         durationMin = Math.max(ev.tr_ordem_min, 1);
       }
       if (ev.flag_temp_reparo_excedido) flags.push('TR > Média Global e M300');
-    } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
+    } else if (label === 'Deslocamento p/OS' && ev.tl_ordem_min !== undefined) {
       durationMin = Math.max(ev.tl_ordem_min, 1);
       if (ev.flags?.includes('tl_excede_hd')) flags.push('Temp. Deslocamento Alto');
     } else if (label === 'Partida') {
