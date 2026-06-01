@@ -254,6 +254,8 @@ export class PostDownloadReportService {
           tr_excede_hd:          'Temp. Reparo > HD',
           tl_excede_hd:          'Temp. Deslocamento Alto',
           temp_prep_alto:        'Temp. Partida ≥ 10min',
+          triagem_alto:           'Desp. Prioritário ≥10min',
+          primeiro_desloc_alto:   '1º Desloc. ≥25min',
           sem_os_alto:           'Sem Ordem ≥ 10min',
           deslocamento_curto:    'Deslocamento Curto',
           tempo_padrao_vazio:    'Tempo Padrão Vazio',

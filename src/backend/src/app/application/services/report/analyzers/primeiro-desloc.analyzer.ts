@@ -70,7 +70,7 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
       }
 
       // Resolve primary row per date and detect prior-dispatch conflicts
-      const jornadaData: Array<{ row: CsvRow; nrOrdemAnterior?: string; horaDespachoAnterior?: string }> = [];
+      const jornadaData: Array<{ row: CsvRow; nrOrdemAnterior?: string; horaDespachoAnterior?: string; triagemMin?: number; despachada?: string }> = [];
       for (const [, dateRows] of dateGroups.entries()) {
         // Team-day aggregate columns (same value across all rows for this date)
         const hora1oDespachoRaw = horaPrimDespachoCol ? String(dateRows[0][horaPrimDespachoCol] ?? '').trim() : '';
@@ -87,6 +87,8 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
         // Conflict detection: if Hora 1º Despacho != this OS's Despachada,
         // another OS was dispatched first without the team going 'A Caminho' for it.
         let nrOrdemAnterior: string | undefined;
+        let triagemMin: number | undefined;
+        let despachada: string | undefined;
         if (despachadaRowCol && hora1oDespachoRaw) {
           const primDespachada = String(primaryRow[despachadaRowCol] ?? '').trim();
           if (primDespachada && hora1oDespachoRaw !== primDespachada) {
@@ -99,10 +101,19 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
             if (anteriorRow && nrOrdemCol) {
               nrOrdemAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
             }
+            if (nrOrdemAnterior) {
+              const hora1oDt = parseDateTimeBr(hora1oDespachoRaw);
+              const despDt   = parseDateTimeBr(primDespachada);
+              if (hora1oDt && despDt) {
+                const tMin = minutesBetween(despDt, hora1oDt);
+                if (Number.isFinite(tMin) && tMin > 0 && tMin < 480) triagemMin = round2(tMin);
+              }
+              despachada = primDespachada;
+            }
           }
         }
 
-        jornadaData.push({ row: primaryRow, nrOrdemAnterior, horaDespachoAnterior: nrOrdemAnterior ? hora1oDespachoRaw : undefined });
+        jornadaData.push({ row: primaryRow, nrOrdemAnterior, horaDespachoAnterior: nrOrdemAnterior ? hora1oDespachoRaw : undefined, triagemMin, despachada });
       }
 
       const teamDeslocValues: number[] = [];
@@ -113,6 +124,14 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
       const teamAvgDesloc = teamDeslocValues.length > 0
         ? teamDeslocValues.reduce((s, x) => s + x, 0) / teamDeslocValues.length : 0;
 
+      // Global avg triagem for this team (across days with prior dispatch conflict)
+      const teamTriagemValues = jornadaData
+        .filter((d) => d.triagemMin !== undefined && d.triagemMin > 0)
+        .map((d) => d.triagemMin as number);
+      const teamAvgTriagemMin = teamTriagemValues.length > 0
+        ? round2(teamTriagemValues.reduce((s, v) => s + v, 0) / teamTriagemValues.length)
+        : 0;
+
       const diasAcimaMetaCount = teamDeslocValues.filter((v) => v > DESLOC_META).length;
 
       const flaggedDays: PrimeiroDeslocDayEvidence[] = [];
@@ -121,7 +140,7 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
       let countSemDeslocRegistrado = 0;
       let countDespachioTardio = 0;
 
-      for (const { row, nrOrdemAnterior, horaDespachoAnterior } of jornadaData) {
+      for (const { row, nrOrdemAnterior, horaDespachoAnterior, triagemMin, despachada } of jornadaData) {
         const deslocMin    = primeiroDeslocCol   ? parseNumber(String(row[primeiroDeslocCol] ?? '')) : null;
         const horaDesloc   = horaPrimDeslocCol   ? String(row[horaPrimDeslocCol] ?? '').trim() : '';
         const horaDespacho = horaPrimDespachoCol ? String(row[horaPrimDespachoCol] ?? '').trim() : '';
@@ -176,6 +195,13 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
           countDespachioTardio++;
         }
 
+        // Desp. Prioritário: prior OS was dispatched before team's first A Caminho (triagem window)
+        const TRIAGEM_THRESHOLD = 10;
+        const TRIAGEM_TOLERANCE = 5;
+        if (triagemMin !== undefined && triagemMin >= TRIAGEM_THRESHOLD + TRIAGEM_TOLERANCE) {
+          flags.push('triagem_alto');
+        }
+
         if (flags.length === 0) continue;
 
         flaggedDays.push({
@@ -193,6 +219,9 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
           is_primeira_os_jornada:     true,
           nr_ordem_despacho_anterior: nrOrdemAnterior,
           hora_despacho_anterior:     nrOrdemAnterior ? horaDespachoAnterior : undefined,
+          despachada,
+          triagem_min:                triagemMin,
+          triagem_global_avg_min:     (triagemMin !== undefined && teamAvgTriagemMin > 0) ? teamAvgTriagemMin : undefined,
           flags,
         });
       }

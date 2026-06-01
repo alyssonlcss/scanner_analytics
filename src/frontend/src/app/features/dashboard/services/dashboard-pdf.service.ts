@@ -57,7 +57,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
+    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off',
   ]);
 
   private buildTimelinePdfBlock(ev: any, hidePartida = false, trimToACaminho = false): any | null {
@@ -67,12 +67,13 @@ export class DashboardPdfService {
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
     const isRepairAlarm = (s: TimelineSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
     const isDeslocAlarm = (s: TimelineSegment): boolean => s.label === 'Deslocamento' && (s.flags?.length ?? 0) > 0;
+    const isIdleLabel = (s: TimelineSegment): boolean => IDLE.has(s.label) || s.label.startsWith('1º Despacho:');
     const getFill = (s: TimelineSegment): string =>
       s.isInterval ? '#fde68a' : isRepairAlarm(s) || isDeslocAlarm(s) ? '#fca5a5' :
       s.label === 'Deslocamento' ? '#dbeafe' :
-      IDLE.has(s.label) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
+      isIdleLabel(s) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TimelineSegment): string =>
-      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || (IDLE.has(s.label) && s.label !== 'Deslocamento')) ? '#7f1d1d' : '#1e3a8a';
+      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || (isIdleLabel(s) && s.label !== 'Deslocamento')) ? '#7f1d1d' : '#1e3a8a';
 
     // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt
@@ -82,7 +83,11 @@ export class DashboardPdfService {
     const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
 
     // 2. Mínimo para caber o texto em uma linha.
-    const minWidths = segs.map(s => Math.ceil(Math.max(s.label.length, (s.overrideDuration ?? `${s.durationMin}min`).length) * CHAR_W + 4));
+    const minWidths = segs.map(s => {
+      const durStr = s.overrideDuration ?? `${s.durationMin}min`;
+      const durFull = s.subtitle ? `${durStr} | ${s.subtitle}` : durStr;
+      return Math.ceil(Math.max(s.label.length, durFull.length) * CHAR_W + 4);
+    });
 
     // 3. Aplica mínimos (boost segmentos estreitos demais).
     let widths = segs.map((_, i) => Math.max(minWidths[i], Math.round(rawWidths[i])));
@@ -101,7 +106,7 @@ export class DashboardPdfService {
     const barRow = segs.map((s) => ({
       stack: [
           { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
-          { text: s.overrideDuration ?? `${s.durationMin}min`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
+          { text: `${s.overrideDuration ?? `${s.durationMin}min`}${s.subtitle ? ` | ${s.subtitle}` : ''}`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
         ],
       fillColor: getFill(s),
     }));
@@ -780,7 +785,9 @@ export class DashboardPdfService {
               if (osDiaTl) orderItems.push(osDiaTl);
               if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
               if (ev.flags?.includes('tl_excede_hd')) orderItems.push(alertItem(`Tempo de Deslocamento alto: ${helpers.osDiaAlertBody('tl_excede_hd', ev)}`));
-              if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
+              if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
+              if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`Desp. Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+              if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
                 ev.sem_os_details.forEach((d: any, di: number) => {
@@ -924,7 +931,9 @@ export class DashboardPdfService {
             const utilTl = this.buildTimelinePdfBlock(ev);
             if (utilTl) orderItems.push(utilTl);
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
-            if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS elevado: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
+            if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`Desp. Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+            if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
               ev.sem_os_details.forEach((d: any, di: number) => {
@@ -1067,8 +1076,9 @@ export class DashboardPdfService {
             const deslocTl = this.buildTimelinePdfBlock(ev);
             if (deslocTl) dayItems.push(deslocTl);
             if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${helpers.deslocAlertBody('despacho_tardio', ev)}`));
-            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`Tempo de Partida: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
-            else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`Deslocamento lento: ${helpers.deslocAlertBody('desloc_lento', ev)}`));
+            if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
+            else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_lento', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) dayItems.push(alertItem(`Desp. Prioritário: ${helpers.deslocAlertBody('triagem_alto', ev)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${helpers.deslocAlertBody('sem_desloc_registrado', ev)}`));
             if (ev.nr_ordem_despacho_anterior) {
               const horaFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');

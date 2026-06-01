@@ -87,15 +87,42 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
             break;
           case 'temp_prep_alto': {
             const tempPrepMin = ev.temp_prep_os_min ?? 0;
-            const limit = ev.prev_liberada ? 10 : 25;
+            const limit = 10;
             const pct = Math.round((tempPrepMin - limit) / limit * 100);
-            const subject = ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS';
+            const subject = ev.prev_liberada
+              ? 'a Despachada e o registro de saída nesta OS'
+              : 'a Despachada e o registro de saída desta 1ª OS';
             alertTexts[flag] = `o técnico levou ${tempPrepMin} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
             break;
           }
           case 'sem_os_alto':
             alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;
+          case 'triagem_alto': {
+            const fmtTs = (raw: string | undefined): string => {
+              if (!raw) return '—';
+              const m = raw.match(/\d{2}\/\d{2}\/\d{4}\s+(\d{2}:\d{2})/);
+              return m ? m[1] : raw;
+            };
+            const val = ev.triagem_min ?? 0;
+            const limit2 = 10;
+            const pct2 = Math.round((val - limit2) / limit2 * 100);
+            let trText = `${nfBr(val)} min entre o 1º Despacho (${fmtTs(ev.hora_despacho_anterior)}) e o Despacho (${fmtTs(ev.despachada)}) — ${pct2}% acima do limite (${limit2} min)`;
+            if (ev.triagem_global_avg_min && ev.triagem_global_avg_min > 0) {
+              const pctAvg = Math.round((val - ev.triagem_global_avg_min) / ev.triagem_global_avg_min * 100);
+              const dir = pctAvg >= 0 ? 'acima' : 'abaixo';
+              trText += ` | ${Math.abs(pctAvg)}% ${dir} da média geral (${nfBr(ev.triagem_global_avg_min)} min)`;
+            }
+            alertTexts[flag] = trText + '.';
+            break;
+          }
+          case 'primeiro_desloc_alto': {
+            const val = ev.ocioso_min ?? 0;
+            const limit = 25;
+            const pct = Math.round((val - limit) / limit * 100);
+            alertTexts[flag] = `o tempo desde o Início Calendário até o primeiro registro de 'A Caminho' foi de ${nfBr(val)} min — ${pct}% acima do limite de ${limit} min. Esse tempo reflete o tempo total ocioso no início da jornada antes do primeiro deslocamento.`;
+            break;
+          }
         }
       }
 
@@ -218,15 +245,42 @@ export function enrichUtilizacaoEvidence(orders: UtilizacaoOrderEvidence[]): Uti
           }
           case 'temp_prep_alto': {
             const tempPrepMin = ev.temp_prep_os_min ?? 0;
-            const limit = ev.prev_liberada ? 10 : 25;
+            const limit = 10;
             const pct = Math.round((tempPrepMin - limit) / limit * 100);
-            const subject = ev.prev_liberada ? 'a liberação da OS anterior e o registro de saída nesta OS' : 'o início da jornada e o registro de saída da primeira OS';
+            const subject = ev.prev_liberada
+              ? 'a Despachada e o registro de saída nesta OS'
+              : 'a Despachada e o registro de saída desta 1ª OS';
             alertTexts[flag] = `o técnico levou ${tempPrepMin} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
             break;
           }
           case 'sem_os_alto':
             alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;
+          case 'triagem_alto': {
+            const fmtTs2 = (raw: string | undefined): string => {
+              if (!raw) return '—';
+              const m = raw.match(/\d{2}\/\d{2}\/\d{4}\s+(\d{2}:\d{2})/);
+              return m ? m[1] : raw;
+            };
+            const val2 = ev.triagem_min ?? 0;
+            const limit3 = 10;
+            const pct3 = Math.round((val2 - limit3) / limit3 * 100);
+            let trText2 = `${nfBr(val2)} min entre o 1º Despacho (${fmtTs2(ev.hora_despacho_anterior)}) e o Despacho (${fmtTs2(ev.despachada)}) — ${pct3}% acima do limite (${limit3} min)`;
+            if (ev.triagem_global_avg_min && ev.triagem_global_avg_min > 0) {
+              const pctAvg2 = Math.round((val2 - ev.triagem_global_avg_min) / ev.triagem_global_avg_min * 100);
+              const dir2 = pctAvg2 >= 0 ? 'acima' : 'abaixo';
+              trText2 += ` | ${Math.abs(pctAvg2)}% ${dir2} da média geral (${nfBr(ev.triagem_global_avg_min)} min)`;
+            }
+            alertTexts[flag] = trText2 + '.';
+            break;
+          }
+          case 'primeiro_desloc_alto': {
+            const val2d = ev.ocioso_min ?? 0;
+            const limit2d = 25;
+            const pct2d = Math.round((val2d - limit2d) / limit2d * 100);
+            alertTexts[flag] = `o tempo desde o Início Calendário até o primeiro registro de 'A Caminho' foi de ${nfBr(val2d)} min — ${pct2d}% acima do limite de ${limit2d} min. Esse tempo reflete o tempo total ocioso no início da jornada antes do primeiro deslocamento.`;
+            break;
+          }
         }
       }
 
@@ -300,6 +354,24 @@ export function enrichDeslocEvidence(days: PrimeiroDeslocDayEvidence[], metaTarg
           case 'sem_desloc_registrado':
             alertTexts[flag] = `há registro de despacho, mas o técnico não atualizou o status de saída. Isso impede o cálculo real do 1º Desloc. e indica que o deslocamento pode ter ocorrido sem lançamento no sistema.`;
             break;
+          case 'triagem_alto': {
+            const fmtTsDesloc = (raw: string | undefined): string => {
+              if (!raw) return '—';
+              const m = raw.match(/\d{2}\/\d{2}\/\d{4}\s+(\d{2}:\d{2})/);
+              return m ? m[1] : raw;
+            };
+            const valDesloc = ev.triagem_min ?? 0;
+            const limitDesloc = 10;
+            const pctDesloc = Math.round((valDesloc - limitDesloc) / limitDesloc * 100);
+            let trTextDesloc = `${nfBr(valDesloc)} min entre o 1º Despacho (${fmtTsDesloc(ev.hora_despacho_anterior)}) e o Despacho (${fmtTsDesloc(ev.despachada)}) — ${pctDesloc}% acima do limite (${limitDesloc} min)`;
+            if (ev.triagem_global_avg_min && ev.triagem_global_avg_min > 0) {
+              const pctAvgD = Math.round((valDesloc - ev.triagem_global_avg_min) / ev.triagem_global_avg_min * 100);
+              const dirD = pctAvgD >= 0 ? 'acima' : 'abaixo';
+              trTextDesloc += ` | ${Math.abs(pctAvgD)}% ${dirD} da média geral (${nfBr(ev.triagem_global_avg_min)} min)`;
+            }
+            alertTexts[flag] = trTextDesloc + '.';
+            break;
+          }
         }
       }
       return { ...ev, alertTexts };

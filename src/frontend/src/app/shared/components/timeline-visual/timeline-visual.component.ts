@@ -25,7 +25,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
 
             <span class="seg-two-line">
               <span class="seg-name">{{ seg.label }}</span>
-              <span class="seg-dur">{{ seg.overrideDuration ?? (seg.durationMin + 'min') }}</span>
+              <span class="seg-dur">{{ seg.overrideDuration ?? (seg.durationMin + 'min') }}<ng-container *ngIf="seg.subtitle"> | {{ seg.subtitle }}</ng-container></span>
             </span>
 
           </div>
@@ -185,14 +185,14 @@ export class TimelineVisualComponent implements OnInit {
     return tlFlexGrow(durationMin);
   }
 
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Despacho', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off']);
+  private static readonly IDLE_LABELS = new Set(['1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
-    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && seg.label !== 'Deslocamento';
+    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && seg.label !== 'Deslocamento';
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
-    return TimelineVisualComponent.IDLE_LABELS.has(seg.label) && ((seg.flags?.length ?? 0) > 0);
+    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0);
   }
 
   isRepairAlarmSegment(seg: TimelineSegment): boolean {

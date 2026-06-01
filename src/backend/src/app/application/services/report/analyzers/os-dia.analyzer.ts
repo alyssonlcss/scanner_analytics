@@ -14,8 +14,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
     const OS_DIA_META = 4.4;
     const OS_DIA_PCT_THRESHOLD = 0.20;
-    const TEMP_PREP_THRESHOLD_MIN      = 10; // demais OS: Lib.Anterior → A Caminho
-    const TEMP_PREP_THRESHOLD_FIRST_MIN = 25; // 1ª OS da jornada: Início Calendário → A Caminho
+    const TEMP_PREP_THRESHOLD_MIN      = 10; // Desp. → A Caminho (all OS)
     const SEM_OS_THRESHOLD_MIN = 10;
     const TOLERANCE_MIN = 5; // invisible grace margin — keeps displayed limits unchanged
 
@@ -167,6 +166,40 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       ? round2(globalEntreOrdensValues.reduce((s, v) => s + v, 0) / globalEntreOrdensValues.length)
       : 0;
 
+    // Global avg triagem (hora_despacho_anterior → despachada) across all rows with prior dispatch conflict
+    const globalTriagemValues: number[] = [];
+    if (horaPrimDespachoTsCol && despachadaCol) {
+      const allGroupedTriagem = new Map<string, CsvRow[]>();
+      for (const row of deslocRows) {
+        const team = String(row[teamCol] ?? '').trim();
+        const date = String(row[dateCol] ?? '').trim();
+        if (!team || !date) continue;
+        const rows2 = allGroupedTriagem.get(`${team}::${date}`) ?? [];
+        rows2.push(row);
+        allGroupedTriagem.set(`${team}::${date}`, rows2);
+      }
+      for (const rows2 of allGroupedTriagem.values()) {
+        const orderedRows = [...rows2].sort((a, b) => {
+          const l = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          const r = parseDateTimeBr(String(b[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          return l - r;
+        });
+        if (orderedRows.length === 0) continue;
+        const firstRowTr = orderedRows[0];
+        const hora1oRaw  = String(firstRowTr[horaPrimDespachoTsCol] ?? '').trim();
+        const despRaw    = String(firstRowTr[despachadaCol] ?? '').trim();
+        if (!hora1oRaw || !despRaw || hora1oRaw === despRaw) continue;
+        const hora1oDt = parseDateTimeBr(hora1oRaw);
+        const despDt   = parseDateTimeBr(despRaw);
+        if (!hora1oDt || !despDt) continue;
+        const tMin = minutesBetween(despDt, hora1oDt);
+        if (Number.isFinite(tMin) && tMin > 0 && tMin < 480) globalTriagemValues.push(tMin);
+      }
+    }
+    const globalAvgTriagemMin = globalTriagemValues.length > 0
+      ? round2(globalTriagemValues.reduce((s, v) => s + v, 0) / globalTriagemValues.length)
+      : 0;
+
     // 3. Group by team+date, under-performing teams only
     const grouped = new Map<string, { team: string; rows: CsvRow[] }>();
     for (const row of deslocRows) {
@@ -206,13 +239,25 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       const semOsIntervalEnd   = fimIntervaloCol    ? parseDateTimeBr(String(firstRow[fimIntervaloCol]    ?? '')) : null;
 
       const tempPrepValues: number[] = [];
+      const ocisoValues: (number | undefined)[] = [];
       const semOsValues: number[]    = [];
       const semOsIntervalApplied: boolean[] = [];
       let isInterACaminho = false;
       let isInterOrdem    = false;
 
-      // First order: TempPrep from 1º Desloc, SemOS from 1º Despacho (raw spreadsheet value)
-      tempPrepValues.push(firstDeslocCol   ? (parseNumber(String(firstRow[firstDeslocCol]   ?? '')) ?? Number.NaN) : Number.NaN);
+      // First order: TempPrep = Despachada → A Caminho; Ocioso = Início Cal. → A Caminho
+      const aCaminhoFirst   = caminhoCol    ? parseDateTimeBr(String(firstRow[caminhoCol]    ?? '')) : null;
+      const despachadaFirst = despachadaCol ? parseDateTimeBr(String(firstRow[despachadaCol] ?? '')) : null;
+      tempPrepValues.push(aCaminhoFirst && despachadaFirst ? minutesBetween(aCaminhoFirst, despachadaFirst) : Number.NaN);
+      const firstOcisoRaw = firstDeslocCol ? parseNumber(String(firstRow[firstDeslocCol] ?? '')) : null;
+      if (firstOcisoRaw !== null && Number.isFinite(firstOcisoRaw)) {
+        ocisoValues.push(round2(firstOcisoRaw));
+      } else if (aCaminhoFirst && inicioCalendarioCol) {
+        const inicioCalFirst = parseDateTimeBr(String(firstRow[inicioCalendarioCol] ?? ''));
+        ocisoValues.push(inicioCalFirst ? round2(minutesBetween(aCaminhoFirst, inicioCalFirst)) : undefined);
+      } else {
+        ocisoValues.push(undefined);
+      }
       semOsValues.push(   firstDespachoCol ? (parseNumber(String(firstRow[firstDespachoCol] ?? '')) ?? Number.NaN) : Number.NaN);
       semOsIntervalApplied.push(false);
 
@@ -236,6 +281,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           isInterACaminho = true;
         }
         tempPrepValues.push(tempPrep.value);
+        // Ocioso for subsequent OS = A Caminho − prev Liberada
+        ocisoValues.push(aCaminho && liberada ? round2(minutesBetween(aCaminho, liberada)) : undefined);
 
         const semOs = calculateSemOsValue({
           despachada, liberada,
@@ -357,9 +404,42 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin && hdTotalMin > 0 && tlOrdemMin > hdTotalMin * 0.20) {
           flags.push('tl_excede_hd');
         }
-        const tempPrepThreshold = (i === 0) ? TEMP_PREP_THRESHOLD_FIRST_MIN : TEMP_PREP_THRESHOLD_MIN;
+
+        // Detect prior-dispatch conflict early so triagem_alto flag can be set alongside others
+        let nrOrdemDespachoAnterior: string | undefined;
+        let horaDespachoAnterior: string | undefined;
+        let triagemMin: number | undefined;
+        if (i === 0 && horaPrimDespachoTsCol && nrOrdemCol && despachadaCol) {
+          const hora1oDespachoRaw = String(row[horaPrimDespachoTsCol] ?? '').trim();
+          const thisDespachadaRaw = String(row[despachadaCol] ?? '').trim();
+          if (hora1oDespachoRaw && thisDespachadaRaw && hora1oDespachoRaw !== thisDespachadaRaw) {
+            const anteriorRow = ordered.find(
+              (r) => String(r[despachadaCol] ?? '').trim() === hora1oDespachoRaw,
+            );
+            if (anteriorRow) {
+              nrOrdemDespachoAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
+              horaDespachoAnterior = hora1oDespachoRaw || undefined;
+              const hora1oDt = parseDateTimeBr(hora1oDespachoRaw);
+              const despachadaDt = parseDateTimeBr(thisDespachadaRaw);
+              if (hora1oDt && despachadaDt) {
+                const tMin = minutesBetween(despachadaDt, hora1oDt);
+                if (Number.isFinite(tMin) && tMin > 0) triagemMin = round2(tMin);
+              }
+            }
+          }
+        }
+
+        const tempPrepThreshold = TEMP_PREP_THRESHOLD_MIN;
         if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) {
           flags.push('temp_prep_alto');
+        }
+        if (triagemMin !== undefined && triagemMin >= TEMP_PREP_THRESHOLD_MIN + TOLERANCE_MIN) {
+          flags.push('triagem_alto');
+        }
+        // 1º Desloc.: Início Cal. → A Caminho, only for 1ª OS, threshold 25 min
+        const ocisoForFlag = ocisoValues[i];
+        if (i === 0 && ocisoForFlag !== undefined && ocisoForFlag >= 25) {
+          flags.push('primeiro_desloc_alto');
         }
         if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
           flags.push('sem_os_alto');
@@ -522,22 +602,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         // Detect prior-dispatch conflict for the first OS of the day (i === 0).
         // If Hora 1º Despacho (team-day aggregate timestamp) differs from this OS's Despachada,
         // another OS was dispatched first. Find that OS's Nr_Ordem to show the warning flag.
-        let nrOrdemDespachoAnterior: string | undefined;
-        let horaDespachoAnterior: string | undefined;
-        if (i === 0 && horaPrimDespachoTsCol && nrOrdemCol && despachadaCol) {
-          const hora1oDespachoRaw = String(row[horaPrimDespachoTsCol] ?? '').trim();
-          const thisDespachadaRaw = String(row[despachadaCol] ?? '').trim();
-          if (hora1oDespachoRaw && thisDespachadaRaw && hora1oDespachoRaw !== thisDespachadaRaw) {
-            // Find the row from this day's group whose Despachada matches Hora 1º Despacho
-            const anteriorRow = ordered.find(
-              (r) => String(r[despachadaCol] ?? '').trim() === hora1oDespachoRaw,
-            );
-            if (anteriorRow) {
-              nrOrdemDespachoAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
-              horaDespachoAnterior = hora1oDespachoRaw || undefined;
-            }
-          }
-        }
+        // NOTE: detection already done above (before flags) — skip duplicate block.
 
         evidences.push({
           source:           'Scanner 4.4 - CE M300',
@@ -565,6 +630,9 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           global_avg_tr_min: globalAvgTrMin,
           tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
           temp_prep_os_min:  Number.isFinite(tempPrepOs) ? round2(tempPrepOs) : undefined,
+          triagem_min:       triagemMin,
+          triagem_global_avg_min: (triagemMin !== undefined && globalAvgTriagemMin > 0) ? globalAvgTriagemMin : undefined,
+          ocioso_min:        ocisoValues[i],
           flag_temp_reparo_excedido: (
             globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
             tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&

@@ -9,6 +9,8 @@ export interface TimelineSegment {
   durationMin: number;
   /** Quando definido, sobrescreve a exibição de duração (ex.: diff assinado do Log In). */
   overrideDuration?: string;
+  /** Informação adicional exibida após " | " dentro do mesmo segmento (ex.: "1º Desloc.: 93min"). */
+  subtitle?: string;
   isInterval: boolean;
   startTime: string;
   endTime: string;
@@ -66,7 +68,12 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     addPt('inicio_calendario', ev.inicio_calendario, 'Início Cal.');
     addPt('log_in', logIn, 'Log In');
   }
-  if (!despAfterPrevLib) addPt('despachada', despachada, 'Despachada');
+  if (!despAfterPrevLib) {
+    if (ev.nr_ordem_despacho_anterior && ev.hora_despacho_anterior) {
+      addPt('hora_despacho_anterior', ev.hora_despacho_anterior, `1º Despacho: ${ev.nr_ordem_despacho_anterior}`);
+    }
+    addPt('despachada', despachada, 'Despachada');
+  }
   addPt('a_caminho', aCaminho, 'A Caminho');
   addPt('no_local', ev.no_local, 'No Local');
   addPt('liberada', ev.liberada, 'Liberada');
@@ -101,8 +108,9 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
   const labelMap: Record<string, string> = {
     'inicio_calendario_log_in': 'Log In',
     'log_in_inicio_calendario': 'Log In',
-    'inicio_calendario_despachada': ev.nr_ordem_despacho_anterior ? 'Despacho' : '1º Despacho',
-    'log_in_despachada': ev.nr_ordem_despacho_anterior ? 'Despacho' : '1º Despacho',
+    'inicio_calendario_despachada': '1º Despacho',
+    'log_in_despachada': '1º Despacho',
+    'hora_despacho_anterior_despachada': 'Desp. Prioritário',
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
@@ -126,9 +134,13 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     if (durationMin < 0) continue;
 
     const isInterval = isInInterval(p1.ts + (p2.ts - p1.ts) / 2);
-    const label = isInterval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
+    let label = isInterval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
+    if (p2.key === 'hora_despacho_anterior' && ev.nr_ordem_despacho_anterior) {
+      label = `1º Despacho: ${ev.nr_ordem_despacho_anterior}`;
+    }
     const flags: string[] = [];
     let overrideDuration: string | undefined;
+    let subtitle: string | undefined;
 
     if (label === 'Reparo') {
       // Override duration only for the direct no_local→liberada case (no interval inside).
@@ -140,23 +152,63 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     } else if (label === 'Deslocamento' && ev.tl_ordem_min !== undefined) {
       durationMin = Math.max(ev.tl_ordem_min, 1);
       if (ev.flags?.includes('tl_excede_hd')) flags.push('Temp. Deslocamento Alto');
-    } else if (label === 'Partida' && ev.temp_prep_os_min !== undefined) {
-      durationMin = Math.max(ev.temp_prep_os_min, 1);
-      if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥ 10min');
-    } else if (['1º Despacho', 'Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
+    } else if (label === 'Partida') {
+      if (ev.primeiro_desloc_min !== undefined && ev.temp_prep_os_min === undefined) {
+        // KPI 1º Desloc.: a duração DO segmento Partida É o tempo Início Cal.→A Caminho
+        durationMin = Math.max(ev.primeiro_desloc_min, 1);
+        if (ev.flags?.includes('desloc_lento') || ev.flags?.includes('desloc_muito_lento')) {
+          flags.push('1º Desloc. ≥25min');
+        }
+      } else if (ev.temp_prep_os_min !== undefined) {
+        // OS Dia / Utilização: Partida = temp_prep_os_min
+        durationMin = Math.max(ev.temp_prep_os_min, 1);
+        if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥10min');
+        // Show 1º Desloc. subtitle for 1ª OS
+        if (!ev.prev_liberada) {
+          const ocisoVal: number | undefined = ev.ocioso_min;
+          if (ocisoVal !== undefined && Number.isFinite(ocisoVal) && ocisoVal >= 0) {
+            subtitle = `1º Desloc.: ${Math.round(ocisoVal)}min`;
+            if (ev.flags?.includes('primeiro_desloc_alto')) flags.push('1º Desloc. ≥25min');
+          }
+        }
+      }
+    } else if (label.startsWith('1º Despacho:') && p2.key === 'hora_despacho_anterior') {
+      // Prior-dispatch 1st segment: duration = Início Cal. → hora_despacho_anterior
+      const icalPt2 = uniquePts.find(p => p.key === 'inicio_calendario');
+      if (icalPt2) durationMin = Math.max(Math.round((p2.ts - icalPt2.ts) / 60000), 1);
+      const md = ev.sem_os_details?.find((s: any) => s.type === 'inicio_jornada');
+      if (md) {
+        const SEM_OS_LIMIT = 10;
+        const g: number | undefined = md.global_avg_min;
+        if (g !== undefined && g > 0 && durationMin > g && durationMin > SEM_OS_LIMIT) flags.push('acima_media');
+      }
+    } else if (label === 'Desp. Prioritário' && p1.key === 'hora_despacho_anterior') {
+      // Raw "Desp. Prioritário" after prior-dispatch point: hora_despacho_anterior → despachada
+      const dMin = Math.round((p2.ts - p1.ts) / 60000);
+      if (dMin > 10) {
+        const pctLimit = Math.round((dMin - 10) / 10 * 100);
+        let fText = `Desp. Prioritário: ${dMin} min entre o 1º Despacho e o Despacho — ${pctLimit}% acima do limite (10 min)`;
+        const globalAvg = ev.triagem_global_avg_min;
+        if (globalAvg && Number.isFinite(globalAvg) && globalAvg > 0) {
+          const pctAvg = Math.round((dMin - globalAvg) / globalAvg * 100);
+          const dir = pctAvg >= 0 ? 'acima' : 'abaixo';
+          fText += ` | ${Math.abs(pctAvg)}% ${dir} da média geral (${Math.round(globalAvg)} min)`;
+        }
+        flags.push(fText + '.');
+      }
+    } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
       const detType: Record<string, string> = {
         '1º Despacho': 'inicio_jornada',
-        'Despacho': 'inicio_jornada',
         'Desl. Intervalo': 'intervalo_deslocamento',
         'Antes Log Off': 'fim_jornada',
         'Entre OS': 'entre_ordens',
       };
       const md = ev.sem_os_details?.find((s: any) => {
         if (s.type !== detType[label]) return false;
-        if (label === '1º Despacho' || label === 'Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
+        if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
         return s.from === p1.raw && s.to === p2.raw;
       });
-      if ((label === '1º Despacho' || label === 'Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
+      if ((label === '1º Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
       if (md) {
         if (detType[label] === 'fim_jornada') {
           flags.push('acima_media');
@@ -177,7 +229,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     }
 
     rawSegs.push({
-      label, durationMin, overrideDuration, isInterval,
+      label, durationMin, overrideDuration, subtitle, isInterval,
       startTime: extractTime(p1.raw), endTime: extractTime(p2.raw),
       startLabel: p1.label, endLabel: p2.label, flags,
     });

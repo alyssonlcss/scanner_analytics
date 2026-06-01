@@ -191,7 +191,7 @@ export interface OsDiaOrderEvidence {
     body?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto'>;
+  flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto' | 'triagem_alto' | 'primeiro_desloc_alto'>;
   /** Pre-computed alert text per flag code. */
   alertTexts?: Record<string, string>;
   /** True when TR exceeds the global average repair time AND exceeds the M300 standard time. */
@@ -206,6 +206,12 @@ export interface OsDiaOrderEvidence {
   nr_ordem_despacho_anterior?: string;
   /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
   hora_despacho_anterior?: string;
+  /** Duration in minutes from hora_despacho_anterior to despachada (the "triagem" window). */
+  triagem_min?: number;
+  /** Global average triagem_min across all rows with a prior dispatch conflict. */
+  triagem_global_avg_min?: number;
+  /** Total idle time: Início Cal. → A Caminho for 1ª OS; prev_liberada → A Caminho for others. */
+  ocioso_min?: number;
 }
 
 export interface OsDiaTeamAnalysis {
@@ -320,7 +326,7 @@ export interface UtilizacaoOrderEvidence {
     from_label?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd'>;
+  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd' | 'triagem_alto' | 'primeiro_desloc_alto'>;
   alertTexts?: Record<string, string>;
   /**
    * When set, another OS (this nr_ordem) was dispatched to the team BEFORE this OS's
@@ -330,6 +336,12 @@ export interface UtilizacaoOrderEvidence {
   nr_ordem_despacho_anterior?: string;
   /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
   hora_despacho_anterior?: string;
+  /** Duration in minutes from hora_despacho_anterior to despachada (the "triagem" window). */
+  triagem_min?: number;
+  /** Global average triagem_min across all rows with a prior dispatch conflict. */
+  triagem_global_avg_min?: number;
+  /** Total idle time: Início Cal. → A Caminho for 1ª OS; prev_liberada → A Caminho for others. */
+  ocioso_min?: number;
 }
 
 export interface UtilizacaoTeamAnalysis {
@@ -445,9 +457,15 @@ export interface PrimeiroDeslocDayEvidence {
   nr_ordem_despacho_anterior?: string;
   /** Timestamp of that prior dispatch (raw CSV string, e.g. "24/05/2026 13:07:15"). */
   hora_despacho_anterior?: string;
-  flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio'>;
+  /** Despachada timestamp of the primary (first 'A Caminho') OS. */
+  despachada?: string;
+  flags: Array<'desloc_lento' | 'desloc_muito_lento' | 'sem_desloc_registrado' | 'despacho_tardio' | 'triagem_alto'>;
   /** Pre-computed alert text per flag code. */
   alertTexts?: Record<string, string>;
+  /** Duration in minutes from hora_despacho_anterior to despachada (the "Desp. Prioritário" window). */
+  triagem_min?: number;
+  /** Global average triagem_min across all rows with a prior dispatch conflict. */
+  triagem_global_avg_min?: number;
 }
 
 export interface PrimeiroDeslocTeamAnalysis {

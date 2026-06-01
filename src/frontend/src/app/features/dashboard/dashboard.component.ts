@@ -558,6 +558,7 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
+                                <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
                               </div>
                               <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
@@ -580,7 +581,13 @@ type SavedFilterState = {
                                   <strong>Tempo de Deslocamento alto:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('tl_excede_hd', ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
+                                  <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
+                                </li>
+                                <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
+                                  <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                </li>
+                                <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
+                                  <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
@@ -763,6 +770,7 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
+                                <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
                               </div>
                               <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
@@ -782,7 +790,13 @@ type SavedFilterState = {
                                   <strong>Tempo de Reparo alto:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('tr_excede_hd', ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('temp_prep_alto')" class="osdia-ev-alert">
-                                  <strong>Tempo de Partida/OS elevado:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
+                                  <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
+                                </li>
+                                <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
+                                  <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                </li>
+                                <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
+                                  <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
@@ -1014,13 +1028,16 @@ type SavedFilterState = {
                               <strong>Despacho tardio:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('despacho_tardio', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Tempo de Partida:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_muito_lento', ev))"></span>
+                              <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_muito_lento', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('desloc_lento') && !ev.flags.includes('desloc_muito_lento')" class="osdia-ev-alert">
-                              <strong>Deslocamento lento:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_lento', ev))"></span>
+                              <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('desloc_lento', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('sem_desloc_registrado')" class="osdia-ev-alert">
                               <strong>Sem deslocamento registrado:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('sem_desloc_registrado', ev))"></span>
+                            </li>
+                            <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
+                              <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                             </li>
                             <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                               <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
@@ -5729,8 +5746,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
     switch (d.type) {
       case 'inicio_jornada': {
-        const label1d = nrOrdemDespachoAnterior ? 'Despacho' : '1º Despacho';
-        return `${label1d}: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
+        return `1º Despacho: ${d.min} min do Início Calendário (${d.from ?? '—'}) até o primeiro despacho (${d.to ?? '—'}) — ${pctAbove(d.min)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       case 'entre_ordens': {
         const mEO = Math.round(d.min);
@@ -5785,13 +5801,28 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected tempPrepAltoText(ev: { temp_prep_os_min?: number; prev_liberada?: string; alertTexts?: Record<string, string> }): string {
     const val = ev.temp_prep_os_min;
     if (val == null || !Number.isFinite(val)) return ev.alertTexts?.['temp_prep_alto'] ?? '';
-    const isFirst = !ev.prev_liberada;
-    const limit = isFirst ? 25 : 10;
+    const limit = 10;
     const pct = Math.round((val - limit) / limit * 100);
-    const subject = isFirst
-      ? 'o início da jornada e o registro de saída da primeira OS'
-      : 'a liberação da OS anterior e o registro de saída nesta OS';
+    const subject = ev.prev_liberada
+      ? 'a Despachada e o registro de saída nesta OS'
+      : 'a Despachada e o registro de saída desta 1ª OS';
     return `o técnico levou ${val} min entre ${subject} — ${pct}% acima do limite de ${limit} min. Esse tempo representa espera antes de se deslocar para o próximo atendimento.`;
+  }
+
+  protected triagemAltoText(ev: { triagem_min?: number; hora_despacho_anterior?: string; despachada?: string; triagem_global_avg_min?: number; alertTexts?: Record<string, string> }): string {
+    const val = ev.triagem_min;
+    if (val == null || !Number.isFinite(val)) return ev.alertTexts?.['triagem_alto'] ?? '';
+    const limit = 10;
+    const pct = Math.round((val - limit) / limit * 100);
+    const horaAnterior = this.formatDespachoHora(ev.hora_despacho_anterior);
+    const horaDesp = this.formatDespachoHora(ev.despachada);
+    let text = `${this.nf(val)} min entre o 1º Despacho (${horaAnterior || '—'}) e o Despacho (${horaDesp || '—'}) — ${pct}% acima do limite (${limit} min)`;
+    if (ev.triagem_global_avg_min && Number.isFinite(ev.triagem_global_avg_min) && ev.triagem_global_avg_min > 0) {
+      const pctAvg = Math.round((val - ev.triagem_global_avg_min) / ev.triagem_global_avg_min * 100);
+      const dir = pctAvg >= 0 ? 'acima' : 'abaixo';
+      text += ` | ${this.nf(Math.abs(pctAvg), 0, 1)}% ${dir} da média geral (${this.nf(ev.triagem_global_avg_min)} min)`;
+    }
+    return text + '.';
   }
 
   protected eficienciaAlertBody(flag: string, ev: EficienciaOrderEvidence): string {
