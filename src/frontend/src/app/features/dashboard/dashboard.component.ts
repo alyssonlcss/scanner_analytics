@@ -592,6 +592,9 @@ type SavedFilterState = {
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
+                                <li *ngIf="ev.flags.includes('antes_log_off_alto')" class="osdia-ev-alert osdia-ev-alert--warn">
+                                  <strong>Antes Log Off:</strong> <span [innerHTML]="highlightMin(antesLogOffAltoText(ev))"></span>
+                                </li>
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
@@ -824,6 +827,9 @@ type SavedFilterState = {
                                     <li *ngFor="let d of alertSemOsDetails(ev.sem_os_details)"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
+                                </li>
+                                <li *ngIf="ev.flags.includes('antes_log_off_alto')" class="osdia-ev-alert osdia-ev-alert--warn">
+                                  <strong>Antes Log Off:</strong> <span [innerHTML]="highlightMin(antesLogOffAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
@@ -6003,9 +6009,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    * pois são uma etapa de deslocamento, não uma flag de ociosidade. */
   protected alertSemOsDetails(details: any[] | undefined): any[] {
     if (!details) return [];
-    // Hide fim_jornada entries with no excess_min: either Case B (row present, no excess)
-    // or Antes Log Off below the global avg threshold — not a flag, just a timeline segment.
-    return details.filter((d: any) => !(d.type === 'fim_jornada' && d.excess_min == null));
+    // fim_jornada is always its own separate 'antes_log_off_alto' flag, never shown under sem_os_alto
+    return details.filter((d: any) => d.type !== 'fim_jornada');
   }
 
   protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
@@ -6071,6 +6076,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected getFimJornadaDetail(ev: OsDiaOrderEvidence): NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null {
     return ev.sem_os_details?.find((d: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number]) => d.type === 'fim_jornada') ?? null;
+  }
+
+  /** Returns the body text for the 'antes_log_off_alto' orange warn item. */
+  protected antesLogOffAltoText(ev: OsDiaOrderEvidence): string {
+    const fj = this.getFimJornadaDetail(ev);
+    if (!fj) return '';
+    return this.semOsDetailBody(fj as any);
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {

@@ -364,25 +364,22 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             // Row has Retorno a base → segment relabeled "Retorno a base" in UI
             semOsFimRetornoBaseRowVal = round2(retornoBaseRowVal);
             semOsFimRetornoBaseUsedRow = true;
-            // Flag if total gap exceeds global avg by ≥15 min (Antes Log Off excess)
+            // Flag if total gap exceeds global avg by ≥15 min (Antes Log Off — separate flag, not ociosidade)
             if (retornoBaseAvg > 0 && (directGapMin - retornoBaseAvg) >= 15) {
               semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
               semOsFimAboveThreshold = true;
-              semOsValues.push(semOsFimJornadaMin);
             }
           } else if (retornoBaseAvg > 0) {
-            // Row empty: flag if ≥15 min above global avg
+            // Row empty: flag if ≥15 min above global avg (Antes Log Off — separate flag, not ociosidade)
             if ((directGapMin - retornoBaseAvg) >= 15) {
               semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
               semOsFimAboveThreshold = true;
-              semOsValues.push(semOsFimJornadaMin);
             }
           } else {
-            // No retorno base data: fall back to SEM_OS_THRESHOLD_MIN
+            // No retorno base data: fall back to SEM_OS_THRESHOLD_MIN (Antes Log Off — separate flag)
             if (directGapMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
               semOsFimJornadaMin = round2(directGapMin);
               semOsFimAboveThreshold = true;
-              semOsValues.push(semOsFimJornadaMin);
             }
           }
         }
@@ -763,7 +760,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
         if (logOffStr) {
           const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
-          const aboveThreshold = semOsFimAboveThreshold || fimDeslAbove;
+          const semOsAbove = fimDeslAbove; // fim_jornada is a separate flag, not part of ociosidade
           const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
             type: 'fim_jornada',
             min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
@@ -794,18 +791,23 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             details.push(fimDetail);
             if (fimDeslDetail) details.push(fimDeslDetail);
             existingEvidence.sem_os_details = details;
-            if (aboveThreshold) {
-              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
+            if (semOsAbove) {
+              // Only Desl. Intervalo counts toward ociosidade total
+              const semOsOnlyDetails = details.filter((d) => d.type !== 'fim_jornada');
+              existingEvidence.sem_os_total_min = round2(semOsOnlyDetails.reduce((s, d) => s + d.min, 0));
               if (!existingEvidence.flags.includes('sem_os_alto')) {
                 existingEvidence.flags.push('sem_os_alto');
               }
+            }
+            if (semOsFimAboveThreshold && !existingEvidence.flags.includes('antes_log_off_alto')) {
+              existingEvidence.flags.push('antes_log_off_alto');
             }
             // Show interval chip when interval is in the fim window
             if (semOsFimHasIntervalInWindow && !existingEvidence.inicio_intervalo) {
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
-          } else if (aboveThreshold) {
+          } else if (semOsAbove || semOsFimAboveThreshold) {
             // Last order had no flags — create evidence entry with full info
             const i = ordered.length - 1;
             const row = lastRow;
@@ -848,8 +850,11 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 trOrdemMin > tempoPadraoRaw
               ) ? true : undefined,
               sem_os_details:    allFimDetails,
-              sem_os_total_min:  round2(allFimDetails.reduce((s, d) => s + d.min, 0)),
-              flags:             ['sem_os_alto'],
+              sem_os_total_min:  semOsAbove ? round2(allFimDetails.filter((d) => d.type !== 'fim_jornada').reduce((s, d) => s + d.min, 0)) : undefined,
+              flags:             [
+                ...(semOsAbove ? ['sem_os_alto' as const] : []),
+                ...(semOsFimAboveThreshold ? ['antes_log_off_alto' as const] : []),
+              ],
             });
           } else {
             // Below threshold: inject fimDetail into the basic order so timeline shows Log Off

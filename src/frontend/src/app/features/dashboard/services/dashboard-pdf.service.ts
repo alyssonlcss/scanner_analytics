@@ -74,7 +74,7 @@ export class DashboardPdfService {
       s.label === 'Deslocamento p/OS' ? '#dbeafe' :
       isIdleLabel(s) ? ((s.flags?.length ?? 0) > 0 ? '#fca5a5' : '#fee2e2') : '#dbeafe';
     const getTxtColor = (s: TimelineSegment): string =>
-      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || isRetornoBaseAlarm(s) || (isIdleLabel(s) && s.label !== 'Deslocamento p/OS')) ? '#7f1d1d' : '#1e3a8a';
+      s.isInterval ? '#78350f' : (isRepairAlarm(s) || isDeslocAlarm(s) || isRetornoBaseAlarm(s) || (isIdleLabel(s) && s.label !== 'Deslocamento p/OS' && (s.flags?.length ?? 0) > 0)) ? '#7f1d1d' : (isIdleLabel(s) && s.label !== 'Deslocamento p/OS') ? '#7f1d1d' : '#1e3a8a';
 
     // 1. Larguras proporcionais puras (mesma lógica do flex-grow da web).
     const CHAR_W = 3.6;   // pt/char estimado para Roboto bold 5.5pt
@@ -107,7 +107,7 @@ export class DashboardPdfService {
     const barRow = segs.map((s) => ({
       stack: [
           { text: s.label, fontSize: 5.5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
-          { text: `${s.overrideDuration ?? `${s.durationMin}min`}${s.subtitle ? ` | ${s.subtitle}` : ''}`, fontSize: 5, color: getTxtColor(s), alignment: 'center' as const },
+          { text: `${s.overrideDuration ?? `${s.durationMin}min`}${s.subtitle ? ` | ${s.subtitle}` : ''}`, fontSize: 5, bold: true, color: getTxtColor(s), alignment: 'center' as const },
         ],
       fillColor: getFill(s),
     }));
@@ -835,7 +835,7 @@ export class DashboardPdfService {
               if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
-                ev.sem_os_details.forEach((d: any, di: number) => {
+                (ev.sem_os_details as any[]).filter((d: any) => d.type !== 'fim_jornada').forEach((d: any, di: number) => {
                   const semLabel = helpers.semOsDetailLabel(d, ev.nr_ordem_despacho_anterior);
                   const semBody = helpers.semOsDetailBody(d, ev.nr_ordem_despacho_anterior);
                   orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
@@ -848,6 +848,13 @@ export class DashboardPdfService {
                   { text: ev.nr_ordem_despacho_anterior, bold: true, color: AMBER_DARK },
                   { text: `${horaFmt ? ' foi despachada em ' + horaFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
                 ]));
+              }
+              if (ev.flags?.includes('antes_log_off_alto')) {
+                const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
+                if (fjDetail) {
+                  const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
+                  orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
+                }
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
@@ -981,7 +988,7 @@ export class DashboardPdfService {
             if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
-              ev.sem_os_details.forEach((d: any, di: number) => {
+              (ev.sem_os_details as any[]).filter((d: any) => d.type !== 'fim_jornada').forEach((d: any, di: number) => {
                 const semLabel = helpers.semOsDetailLabel(d);
                 const semBody = helpers.semOsDetailBody(d);
                 orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
@@ -994,6 +1001,13 @@ export class DashboardPdfService {
                 { text: ev.nr_ordem_despacho_anterior, bold: true, color: AMBER_DARK },
                 { text: `${obsHoraFmt ? ' foi despachada em ' + obsHoraFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
               ]));
+            }
+            if (ev.flags?.includes('antes_log_off_alto')) {
+              const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
+              if (fjDetail) {
+                const fjBody = helpers.semOsDetailBody(fjDetail);
+                orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
+              }
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));

@@ -29,6 +29,10 @@
   font-weight: 700;
 }
 
+.osdia-ev-alert--warn .flag-min {
+  color: #d97706;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

@@ -126,7 +126,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
     }
     .seg-dur {
       font-size: 0.62rem;
-      font-weight: 500;
+      font-weight: 700;
     }
     .interval-icon {
       font-size: 0.8rem;
