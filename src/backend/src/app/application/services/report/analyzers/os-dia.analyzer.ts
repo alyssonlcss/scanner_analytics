@@ -283,8 +283,22 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           isInterACaminho = true;
         }
         tempPrepValues.push(tempPrep.value);
-        // Ocioso for subsequent OS = A Caminho − prev Liberada
-        ocisoValues.push(aCaminho && liberada ? round2(minutesBetween(aCaminho, liberada)) : undefined);
+        // Ocioso for subsequent OS = A Caminho − prev Liberada, interval excluded
+        {
+          let ocisoMin: number | undefined;
+          if (aCaminho && liberada) {
+            let raw = minutesBetween(aCaminho, liberada);
+            if (inicioIntervalo && fimIntervalo) {
+              const overlapStart = Math.max(inicioIntervalo.getTime(), liberada.getTime());
+              const overlapEnd   = Math.min(fimIntervalo.getTime(), aCaminho.getTime());
+              if (overlapEnd > overlapStart) {
+                raw -= (overlapEnd - overlapStart) / 60000;
+              }
+            }
+            ocisoMin = round2(Math.max(0, raw));
+          }
+          ocisoValues.push(ocisoMin);
+        }
 
         const semOs = calculateSemOsValue({
           despachada, liberada,
@@ -398,6 +412,18 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
           const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
           const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          // Interval window check: only show interval in the card where it belongs
+          const basicInicioIntervaloRaw = inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '';
+          const basicFimIntervaloRaw    = fimIntervaloCol    ? String(row[fimIntervaloCol]    ?? '').trim() : '';
+          const basicInicioIntervaloDate = basicInicioIntervaloRaw ? parseDateTimeBr(basicInicioIntervaloRaw) : null;
+          const basicLiberadaAtualDate   = liberadaCol ? parseDateTimeBr(String(row[liberadaCol] ?? '')) : null;
+          const basicPrevLiberadaDate    = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
+          const basicIntervaloNaJanela   = Boolean(
+            basicInicioIntervaloDate &&
+            basicLiberadaAtualDate &&
+            basicInicioIntervaloDate.getTime() <= basicLiberadaAtualDate.getTime() &&
+            (basicPrevLiberadaDate === null || basicInicioIntervaloDate.getTime() >= basicPrevLiberadaDate.getTime()),
+          );
           basicArr.push({
             source: 'Scanner 4.4 - CE M300',
             date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
@@ -409,8 +435,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             a_caminho: String(row[caminhoCol] ?? '').trim(),
             no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
-            inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '',
-            fim_intervalo: fimIntervaloCol ? String(row[fimIntervaloCol] ?? '').trim() : '',
+            inicio_intervalo: basicIntervaloNaJanela ? basicInicioIntervaloRaw : '',
+            fim_intervalo:    basicIntervaloNaJanela ? basicFimIntervaloRaw    : '',
             inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
             tr_ordem_min: round2(trMin),
             tl_ordem_min: round2(tlMin),
@@ -420,6 +446,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             global_avg_tl_min: globalAvgTlMin,
             global_avg_tr_min: globalAvgTrMin,
             tempo_padrao_min: tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) ?? undefined : undefined,
+            ocioso_min: ocisoValues[bIdx],
             flags: [],
           });
         }
@@ -691,84 +718,97 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           hora_despacho_anterior:     horaDespachoAnterior,
         });
       }
-      // Add fim de jornada to the last order's evidence
+      // Always attach fim_jornada to the last OS for timeline rendering (Log Off segment).
+      // The sem_os_alto flag is only activated when the gap exceeds the threshold.
       const fimJornadaThreshold = retornoBaseAvg > 0 ? retornoBaseAvg * 0.15 : SEM_OS_THRESHOLD_MIN;
-      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN) {
+      {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
-        const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() : undefined;
-        const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() : undefined;
-        const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
-          type: 'fim_jornada',
-          min:  round2(semOsFimJornadaMin),
-          from: liberadaStr || undefined,
-          to:   logOffStr || undefined,
-          interval_discounted: semOsFimIntervalDiscounted || undefined,
-          retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
-          retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
-        };
+        const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() || undefined : undefined;
+        const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
+        if (logOffStr) {
+          const aboveThreshold = Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN;
+          const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
+            type: 'fim_jornada',
+            min:  Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin > 0 ? round2(semOsFimJornadaMin) : 0,
+            from: liberadaStr,
+            to:   logOffStr,
+            interval_discounted: semOsFimIntervalDiscounted || undefined,
+            retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
+            retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
+          };
+          const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
+          const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
 
-        const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
-        const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
-        const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
-        if (existingEvidence) {
-          const details = existingEvidence.sem_os_details ?? [];
-          details.push(fimDetail);
-          existingEvidence.sem_os_details = details;
-          existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
-          if (!existingEvidence.flags.includes('sem_os_alto')) {
-            existingEvidence.flags.push('sem_os_alto');
+          const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
+          if (existingEvidence) {
+            const details = existingEvidence.sem_os_details ?? [];
+            details.push(fimDetail);
+            existingEvidence.sem_os_details = details;
+            if (aboveThreshold) {
+              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
+              if (!existingEvidence.flags.includes('sem_os_alto')) {
+                existingEvidence.flags.push('sem_os_alto');
+              }
+            }
+            // Show interval chip if discounted from fim_jornada window
+            if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
+              existingEvidence.inicio_intervalo = fimInicioIntervalo;
+              existingEvidence.fim_intervalo    = fimFimIntervalo;
+            }
+          } else if (aboveThreshold) {
+            // Last order had no flags — create evidence entry with full info
+            const i = ordered.length - 1;
+            const row = lastRow;
+            const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
+            const tlOrdemMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
+            const hdTotalMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+            const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
+            const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
+            const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+            const prevRow = i > 0 ? ordered[i - 1] : null;
+            evidences.push({
+              source:           'Scanner 4.4 - CE M300',
+              date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+              nr_ordem:          lastNrOrdem,
+              classe:            classeCol  ? String(row[classeCol]  ?? '').trim() : '',
+              causa:             causaCol   ? String(row[causaCol]   ?? '').trim() : '',
+              despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+              a_caminho:         String(row[caminhoCol] ?? '').trim(),
+              no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
+              liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
+              inicio_intervalo:  fimInicioIntervalo,
+              fim_intervalo:     fimFimIntervalo,
+              prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
+              prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+              prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
+              inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+              log_in:            logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
+              tr_ordem_min:      round2(trOrdemMin),
+              tl_ordem_min:      round2(tlOrdemMin),
+              hd_total_min:      round2(hdTotalMin),
+              hd_pct_tr:         hdPctTr,
+              hd_pct_tl:         hdPctTl,
+              global_avg_tl_min: globalAvgTlMin,
+              global_avg_tr_min: globalAvgTrMin,
+              tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
+              flag_temp_reparo_excedido: (
+                globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
+                tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+                trOrdemMin > tempoPadraoRaw
+              ) ? true : undefined,
+              sem_os_details:    [fimDetail],
+              sem_os_total_min:  round2(semOsFimJornadaMin),
+              flags:             ['sem_os_alto'],
+            });
+          } else {
+            // Below threshold: inject fimDetail into the basic order so timeline shows Log Off
+            const basicOrders = teamAllBasicOrders.get(team) ?? [];
+            const basicOrder = basicOrders.find((o) => o.nr_ordem === lastNrOrdem);
+            if (basicOrder) {
+              basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDetail);
+            }
           }
-          // Show interval chip if discounted from fim_jornada window
-          if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
-            existingEvidence.inicio_intervalo = fimInicioIntervalo;
-            existingEvidence.fim_intervalo    = fimFimIntervalo;
-          }
-        } else {
-          // Last order had no flags — create evidence entry with full info
-          const i = ordered.length - 1;
-          const row = lastRow;
-          const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
-          const tlOrdemMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
-          const hdTotalMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
-          const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
-          const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
-          const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
-          const prevRow = i > 0 ? ordered[i - 1] : null;
-          evidences.push({
-            source:           'Scanner 4.4 - CE M300',
-            date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
-            nr_ordem:          lastNrOrdem,
-            classe:            classeCol  ? String(row[classeCol]  ?? '').trim() : '',
-            causa:             causaCol   ? String(row[causaCol]   ?? '').trim() : '',
-            despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
-            a_caminho:         String(row[caminhoCol] ?? '').trim(),
-            no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
-            liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
-            inicio_intervalo:  fimInicioIntervalo,
-            fim_intervalo:     fimFimIntervalo,
-            prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
-            prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
-            prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
-            inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
-            log_in:            logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
-            tr_ordem_min:      round2(trOrdemMin),
-            tl_ordem_min:      round2(tlOrdemMin),
-            hd_total_min:      round2(hdTotalMin),
-            hd_pct_tr:         hdPctTr,
-            hd_pct_tl:         hdPctTl,
-            global_avg_tl_min: globalAvgTlMin,
-            global_avg_tr_min: globalAvgTrMin,
-            tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
-            flag_temp_reparo_excedido: (
-              globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
-              tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
-              trOrdemMin > tempoPadraoRaw
-            ) ? true : undefined,
-            sem_os_details:    [fimDetail],
-            sem_os_total_min:  round2(semOsFimJornadaMin),
-            flags:             ['sem_os_alto'],
-          });
         }
       }
       teamEvidences.set(team, evidences);

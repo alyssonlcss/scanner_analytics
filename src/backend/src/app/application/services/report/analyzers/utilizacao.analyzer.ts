@@ -686,75 +686,88 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         });
       }
 
-      // Add fim de jornada to the last order's evidence
+      // Always attach fim_jornada to the last OS for timeline rendering (Log Off segment).
+      // The sem_os_alto flag is only activated when the gap exceeds the threshold.
       const fimJornadaThreshold = retornoBaseAvg > 0 ? retornoBaseAvg * 0.15 : SEM_OS_THRESHOLD_MIN;
-      if (Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN) {
+      {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
-        const logOffStr  = logOffCorrigidoCol ? String(lastRow[logOffCorrigidoCol] ?? '').trim() : undefined;
-        const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() : undefined;
-        const fimDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] = {
-          type: 'fim_jornada',
-          min:  round2(semOsFimJornadaMin),
-          from: liberadaStr || undefined,
-          to:   logOffStr || undefined,
-          interval_discounted: semOsFimIntervalDiscounted || undefined,
-          retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
-          retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
-        };
+        const logOffStr  = logOffCorrigidoCol ? String(lastRow[logOffCorrigidoCol] ?? '').trim() || undefined : undefined;
+        const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
+        if (logOffStr) {
+          const aboveThreshold = Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN;
+          const fimDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] = {
+            type: 'fim_jornada',
+            min:  Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin > 0 ? round2(semOsFimJornadaMin) : 0,
+            from: liberadaStr,
+            to:   logOffStr,
+            interval_discounted: semOsFimIntervalDiscounted || undefined,
+            retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
+            retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
+          };
+          const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
+          const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
 
-        const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
-        const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
-        const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
-        if (existingEvidence) {
-          const details = existingEvidence.sem_os_details ?? [];
-          details.push(fimDetail);
-          existingEvidence.sem_os_details = details;
-          existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
-          if (!existingEvidence.flags.includes('sem_os_alto')) existingEvidence.flags.push('sem_os_alto');
-          // Show interval chip if discounted from fim_jornada window
-          if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
-            existingEvidence.inicio_intervalo = fimInicioIntervalo;
-            existingEvidence.fim_intervalo    = fimFimIntervalo;
+          const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
+          if (existingEvidence) {
+            const details = existingEvidence.sem_os_details ?? [];
+            details.push(fimDetail);
+            existingEvidence.sem_os_details = details;
+            if (aboveThreshold) {
+              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
+              if (!existingEvidence.flags.includes('sem_os_alto')) existingEvidence.flags.push('sem_os_alto');
+            }
+            // Show interval chip if discounted from fim_jornada window
+            if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
+              existingEvidence.inicio_intervalo = fimInicioIntervalo;
+              existingEvidence.fim_intervalo    = fimFimIntervalo;
+            }
+          } else if (aboveThreshold) {
+            const i = ordered.length - 1;
+            const row = lastRow;
+            const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
+            const tlOrdemMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
+            const hdTotalMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+            const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
+            const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
+            const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
+            const prevRow = i > 0 ? ordered[i - 1] : null;
+            evidences.push({
+              date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+              nr_ordem:          lastNrOrdem,
+              classe:            classeCol ? String(row[classeCol] ?? '').trim() : '',
+              causa:             causaCol  ? String(row[causaCol]  ?? '').trim() : '',
+              despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+              a_caminho:         String(row[caminhoCol] ?? '').trim(),
+              no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
+              liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
+              inicio_intervalo:  fimInicioIntervalo,
+              fim_intervalo:     fimFimIntervalo,
+              prev_liberada:     prevRow && liberadaCol    ? String(prevRow[liberadaCol]    ?? '').trim() : undefined,
+              prev_nr_ordem:     prevRow && nrOrdemCol     ? String(prevRow[nrOrdemCol]     ?? '').trim() : undefined,
+              prev_despachada:   prevRow && despachadaCol  ? String(prevRow[despachadaCol]  ?? '').trim() : undefined,
+              inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+              log_in:            logInCorrigidoCol   ? String(row[logInCorrigidoCol]   ?? '').trim() || undefined : undefined,
+              tr_ordem_min:      round2(trOrdemMin),
+              tl_ordem_min:      round2(tlOrdemMin),
+              hd_total_min:      round2(hdTotalMin),
+              hd_pct_tr:         hdPctTr,
+              hd_pct_tl:         hdPctTl,
+              tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
+              sem_os_details:    [fimDetail],
+              sem_os_total_min:  round2(semOsFimJornadaMin),
+              flags:             (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD)
+                ? ['sem_os_alto', 'tr_excede_hd']
+                : ['sem_os_alto'],
+            });
+          } else {
+            // Below threshold: inject fimDetail into the basic order so timeline shows Log Off
+            const basicOrders = teamAllBasicUtil.get(team) ?? [];
+            const basicOrder = basicOrders.find((o) => o.nr_ordem === lastNrOrdem);
+            if (basicOrder) {
+              basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDetail);
+            }
           }
-        } else {
-          const i = ordered.length - 1;
-          const row = lastRow;
-          const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
-          const tlOrdemMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
-          const hdTotalMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
-          const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
-          const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
-          const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
-          const prevRow = i > 0 ? ordered[i - 1] : null;
-          evidences.push({
-            date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
-            nr_ordem:          lastNrOrdem,
-            classe:            classeCol ? String(row[classeCol] ?? '').trim() : '',
-            causa:             causaCol  ? String(row[causaCol]  ?? '').trim() : '',
-            despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
-            a_caminho:         String(row[caminhoCol] ?? '').trim(),
-            no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
-            liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
-            inicio_intervalo:  fimInicioIntervalo,
-            fim_intervalo:     fimFimIntervalo,
-            prev_liberada:     prevRow && liberadaCol    ? String(prevRow[liberadaCol]    ?? '').trim() : undefined,
-            prev_nr_ordem:     prevRow && nrOrdemCol     ? String(prevRow[nrOrdemCol]     ?? '').trim() : undefined,
-            prev_despachada:   prevRow && despachadaCol  ? String(prevRow[despachadaCol]  ?? '').trim() : undefined,
-            inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
-            log_in:            logInCorrigidoCol   ? String(row[logInCorrigidoCol]   ?? '').trim() || undefined : undefined,
-            tr_ordem_min:      round2(trOrdemMin),
-            tl_ordem_min:      round2(tlOrdemMin),
-            hd_total_min:      round2(hdTotalMin),
-            hd_pct_tr:         hdPctTr,
-            hd_pct_tl:         hdPctTl,
-            tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
-            sem_os_details:    [fimDetail],
-            sem_os_total_min:  round2(semOsFimJornadaMin),
-            flags:             (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD)
-              ? ['sem_os_alto', 'tr_excede_hd']
-              : ['sem_os_alto'],
-          });
         }
       }
       teamEvidences.set(team, evidences);

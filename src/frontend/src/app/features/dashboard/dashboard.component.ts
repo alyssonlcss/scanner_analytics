@@ -602,12 +602,12 @@ type SavedFilterState = {
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('OS Dia', analysis.team, grp.dateRef)">
+                              <ng-container *ngIf="isDateExpanded('OS Dia', analysis.team, grp.dateRef)">
                                 <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
                                   <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
                                 </div>
                               </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('OS Dia', analysis.team, grp.dateRef)">
+                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('OS Dia', analysis.team, grp.dateRef)">
                                 {{ isDateExpanded('OS Dia', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
                               </button>
                             </ng-container>
@@ -703,12 +703,12 @@ type SavedFilterState = {
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('Eficiência', analysis.team, grp.dateRef)">
+                              <ng-container *ngIf="isDateExpanded('Eficiência', analysis.team, grp.dateRef)">
                                 <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
                                   <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
                                 </div>
                               </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Eficiência', analysis.team, grp.dateRef)">
+                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Eficiência', analysis.team, grp.dateRef)">
                                 {{ isDateExpanded('Eficiência', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
                               </button>
                             </ng-container>
@@ -835,12 +835,12 @@ type SavedFilterState = {
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('Utilização', analysis.team, grp.dateRef)">
+                              <ng-container *ngIf="isDateExpanded('Utilização', analysis.team, grp.dateRef)">
                                 <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
                                   <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
                                 </div>
                               </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Utilização', analysis.team, grp.dateRef)">
+                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Utilização', analysis.team, grp.dateRef)">
                                 {{ isDateExpanded('Utilização', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
                               </button>
                             </ng-container>
@@ -947,12 +947,12 @@ type SavedFilterState = {
                           <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                             <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
                           </div>
-                          <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('TME IMP', analysis.team, grp.dateRef)">
+                          <ng-container *ngIf="isDateExpanded('TME IMP', analysis.team, grp.dateRef)">
                             <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
                               <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
                             </div>
                           </ng-container>
-                          <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('TME IMP', analysis.team, grp.dateRef)">
+                          <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('TME IMP', analysis.team, grp.dateRef)">
                             {{ isDateExpanded('TME IMP', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
                           </button>
                         </ng-container>
@@ -1455,7 +1455,7 @@ type SavedFilterState = {
                         <input class="ac-drawer-search"
                                type="text"
                                placeholder="Buscar equipe..."
-                               [value]="analyticSearch()[i] ?? ''"
+                               [value]="analyticSearch()[i] || ''"
                                (input)="setAnalyticSearch(i, $any($event.target).value)" />
                       </div>
                       <div class="ac-legend-scroll">
