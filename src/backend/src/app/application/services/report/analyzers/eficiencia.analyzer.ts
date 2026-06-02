@@ -1,6 +1,6 @@
 import type { CsvRow } from '../csv-utils.js';
 import type { EficienciaTeamAnalysis, EficienciaOrderEvidence, KpiInsight } from '../types.js';
-import { createAccessor, parseNumber, normalizeToken, round2, percentile } from '../csv-utils.js';
+import { createAccessor, parseNumber, normalizeToken, parseDateTimeBr, round2, percentile } from '../csv-utils.js';
 import { enrichEficienciaEvidence } from './enrich-utils.js';
 import { countDistinctDates, mergeEvidenceFlags } from './os-dia.analyzer.js';
 
@@ -173,8 +173,35 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
         ? round2((simSumTp / simSumTr) * 100)
         : undefined;
 
+      // Build prev_liberada map: sort teamRows by date+despachada, track consecutive pairs per date
+      const prevLiberadaMap = new Map<string, string>();
+      if (nrOrdemCol && despachadaCol) {
+        const sortedForPrev = [...teamRows].sort((a, b) => {
+          const da = parseDateTimeBr(String(a[despachadaCol] ?? ''));
+          const db = parseDateTimeBr(String(b[despachadaCol] ?? ''));
+          if (!da && !db) return 0;
+          if (!da) return 1;
+          if (!db) return -1;
+          return da.getTime() - db.getTime();
+        });
+        for (let i = 1; i < sortedForPrev.length; i++) {
+          const curr = sortedForPrev[i];
+          const prev = sortedForPrev[i - 1];
+          // Don't cross date boundaries when dateCol is available
+          if (dateCol) {
+            const currDate = String(curr[dateCol] ?? '').trim();
+            const prevDate = String(prev[dateCol] ?? '').trim();
+            if (currDate !== prevDate) continue;
+          }
+          const currNr = String(curr[nrOrdemCol] ?? '').trim();
+          const prevLib = liberadaCol ? String(prev[liberadaCol] ?? '').trim() : '';
+          if (currNr && prevLib) prevLiberadaMap.set(currNr, prevLib);
+        }
+      }
+
       // Collect flagged orders first (order-level flags)
       const flaggedOrders: EficienciaOrderEvidence[] = [];
+      const allOrders: EficienciaOrderEvidence[] = [];
       if (nrOrdemCol) {
         for (const row of teamRows) {
           const tlMin = tlOrdemCol ? parseNumber(String(row[tlOrdemCol] ?? '')) : null;
@@ -210,12 +237,34 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
             }
           }
 
+          // Always track for "Ver mais" expansion (regardless of flags)
+          allOrders.push({
+            date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+            nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
+            classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
+            causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+            prev_liberada: prevLiberadaMap.get(String(row[nrOrdemCol] ?? '').trim()) || undefined,
+            despachada: despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+            a_caminho: String(row[aCaminhoCol] ?? '').trim(),
+            no_local: String(row[noLocalCol] ?? '').trim(),
+            liberada: String(row[liberadaCol] ?? '').trim(),
+            tl_ordem_min: tlMin !== null && Number.isFinite(tlMin) ? round2(tlMin) : 0,
+            tr_ordem_min: trMin !== null && Number.isFinite(trMin) ? round2(trMin) : 0,
+            hd_total_min: round2(hdMin),
+            hd_pct_tr: hdPctTr,
+            inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() || undefined : undefined,
+            fim_intervalo: fimIntervaloCol ? String(row[fimIntervaloCol] ?? '').trim() || undefined : undefined,
+            tempo_padrao_min: tpMin !== null && Number.isFinite(tpMin) ? round2(tpMin) : undefined,
+            global_avg_tr_min: round2(globalAvgExecucao),
+            flags: [],
+          });
           if (orderFlags.length > 0) {
             flaggedOrders.push({
               date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
               nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
               classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
               causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+              prev_liberada: prevLiberadaMap.get(String(row[nrOrdemCol] ?? '').trim()) || undefined,
               despachada: despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
               a_caminho: String(row[aCaminhoCol] ?? '').trim(),
               no_local: String(row[noLocalCol] ?? '').trim(),
@@ -245,6 +294,7 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
               nr_ordem: String(row[nrOrdemCol] ?? '').trim(),
               classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
               causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+              prev_liberada: prevLiberadaMap.get(String(row[nrOrdemCol] ?? '').trim()) || undefined,
               despachada: despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
               a_caminho: String(row[aCaminhoCol] ?? '').trim(),
               no_local: String(row[noLocalCol] ?? '').trim(),
@@ -291,11 +341,24 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
       }
 
       const countTempoPadraoVazio = mergedFlaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length;
-      const allFlagged = distinctDates > 7 ? mergedFlaggedOrders.slice(0, 10) : mergedFlaggedOrders;
+      const allFlagged = mergedFlaggedOrders.slice(0, 10);
       const enrichedFlagged = enrichEficienciaEvidence(allFlagged, {
         globalAvgExecucaoMin: round2(globalAvgExecucao),
         globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
       });
+      // Extras: all orders (flagged + non-flagged) not in top-displayed
+      const mergedAllOrders = mergeEvidenceFlags(allOrders);
+      const flaggedByKey = new Map(mergedFlaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const topFlaggedKeys = new Set(allFlagged.map(o => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
+      const extraFlagged = mergedAllOrders
+        .filter(o => !topFlaggedKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`))
+        .map(o => flaggedByKey.get(o.nr_ordem || `${o.despachada}|${o.a_caminho}`) ?? o);
+      const extraEnrichedFlagged = extraFlagged.length
+        ? enrichEficienciaEvidence(extraFlagged, {
+            globalAvgExecucaoMin: round2(globalAvgExecucao),
+            globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
+          })
+        : [];
 
       // Always include all top 3 and bottom 3 teams
       result.push({
@@ -310,6 +373,7 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
         analysisType,
         flags,
         flaggedOrders: enrichedFlagged,
+        extraFlaggedOrders: extraEnrichedFlagged,
         tempoPadraoVazioOrders: [],
         simulatedEficiencia,
         summary: {

@@ -246,8 +246,9 @@ export class DashboardPdfService {
   /**
    * Gera e baixa o PDF usando pdfmake.
    */
-  downloadPdf(section: PdfSection, safeName: string, helpers: PdfHelpers): void {
-    const docDef = this.buildPdfDocDef(section, helpers);
+  downloadPdf(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): void {
+    const effectiveSection = expandedKeys?.size ? { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) } : section;
+    const docDef = this.buildPdfDocDef(effectiveSection, helpers);
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
   }
 
@@ -255,13 +256,56 @@ export class DashboardPdfService {
    * Gera o PDF em memória como File (sem baixar automaticamente).
    * pdfmake 0.3.x: getBlob() é async — retorna Promise<Blob>, não usa callback.
    */
-  async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers): Promise<File> {
-    const docDef = this.buildPdfDocDef(section, helpers);
+  async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): Promise<File> {
+    const effectiveSection = expandedKeys?.size ? { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) } : section;
+    const docDef = this.buildPdfDocDef(effectiveSection, helpers);
     const blob: Blob = await pdfMake.createPdf(docDef).getBlob();
     if (!blob || blob.size === 0) {
       throw new Error('[PdfService] PDF gerado está vazio');
     }
     return new File([blob], `${safeName}.pdf`, { type: 'application/pdf' });
+  }
+
+  /**
+   * Merges extraFlaggedOrders/extraFlaggedDays into flaggedOrders/flaggedDays
+   * for the analysis entries that match the user's expanded date keys.
+   * Returns a shallow-cloned report — only the relevant nested arrays are replaced.
+   */
+  private injectExpandedOrders(report: any, expandedKeys: Set<string>): any {
+    const mergeOrderExtras = (analysisList: any[], kpiName: string): any[] =>
+      analysisList.map((a: any) => {
+        const extras = (a.extraFlaggedOrders ?? []).filter((o: any) => {
+          const dateRef = (o.date_ref ?? '').trim() || '\u2014';
+          return expandedKeys.has(`${kpiName}|${a.team}|${dateRef}`);
+        });
+        return extras.length ? { ...a, flaggedOrders: [...a.flaggedOrders, ...extras] } : a;
+      });
+
+    const mergeDayExtras = (analysisList: any[], kpiName: string): any[] =>
+      analysisList.map((a: any) => {
+        if (expandedKeys.has(`${kpiName}|${a.team}|__extra__`)) {
+          const extras = a.extraFlaggedDays ?? [];
+          return extras.length ? { ...a, flaggedDays: [...a.flaggedDays, ...extras] } : a;
+        }
+        return a;
+      });
+
+    return {
+      ...report,
+      specialAnalysis: {
+        ...report.specialAnalysis,
+        osDiaAnalysis: mergeOrderExtras(report.specialAnalysis?.osDiaAnalysis ?? [], 'OS Dia'),
+        utilizacaoAnalysis: mergeOrderExtras(report.specialAnalysis?.utilizacaoAnalysis ?? [], 'Utilização'),
+      },
+      kpis: (report.kpis ?? []).map((kpi: any) => ({
+        ...kpi,
+        evidenceAnalysis: mergeOrderExtras(kpi.evidenceAnalysis ?? [], 'Eficiência'),
+        tmeImpAnalysis: mergeOrderExtras(kpi.tmeImpAnalysis ?? [], 'TME IMP'),
+        primeiroLoginAnalysis: mergeDayExtras(kpi.primeiroLoginAnalysis ?? [], '1\u00ba Login'),
+        primeiroDeslocAnalysis: mergeDayExtras(kpi.primeiroDeslocAnalysis ?? [], '1\u00ba Desloc.'),
+        retornoBaseAnalysis: mergeDayExtras(kpi.retornoBaseAnalysis ?? [], 'Retorno Base'),
+      })),
+    };
   }
 
   /**

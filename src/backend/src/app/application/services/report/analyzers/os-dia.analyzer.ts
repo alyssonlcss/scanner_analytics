@@ -216,6 +216,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
     // 4. Collect evidence per team and accumulate HD totals
     const teamEvidences = new Map<string, OsDiaOrderEvidence[]>();
+    const teamAllBasicOrders = new Map<string, OsDiaOrderEvidence[]>();
+    const teamAllBasicSeenForTeam = new Map<string, Set<string>>();
     const teamHdTotals = new Map<string, { sum: number; count: number }>();
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
@@ -379,6 +381,50 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         if (heVal !== null && Number.isFinite(heVal) && heVal > 0) {
           teamHorasExtrasSum.set(team, (teamHorasExtrasSum.get(team) ?? 0) + heVal);
         }
+      }
+
+      // Collect basic info for ALL orders (for "Ver mais" expansion, includes non-flagged)
+      {
+        const basicArr = teamAllBasicOrders.get(team) ?? [];
+        const seen = teamAllBasicSeenForTeam.get(team) ?? new Set<string>();
+        for (let bIdx = 0; bIdx < ordered.length; bIdx++) {
+          const row = ordered[bIdx];
+          const prevRow = bIdx > 0 ? ordered[bIdx - 1] : null;
+          const nr = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
+          const desp = despachadaCol ? String(row[despachadaCol] ?? '').trim() : '';
+          const key = nr || desp;
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
+          const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
+          const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          basicArr.push({
+            source: 'Scanner 4.4 - CE M300',
+            date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+            nr_ordem: nr,
+            classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
+            causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+            prev_liberada: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+            despachada: desp,
+            a_caminho: String(row[caminhoCol] ?? '').trim(),
+            no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
+            liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
+            inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '',
+            fim_intervalo: fimIntervaloCol ? String(row[fimIntervaloCol] ?? '').trim() : '',
+            inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+            tr_ordem_min: round2(trMin),
+            tl_ordem_min: round2(tlMin),
+            hd_total_min: round2(hdMin),
+            hd_pct_tr: hdMin > 0 ? round2((trMin / hdMin) * 100) : 0,
+            hd_pct_tl: hdMin > 0 ? round2((tlMin / hdMin) * 100) : 0,
+            global_avg_tl_min: globalAvgTlMin,
+            global_avg_tr_min: globalAvgTrMin,
+            tempo_padrao_min: tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) ?? undefined : undefined,
+            flags: [],
+          });
+        }
+        teamAllBasicOrders.set(team, basicArr);
+        teamAllBasicSeenForTeam.set(team, seen);
       }
 
       // Build evidence for flagged orders
@@ -738,8 +784,20 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       }
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const prioritizedFlaggedOrders = enrichOsDiaEvidence(
-        distinctDates > 7 ? selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders,
+      const topFlagged = distinctDates > 7 ? selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders.slice(0, 10);
+      const prioritizedFlaggedOrders = enrichOsDiaEvidence(topFlagged);
+      // Extras: all orders (flagged + non-flagged) not in top-displayed
+      const allBasic = teamAllBasicOrders.get(team) ?? [];
+      const flaggedByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const seenExtra = new Set<string>();
+      const allMerged: OsDiaOrderEvidence[] = [];
+      for (const o of allBasic) {
+        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
+        if (!seenExtra.has(key)) { seenExtra.add(key); allMerged.push(flaggedByKey.get(key) ?? o); }
+      }
+      const topKeys = new Set(topFlagged.map((o) => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
+      const extraFlaggedOrders = enrichOsDiaEvidence(
+        allMerged.filter((o) => !topKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`)),
       );
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
@@ -777,6 +835,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         idleDays,
         idleAvgMin,
         flaggedOrders: prioritizedFlaggedOrders,
+        extraFlaggedOrders,
         summary: {
           countTrExceeds:    flaggedOrders.filter((e) => e.flags.includes('tr_excede_hd')).length,
           countTlExceeds:    flaggedOrders.filter((e) => e.flags.includes('tl_excede_hd')).length,

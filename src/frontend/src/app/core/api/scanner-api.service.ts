@@ -153,6 +153,7 @@ export interface OsDiaTeamAnalysis {
   idleDays: number;
   idleAvgMin: number;
   flaggedOrders: OsDiaOrderEvidence[];
+  extraFlaggedOrders?: OsDiaOrderEvidence[];
   summary: {
     countTrExceeds: number;
     countTlExceeds: number;
@@ -201,6 +202,7 @@ export interface EficienciaTeamAnalysis {
   analysisType: 'top_performer' | 'underperformer';
   flags: Array<'short_displacement'>;
   flaggedOrders: EficienciaOrderEvidence[];
+  extraFlaggedOrders?: EficienciaOrderEvidence[];
   tempoPadraoVazioOrders: EficienciaOrderEvidence[];
   simulatedEficiencia?: number;
   summary: {
@@ -284,6 +286,7 @@ export interface UtilizacaoTeamAnalysis {
   idleAvgMin: number;
   jornadasAbaixoMeta: number;
   flaggedOrders: UtilizacaoOrderEvidence[];
+  extraFlaggedOrders?: UtilizacaoOrderEvidence[];
   summary: {
     countTempPrepAlto: number;
     countSemOsAlto: number;
@@ -324,6 +327,7 @@ export interface TmeImpTeamAnalysis {
   globalAvgTmeImpMin: number;
   totalOrders: number;
   flaggedOrders: TmeImpOrderEvidence[];
+  extraFlaggedOrders?: TmeImpOrderEvidence[];
   summary: {
     countTmeMuitoAlto: number;
     countSemDeslocamento: number;
@@ -353,6 +357,7 @@ export interface PrimeiroLoginTeamAnalysis {
   totalDays: number;
   diasAcimaMetaCount: number;
   flaggedDays: PrimeiroLoginDayEvidence[];
+  extraFlaggedDays?: PrimeiroLoginDayEvidence[];
   summary: {
     countLoginTardio: number;
     countLoginMuitoTardio: number;
@@ -401,6 +406,7 @@ export interface PrimeiroDeslocTeamAnalysis {
   totalDays: number;
   diasAcimaMetaCount: number;
   flaggedDays: PrimeiroDeslocDayEvidence[];
+  extraFlaggedDays?: PrimeiroDeslocDayEvidence[];
   summary: {
     countDeslocLento: number;
     countDeslocMuitoLento: number;
@@ -431,6 +437,7 @@ export interface RetornoBaseTeamAnalysis {
   totalDays: number;
   diasAcimaMetaCount: number;
   flaggedDays: RetornoBaseDayEvidence[];
+  extraFlaggedDays?: RetornoBaseDayEvidence[];
   summary: {
     countRetornoAlto: number;
     countRetornoMuitoAlto: number;

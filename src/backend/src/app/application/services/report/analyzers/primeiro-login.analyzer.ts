@@ -137,10 +137,10 @@ export function analyzePrimeiroLogin(deslocRows: CsvRow[], kpis: KpiInsight[]): 
         globalAvgLoginMin: round2(globalAvgLogin),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: enrichLoginEvidence(
-          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
-          LOGIN_META,
-        ),
+        flaggedDays: enrichLoginEvidence(flaggedDays.slice(0, 10), LOGIN_META),
+        extraFlaggedDays: flaggedDays.length > 10
+          ? enrichLoginEvidence(flaggedDays.slice(10), LOGIN_META)
+          : [],
         summary: { countLoginTardio, countLoginMuitoTardio },
       });
     }

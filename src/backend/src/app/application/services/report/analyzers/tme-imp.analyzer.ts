@@ -83,6 +83,7 @@ export function analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis:
       const teamAvgThreshold = teamAvgTme * 1.5;
 
       const flaggedOrders: TmeImpOrderEvidence[] = [];
+      const allOrders: TmeImpOrderEvidence[] = [];
       let countTmeMuitoAlto = 0;
       let countSemDeslocamento = 0;
       let countSemExecucao = 0;
@@ -103,9 +104,28 @@ export function analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis:
         if (!aCaminho && tlValid)                { flags.push('sem_deslocamento'); countSemDeslocamento++; }
         if (!trValid && tmeValid)                { flags.push('sem_execucao'); countSemExecucao++; }
 
+        const nrOrdem = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
+        // Always track for "Ver mais" expansion (regardless of flags)
+        allOrders.push({
+          date_ref:          dateCol       ? String(row[dateCol] ?? '').trim()       : '',
+          nr_ordem:          nrOrdem,
+          classe:            classeCol     ? String(row[classeCol] ?? '').trim()     : '',
+          causa:             causaCol      ? String(row[causaCol] ?? '').trim()      : '',
+          prev_liberada:     prevLiberadaMap.get(nrOrdem) ?? '',
+          despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
+          a_caminho:         aCaminho,
+          no_local:          noLocalCol    ? String(row[noLocalCol] ?? '').trim()    : '',
+          liberada:          liberadaCol   ? String(row[liberadaCol] ?? '').trim()   : '',
+          tr_ordem_min:      trValid ? round2(trMin!) : 0,
+          tl_ordem_min:      tlValid ? round2(tlMin!) : 0,
+          tme_imp_min:       tmeValid ? round2(tmeMin!) : 0,
+          team_avg_tme_min:  round2(teamAvgTme),
+          global_avg_tme_min: round2(globalAvgTme),
+          flags: [],
+        });
+
         if (flags.length === 0) continue;
 
-        const nrOrdem = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
         flaggedOrders.push({
           date_ref:          dateCol       ? String(row[dateCol] ?? '').trim()       : '',
           nr_ordem:          nrOrdem,
@@ -128,9 +148,15 @@ export function analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis:
       // Sort: highest TME IMP first
       flaggedOrders.sort((a, b) => b.tme_imp_min - a.tme_imp_min);
 
-      const enrichedFlaggedOrders = enrichTmeImpEvidence(
-        distinctDates > 7 ? flaggedOrders.slice(0, 10) : flaggedOrders,
-      );
+      const topTmeImpFlagged = flaggedOrders.slice(0, 10);
+      const enrichedFlaggedOrders = enrichTmeImpEvidence(topTmeImpFlagged);
+      // Extras: all orders (flagged + non-flagged) not in top-displayed
+      const topTmeKeys = new Set(topTmeImpFlagged.map(o => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
+      const flaggedTmeById = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const allTmeExtra = allOrders
+        .filter(o => !topTmeKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`))
+        .map(o => flaggedTmeById.get(o.nr_ordem || `${o.despachada}|${o.a_caminho}`) ?? o);
+      const extraEnrichedFlaggedOrders = allTmeExtra.length ? enrichTmeImpEvidence(allTmeExtra) : [];
 
       result.push({
         team,
@@ -141,6 +167,7 @@ export function analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis:
         globalAvgTmeImpMin: round2(globalAvgTme),
         totalOrders: teamRows.length,
         flaggedOrders: enrichedFlaggedOrders,
+        extraFlaggedOrders: extraEnrichedFlaggedOrders,
         summary: { countTmeMuitoAlto, countSemDeslocamento, countSemExecucao },
       });
     }

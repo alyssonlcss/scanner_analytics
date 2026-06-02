@@ -200,6 +200,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
     // Collect evidence per team (same pattern as analyzeOsDia)
     const teamEvidences = new Map<string, UtilizacaoOrderEvidence[]>();
+    const teamAllBasicUtil = new Map<string, UtilizacaoOrderEvidence[]>();
+    const teamAllBasicUtilSeen = new Map<string, Set<string>>();
     const teamHdTotals = new Map<string, { sum: number; count: number }>();
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
@@ -385,6 +387,48 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         if (heVal !== null && Number.isFinite(heVal) && heVal > 0) {
           teamHorasExtrasSum.set(team, (teamHorasExtrasSum.get(team) ?? 0) + heVal);
         }
+      }
+
+      // Collect basic info for ALL orders (for "Ver mais" expansion, includes non-flagged)
+      {
+        const basicArr = teamAllBasicUtil.get(team) ?? [];
+        const seen = teamAllBasicUtilSeen.get(team) ?? new Set<string>();
+        for (let bIdx = 0; bIdx < ordered.length; bIdx++) {
+          const row = ordered[bIdx];
+          const prevRow = bIdx > 0 ? ordered[bIdx - 1] : null;
+          const nr = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
+          const desp = despachadaCol ? String(row[despachadaCol] ?? '').trim() : '';
+          const key = nr || desp;
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
+          const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
+          const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          basicArr.push({
+            nr_ordem: nr,
+            date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+            classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
+            causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
+            prev_liberada: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
+            despachada: desp,
+            a_caminho: String(row[caminhoCol] ?? '').trim(),
+            no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
+            liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
+            inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '',
+            fim_intervalo: fimIntervaloCol ? String(row[fimIntervaloCol] ?? '').trim() : '',
+            inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
+            log_in: bIdx === 0 && logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
+            tr_ordem_min: round2(trMin),
+            tl_ordem_min: round2(tlMin),
+            hd_total_min: round2(hdMin),
+            hd_pct_tr: hdMin > 0 ? round2((trMin / hdMin) * 100) : 0,
+            hd_pct_tl: hdMin > 0 ? round2((tlMin / hdMin) * 100) : 0,
+            tempo_padrao_min: tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) ?? undefined : undefined,
+            flags: [],
+          });
+        }
+        teamAllBasicUtil.set(team, basicArr);
+        teamAllBasicUtilSeen.set(team, seen);
       }
 
       // Build per-order evidence (exact same logic as analyzeOsDia)
@@ -723,8 +767,20 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       if (!Array.from(grouped.values()).some((g) => g.team === team)) continue;
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(
-        distinctDates > 7 ? selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders,
+      const topFlaggedUtil = distinctDates > 7 ? selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders.slice(0, 10);
+      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(topFlaggedUtil);
+      // Extras: all orders (flagged + non-flagged) not in top-displayed
+      const allBasicUtil = teamAllBasicUtil.get(team) ?? [];
+      const flaggedUtilByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const seenExtraUtil = new Set<string>();
+      const allMergedUtil: UtilizacaoOrderEvidence[] = [];
+      for (const o of allBasicUtil) {
+        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
+        if (!seenExtraUtil.has(key)) { seenExtraUtil.add(key); allMergedUtil.push(flaggedUtilByKey.get(key) ?? o); }
+      }
+      const topUtilKeys = new Set(topFlaggedUtil.map((o) => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
+      const extraEnrichedFlaggedOrders = enrichUtilizacaoEvidence(
+        allMergedUtil.filter((o) => !topUtilKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`)),
       );
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
@@ -767,6 +823,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         idleAvgMin,
         jornadasAbaixoMeta,
         flaggedOrders: enrichedFlaggedOrders,
+        extraFlaggedOrders: extraEnrichedFlaggedOrders,
         summary: {
           countTempPrepAlto: enrichedFlaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
           countSemOsAlto:    enrichedFlaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,

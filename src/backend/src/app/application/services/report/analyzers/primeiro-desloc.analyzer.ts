@@ -237,10 +237,10 @@ export function analyzePrimeiroDesloc(deslocRows: CsvRow[], kpis: KpiInsight[]):
         globalAvgDeslocMin: round2(globalAvgDesloc),
         totalDays: jornadaData.length,
         diasAcimaMetaCount,
-        flaggedDays: enrichDeslocEvidence(
-          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
-          DESLOC_META,
-        ),
+        flaggedDays: enrichDeslocEvidence(flaggedDays.slice(0, 10), DESLOC_META),
+        extraFlaggedDays: flaggedDays.length > 10
+          ? enrichDeslocEvidence(flaggedDays.slice(10), DESLOC_META)
+          : [],
         summary: { countDeslocLento, countDeslocMuitoLento, countSemDeslocRegistrado, countDespachioTardio },
       });
     }

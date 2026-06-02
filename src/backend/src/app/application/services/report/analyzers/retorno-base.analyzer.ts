@@ -108,10 +108,10 @@ export function analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): Re
         globalAvgRetornoMin: round2(globalAvgRetorno),
         totalDays: jornadaRows.length,
         diasAcimaMetaCount,
-        flaggedDays: enrichRetornoEvidence(
-          distinctDates > 7 ? flaggedDays.slice(0, 10) : flaggedDays,
-          RETORNO_META,
-        ),
+        flaggedDays: enrichRetornoEvidence(flaggedDays.slice(0, 10), RETORNO_META),
+        extraFlaggedDays: flaggedDays.length > 10
+          ? enrichRetornoEvidence(flaggedDays.slice(10), RETORNO_META)
+          : [],
         summary: { countRetornoAlto, countRetornoMuitoAlto },
       });
     }

@@ -549,18 +549,16 @@ type SavedFilterState = {
                               <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
                             </div>
                           </ng-container>
-                          <!-- Ordens flagadas -->
+                          <!-- Ordens flagadas agrupadas por data referência -->
                           <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
-                            <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
-                              <!-- Header: ordem + alertas -->
+                            <ng-template #osDiaEvTpl let-ev>
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                                 <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
                               </div>
-                              <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
                                 <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
                                 <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
@@ -570,9 +568,7 @@ type SavedFilterState = {
                                   <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
-                              <!-- Linha do tempo visual -->
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
-                              <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo alto:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('tr_excede_hd', ev))"></span>
@@ -600,7 +596,21 @@ type SavedFilterState = {
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
                               </ul>
-                            </div>
+                            </ng-template>
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                              <div class="ev-date-group-header">{{ grp.dateRef }}</div>
+                              <div class="osdia-ev-item" *ngFor="let ev of grp.items">
+                                <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
+                              </div>
+                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('OS Dia', analysis.team, grp.dateRef)">
+                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
+                                  <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
+                                </div>
+                              </ng-container>
+                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('OS Dia', analysis.team, grp.dateRef)">
+                                {{ isDateExpanded('OS Dia', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                              </button>
+                            </ng-container>
                           </div>
                         </div>
                       </ng-container>
@@ -655,11 +665,11 @@ type SavedFilterState = {
                             </span>
                           </div>
 
-                          <!-- Ordens flagadas (TR>HD, Desloc. Curto) -->
+                          <!-- Ordens flagadas (TR>HD, Desloc. Curto) agrupadas por data referência -->
                           <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
-                            <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                            <ng-template #eficienciaEvTpl let-ev>
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ eficienciaFlagLabel(f) }}</span>
                               </div>
@@ -687,7 +697,21 @@ type SavedFilterState = {
                                   <strong>Tempo Padrão ausente:</strong> <span [innerHTML]="highlightMin(eficienciaAlertBody('tempo_padrao_vazio', ev))"></span>
                                 </li>
                               </ul>
-                            </div>
+                            </ng-template>
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                              <div class="ev-date-group-header">{{ grp.dateRef }}</div>
+                              <div class="osdia-ev-item" *ngFor="let ev of grp.items">
+                                <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
+                              </div>
+                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('Eficiência', analysis.team, grp.dateRef)">
+                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
+                                  <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
+                                </div>
+                              </ng-container>
+                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Eficiência', analysis.team, grp.dateRef)">
+                                {{ isDateExpanded('Eficiência', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                              </button>
+                            </ng-container>
                           </div>
 
                           <!-- Simulação: equipe penalizada por T.Padrão ausente -->
@@ -761,18 +785,16 @@ type SavedFilterState = {
                               <span class="osdia-idle-chip osdia-idle-chip--he" *ngIf="analysis.idleAnalysis!.horasExtras! > 0">Horas Extras Méd/dia <strong>{{ analysis.idleAnalysis!.horasExtras | number:'1.0-0' }} min</strong></span>
                             </div>
                           </ng-container>
-                          <!-- Ordens flagadas -->
+                          <!-- Ordens flagadas agrupadas por data referência -->
                           <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0">
-                            <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
-                              <!-- Header: ordem + alertas -->
+                            <ng-template #utilizacaoEvTpl let-ev>
                               <div class="osdia-ev-header">
-                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                                <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
                                 <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
                               </div>
-                              <!-- Causa -->
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
                                 <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
                                 <span class="osdia-ev-causa-sep" *ngIf="ev.classe && ev.causa"> · </span>
@@ -782,9 +804,7 @@ type SavedFilterState = {
                                   <span><strong>Desp.:</strong> {{ despTime }}</span>
                                 </ng-container>
                               </p>
-                              <!-- Linha do tempo visual -->
                               <app-timeline-visual [ev]="ev"></app-timeline-visual>
-                              <!-- Alertas em prosa -->
                               <ul class="osdia-ev-alerts">
                                 <li *ngIf="ev.flags.includes('tr_excede_hd')" class="osdia-ev-alert">
                                   <strong>Tempo de Reparo alto:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('tr_excede_hd', ev))"></span>
@@ -809,7 +829,21 @@ type SavedFilterState = {
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
                               </ul>
-                            </div>
+                            </ng-template>
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                              <div class="ev-date-group-header">{{ grp.dateRef }}</div>
+                              <div class="osdia-ev-item" *ngFor="let ev of grp.items">
+                                <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
+                              </div>
+                              <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('Utilização', analysis.team, grp.dateRef)">
+                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
+                                  <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
+                                </div>
+                              </ng-container>
+                              <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Utilização', analysis.team, grp.dateRef)">
+                                {{ isDateExpanded('Utilização', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                              </button>
+                            </ng-container>
                           </div>
                         </div>
                       </ng-container>
@@ -852,9 +886,9 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countSemDeslocamento > 0">Sem desloc.: <strong>{{ analysis.summary.countSemDeslocamento }}</strong></span>
                       </div>
                       <div class="osdia-ev-list" *ngIf="analysis.flaggedOrders.length > 0; else noTmeImpEvidence">
-                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedOrders">
+                        <ng-template #tmeImpEvTpl let-ev>
                           <div class="osdia-ev-header">
-                            <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}{{ ev.date_ref ? ' | ' + ev.date_ref : '' }}</span>
+                            <span class="osdia-ev-ordem">OS {{ ev.nr_ordem }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ tmeImpFlagLabel(f) }}</span>
                           </div>
                           <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa">
@@ -907,7 +941,21 @@ type SavedFilterState = {
                               <strong>Sem TR Ordem:</strong> <span [innerHTML]="highlightMin(tmeImpAlertBody('sem_execucao', ev))"></span>
                             </li>
                           </ul>
-                        </div>
+                        </ng-template>
+                        <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                          <div class="ev-date-group-header">{{ grp.dateRef }}</div>
+                          <div class="osdia-ev-item" *ngFor="let ev of grp.items">
+                            <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
+                          </div>
+                          <ng-container *ngIf="grp.items.length === 0 || isDateExpanded('TME IMP', analysis.team, grp.dateRef)">
+                            <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
+                              <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
+                            </div>
+                          </ng-container>
+                          <button class="ev-ver-mais-btn" *ngIf="grp.items.length > 0 && hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('TME IMP', analysis.team, grp.dateRef)">
+                            {{ isDateExpanded('TME IMP', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                          </button>
+                        </ng-container>
                       </div>
                       <ng-template #noTmeImpEvidence>
                         <p class="rpt-no-data">Nenhuma ordem com TME IMP elevado nos dados filtrados.</p>
@@ -947,7 +995,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countLoginMuitoTardio > 0">Login&gt;16min: <strong>{{ analysis.summary.countLoginMuitoTardio }}</strong></span>
                       </div>
                       <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noLoginEvidence">
-                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                        <ng-template #loginEvTpl let-ev>
                           <div class="osdia-ev-header">
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ loginFlagLabel(f) }}</span>
@@ -971,7 +1019,18 @@ type SavedFilterState = {
                               <strong>Login tardio:</strong> <span [innerHTML]="highlightMin(loginAlertBody('login_tardio', ev))"></span>
                             </li>
                           </ul>
+                        </ng-template>
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <ng-container *ngTemplateOutlet="loginEvTpl; context: {$implicit: ev}"></ng-container>
                         </div>
+                        <ng-container *ngIf="isDateExpanded('1º Login', analysis.team, '__extra__')">
+                          <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of (analysis.extraFlaggedDays ?? [])">
+                            <ng-container *ngTemplateOutlet="loginEvTpl; context: {$implicit: ev}"></ng-container>
+                          </div>
+                        </ng-container>
+                        <button class="ev-ver-mais-btn" *ngIf="(analysis.extraFlaggedDays ?? []).length > 0" (click)="toggleDateExpanded('1º Login', analysis.team, '__extra__')">
+                          {{ isDateExpanded('1º Login', analysis.team, '__extra__') ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedDays ?? []).length + ' dia(s)...' }}
+                        </button>
                       </div>
                       <ng-template #noLoginEvidence>
                         <p class="rpt-no-data">Nenhum dia com 1º Login acima da meta.</p>
@@ -1013,7 +1072,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countDespachioTardio > 0">Despacho tardio: <strong>{{ analysis.summary.countDespachioTardio }}</strong></span>
                       </div>
                       <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noDeslocEvidence">
-                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                        <ng-template #deslocEvTpl let-ev>
                           <div class="osdia-ev-header">
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}{{ ev.nr_ordem ? ' · OS ' + ev.nr_ordem : '' }}</span>
                             <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="ev.is_primeira_os_jornada" title="Primeira OS da jornada">1ª OS</span>
@@ -1043,7 +1102,18 @@ type SavedFilterState = {
                               <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                             </li>
                           </ul>
+                        </ng-template>
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <ng-container *ngTemplateOutlet="deslocEvTpl; context: {$implicit: ev}"></ng-container>
                         </div>
+                        <ng-container *ngIf="isDateExpanded('1º Desloc.', analysis.team, '__extra__')">
+                          <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of (analysis.extraFlaggedDays ?? [])">
+                            <ng-container *ngTemplateOutlet="deslocEvTpl; context: {$implicit: ev}"></ng-container>
+                          </div>
+                        </ng-container>
+                        <button class="ev-ver-mais-btn" *ngIf="(analysis.extraFlaggedDays ?? []).length > 0" (click)="toggleDateExpanded('1º Desloc.', analysis.team, '__extra__')">
+                          {{ isDateExpanded('1º Desloc.', analysis.team, '__extra__') ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedDays ?? []).length + ' dia(s)...' }}
+                        </button>
                       </div>
                       <ng-template #noDeslocEvidence>
                         <p class="rpt-no-data">Nenhum dia com 1º Desloc. acima da meta.</p>
@@ -1083,7 +1153,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countRetornoMuitoAlto > 0">Retorno&gt;60min: <strong>{{ analysis.summary.countRetornoMuitoAlto }}</strong></span>
                       </div>
                       <div class="osdia-ev-list" *ngIf="analysis.flaggedDays.length > 0; else noRetornoEvidence">
-                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                        <ng-template #retornoEvTpl let-ev>
                           <div class="osdia-ev-header">
                             <span class="osdia-ev-ordem">{{ ev.date_ref || '—' }}</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ retornoFlagLabel(f) }}</span>
@@ -1107,7 +1177,18 @@ type SavedFilterState = {
                               <strong>Retorno acima da meta:</strong> <span [innerHTML]="highlightMin(retornoAlertBody('retorno_alto', ev))"></span>
                             </li>
                           </ul>
+                        </ng-template>
+                        <div class="osdia-ev-item" *ngFor="let ev of analysis.flaggedDays">
+                          <ng-container *ngTemplateOutlet="retornoEvTpl; context: {$implicit: ev}"></ng-container>
                         </div>
+                        <ng-container *ngIf="isDateExpanded('Retorno Base', analysis.team, '__extra__')">
+                          <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of (analysis.extraFlaggedDays ?? [])">
+                            <ng-container *ngTemplateOutlet="retornoEvTpl; context: {$implicit: ev}"></ng-container>
+                          </div>
+                        </ng-container>
+                        <button class="ev-ver-mais-btn" *ngIf="(analysis.extraFlaggedDays ?? []).length > 0" (click)="toggleDateExpanded('Retorno Base', analysis.team, '__extra__')">
+                          {{ isDateExpanded('Retorno Base', analysis.team, '__extra__') ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedDays ?? []).length + ' dia(s)...' }}
+                        </button>
                       </div>
                       <ng-template #noRetornoEvidence>
                         <p class="rpt-no-data">Nenhum dia com Retorno Base acima da meta.</p>
@@ -3610,6 +3691,41 @@ type SavedFilterState = {
         gap: 6px;
       }
 
+      .osdia-ev-item--extra {
+        border-left-color: #3b82f6;
+        opacity: 0.9;
+      }
+
+      .ev-date-group-header {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--muted-strong, #6b7280);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 6px 8px 2px;
+        border-top: 1px solid var(--border, #e5e7eb);
+        margin-top: 4px;
+      }
+
+      .ev-ver-mais-btn {
+        display: block;
+        width: 100%;
+        padding: 5px 12px;
+        font-size: 0.75rem;
+        color: #3b82f6;
+        background: transparent;
+        border: 1px dashed #3b82f6;
+        border-radius: 4px;
+        cursor: pointer;
+        text-align: center;
+        margin-top: 2px;
+        transition: background 0.15s;
+      }
+
+      .ev-ver-mais-btn:hover {
+        background: rgba(59, 130, 246, 0.08);
+      }
+
       .osdia-ev-header {
         display: flex;
         align-items: center;
@@ -5432,7 +5548,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     exportType: 'atual' | 'proprias' | 'parceiras',
   ): void {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
-    this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers());
+    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceDateKeysSet() : undefined;
+    this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
   }
 
   /**
@@ -5443,7 +5560,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     exportType: 'atual' | 'proprias' | 'parceiras',
   ): Promise<File> {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
-    return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers());
+    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceDateKeysSet() : undefined;
+    return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
   }
 
 
@@ -5493,7 +5611,89 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly analyticSelectedTeam = signal<Record<number, string | null>>({});
   protected readonly analyticSelectedDay = signal<Record<number, string | null>>({});
   protected readonly analyticLegendOpen = signal<Record<number, boolean>>({});
-  protected readonly analyticSearch = signal<Record<number, string>>({}); 
+  protected readonly analyticSearch = signal<Record<number, string>>({});
+
+  // ─── "Ver mais..." per date-ref group state ────────────────────────────────
+  /** Key format: `{kpiName}|{team}|{dateRef}` — true when expanded. */
+  protected readonly expandedEvidenceDates = signal<Record<string, boolean>>({});
+
+  /** Groups an array of evidence items by their date_ref field, sorted chronologically. */
+  protected groupByDateRef<T extends { date_ref?: string }>(
+    items: T[],
+  ): Array<{ dateRef: string; items: T[] }> {
+    const map = new Map<string, T[]>();
+    for (const item of items) {
+      const key = (item.date_ref ?? '').trim() || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    const parseDate = (s: string): number => {
+      const p = s.split('/');
+      return p.length >= 3 ? +p[2] * 10000 + +p[1] * 100 + +p[0] : 0;
+    };
+    return Array.from(map.entries())
+      .map(([dateRef, grpItems]) => ({ dateRef, items: grpItems }))
+      .sort((a, b) => parseDate(a.dateRef) - parseDate(b.dateRef));
+  }
+
+  /**
+   * Returns date groups from both top flaggedOrders and extraFlaggedOrders.
+   * Dates that only appear in extras get an empty items array so they still render.
+   */
+  protected allDateGroupsForKpi<T extends { date_ref?: string }>(
+    top: T[],
+    extra: T[] | undefined,
+  ): Array<{ dateRef: string; items: T[] }> {
+    const topGroups = this.groupByDateRef(top);
+    const topDates = new Set(topGroups.map(g => g.dateRef));
+    const extraOnlyDates = new Set(
+      (extra ?? []).map(o => (o.date_ref ?? '').trim() || '—').filter(d => !topDates.has(d)),
+    );
+    const parseDate = (s: string): number => {
+      const p = s.split('/');
+      return p.length >= 3 ? +p[2] * 10000 + +p[1] * 100 + +p[0] : 0;
+    };
+    return [
+      ...topGroups,
+      ...[...extraOnlyDates].map(d => ({ dateRef: d, items: [] as T[] })),
+    ].sort((a, b) => parseDate(a.dateRef) - parseDate(b.dateRef));
+  }
+
+  protected trackByDateRef(_: number, grp: { dateRef: string }): string {
+    return grp.dateRef;
+  }
+
+  protected isDateExpanded(kpiKey: string, team: string, dateRef: string): boolean {
+    return this.expandedEvidenceDates()[`${kpiKey}|${team}|${dateRef}`] ?? false;
+  }
+
+  protected toggleDateExpanded(kpiKey: string, team: string, dateRef: string): void {
+    const key = `${kpiKey}|${team}|${dateRef}`;
+    this.expandedEvidenceDates.update((cur) => ({ ...cur, [key]: !cur[key] }));
+  }
+
+  protected getExtraForDate<T extends { date_ref?: string }>(
+    extra: T[] | undefined,
+    dateRef: string,
+  ): T[] {
+    return (extra ?? []).filter((o) => ((o.date_ref ?? '').trim() || '—') === dateRef);
+  }
+
+  protected hasExtraForDate<T extends { date_ref?: string }>(
+    extra: T[] | undefined,
+    dateRef: string,
+  ): boolean {
+    return (extra ?? []).some((o) => ((o.date_ref ?? '').trim() || '—') === dateRef);
+  }
+
+  /** Returns the set of expanded evidence date keys for PDF injection. */
+  private getExpandedEvidenceDateKeysSet(): Set<string> {
+    return new Set(
+      Object.entries(this.expandedEvidenceDates())
+        .filter(([, v]) => v)
+        .map(([k]) => k),
+    );
+  }
 
   protected toggleAnalyticLegend(index: number): void {
     this.analyticLegendOpen.update((cur) => ({ ...cur, [index]: !cur[index] }));
