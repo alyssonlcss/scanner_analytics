@@ -114,10 +114,12 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
+    'liberada_inicio_intervalo': 'Desl. Intervalo',
     'despachada_inicio_intervalo': 'Desl. Intervalo',
     'no_local_inicio_intervalo': 'Desl. Intervalo',
     'fim_intervalo_despachada': 'Entre OS',
     'liberada_log_off': 'Antes Log Off',
+    'fim_intervalo_log_off': 'Antes Log Off',
     'despachada_a_caminho': 'Partida',
     'fim_intervalo_a_caminho': 'Partida',
     'prev_liberada_a_caminho': 'Partida',
@@ -211,11 +213,25 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
       if ((label === '1º Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
       if (md) {
         if (detType[label] === 'fim_jornada') {
-          flags.push('acima_media');
+          if ((md as any).retorno_base_discounted != null) {
+            label = 'Retorno a base';
+            // Case C: row present + excess — show excess as subtitle beside the total duration
+            const excessM: number | undefined = (md as any).excess_min;
+            if (excessM != null) {
+              subtitle = `Antes Log Off: ${Math.round(excessM)}min`;
+              flags.push('acima_media');
+            }
+          } else if ((md as any).excess_min != null) {
+            flags.push('acima_media');
+          }
         } else {
           const SEM_OS_LIMIT = 10;
           const g: number | undefined = md.global_avg_min;
-          if (g !== undefined && g > 0 && durationMin > g && durationMin > SEM_OS_LIMIT) flags.push('acima_media');
+          // Flag if above global avg (when known) or above the minimum threshold (covers fimDeslDetail)
+          const isAbove = g !== undefined && g > 0
+            ? (durationMin > g && durationMin > SEM_OS_LIMIT)
+            : (md.min >= SEM_OS_LIMIT + 0.1);
+          if (isAbove) flags.push('acima_media');
         }
       }
     } else if (label === 'Log In') {

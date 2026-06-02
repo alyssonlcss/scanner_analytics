@@ -182,8 +182,10 @@ export interface OsDiaOrderEvidence {
     interval_discounted?: boolean;
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
+    /** Excess minutes above retorno base; only present when the Antes Log Off flag is active. */
+    excess_min?: number;
     desp_anterior?: string;
-    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada'). */
+    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada', 'Fim Intervalo'). */
     from_label?: string;
     /** Pre-computed label (e.g. "Entre OS", "1º Despacho"). */
     label?: string;
@@ -323,8 +325,10 @@ export interface UtilizacaoOrderEvidence {
     interval_discounted?: boolean;
     retorno_base_discounted?: number;
     retorno_base_used_row?: boolean;
+    /** Excess minutes above retorno base; only present when the Antes Log Off flag is active. */
+    excess_min?: number;
     desp_anterior?: string;
-    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada'). */
+    /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada', 'Fim Intervalo'). */
     from_label?: string;
   }>;
   sem_os_total_min?: number;

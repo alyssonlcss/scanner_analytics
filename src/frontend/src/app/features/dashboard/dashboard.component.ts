@@ -5954,10 +5954,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(mEO)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       case 'fim_jornada': {
-        const rbDiscount = d.retorno_base_discounted ?? 0;
-        const pctRb = rbDiscount > 0 ? Math.round((d.min / rbDiscount) * 100) : undefined;
-        const rbPart = pctRb !== undefined ? ` — ${pctRb}% acima do retorno base` : '';
-        return `Antes Log Off: ${d.min} min entre última Liberada (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo de 60 min descontado' : ''}${d.retorno_base_discounted ? ' — retorno base ' + (d.retorno_base_used_row ? 'do dia (' + d.retorno_base_discounted + ' min) descontado' : 'médio (' + d.retorno_base_discounted + ' min) descontado') : ''}${rbPart}.`;
+        const fromLabelFJ = (d as any).from_label ?? 'última Liberada';
+        const excessFJ: number | undefined = (d as any).excess_min;
+        const globalAvgFJ: number | undefined = (d as any).global_avg_min;
+        if (d.retorno_base_discounted != null) {
+          if (excessFJ != null) {
+            // Case C: row present + excess — label is "Antes Log Off" (the flag), excess is the lead value
+            const globalPartFJ = globalAvgFJ != null ? ` (${this.nf(globalAvgFJ)} min)` : '';
+            return `Antes Log Off: ${this.nf(excessFJ)} min acima da média geral de Retorno a base${globalPartFJ} — Retorno a base: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
+          }
+          // Case B: row present, no excess — neutral info
+          return `Retorno a base: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
+        }
+        const excessTextFJ = excessFJ != null
+          ? ` — ${this.nf(excessFJ)} min acima da média geral de Retorno a base${globalAvgFJ != null ? ' (' + this.nf(globalAvgFJ) + ' min)' : ''}`
+          : '';
+        return `Antes Log Off: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${excessTextFJ}.`;
       }
       case 'intervalo_deslocamento': {
         const mID = Math.round(d.min);

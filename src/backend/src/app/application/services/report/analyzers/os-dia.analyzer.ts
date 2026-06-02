@@ -314,41 +314,76 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         semOsIntervalApplied.push(semOs.intervalApplied);
       }
 
-      // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval and retorno base avg
+      // SemOrdem: gap from last OS's Liberada (or Fim Intervalo when interval is in the fim window) to Log Off.
+      // Segment type is always 'fim_jornada' / "Antes Log Off" with full directGap as min.
+      // Flag activates when: (row retornoBase present) excess > 5 min; (row empty) directGap > avg * 1.2.
       const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
-      let semOsFimJornadaMin = Number.NaN;
-      let semOsFimIntervalDiscounted = false;
-      let semOsFimRetornoBaseDiscount = 0;
+      let semOsFimJornadaMin = Number.NaN;       // excess above retorno base (shown in flag text)
+      let semOsFimDirectGapMin = Number.NaN;     // total segment duration (shown in report)
+      let semOsFimDeslIntervalMin = Number.NaN;  // Liberada → Início Intervalo (end-of-day interval)
+      let semOsFimFrom: string | undefined;
+      let semOsFimFromLabel: string | undefined;
+      let semOsFimRetornoBaseRowVal = 0;          // row-level retorno base (display only)
       let semOsFimRetornoBaseUsedRow = false;
+      let semOsFimAboveThreshold = false;
+      let semOsFimHasIntervalInWindow = false;
       if (logOffCorrigidoCol2 && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
         const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
         const logOff = parseDateTimeBr(String(lastRow[logOffCorrigidoCol2] ?? ''));
         if (lastLiberada && logOff && logOff.getTime() > lastLiberada.getTime()) {
-          let gapMin = minutesBetween(logOff, lastLiberada);
-          const intStart = inicioIntervaloCol ? parseDateTimeBr(String(lastRow[inicioIntervaloCol] ?? '')) : null;
-          const intEnd   = fimIntervaloCol    ? parseDateTimeBr(String(lastRow[fimIntervaloCol]    ?? '')) : null;
-          if (!isInterOrdem && intStart && intEnd &&
-              intStart.getTime() >= lastLiberada.getTime() &&
-              intEnd.getTime() <= logOff.getTime()) {
-            const intDuration = minutesBetween(intEnd, intStart);
-            gapMin -= Math.min(intDuration, 60);           // discount up to 60 min
-            if (intDuration > 60) gapMin += (intDuration - 60); // excess over 60 is penalized
-            semOsFimIntervalDiscounted = true;
+          const lastIntStart = inicioIntervaloCol ? parseDateTimeBr(String(lastRow[inicioIntervaloCol] ?? '')) : null;
+          const lastIntEnd   = fimIntervaloCol    ? parseDateTimeBr(String(lastRow[fimIntervaloCol]    ?? '')) : null;
+          // Interval is in the fim window when it falls entirely between last Liberada and Log Off
+          const hasIntervalInFimWindow = Boolean(
+            lastIntStart && lastIntEnd &&
+            lastIntStart.getTime() >= lastLiberada.getTime() &&
+            lastIntEnd.getTime() <= logOff.getTime(),
+          );
+          semOsFimHasIntervalInWindow = hasIntervalInFimWindow;
+          // Segment start: Fim Intervalo (when interval in window) or Liberada
+          const segmentStart = hasIntervalInFimWindow && lastIntEnd ? lastIntEnd : lastLiberada;
+          semOsFimFrom = hasIntervalInFimWindow && fimIntervaloCol
+            ? String(lastRow[fimIntervaloCol] ?? '').trim() || undefined
+            : String(lastRow[liberadaCol] ?? '').trim() || undefined;
+          semOsFimFromLabel = hasIntervalInFimWindow ? 'Fim Intervalo' : 'última Liberada';
+          const directGapMin = minutesBetween(logOff, segmentStart);
+          semOsFimDirectGapMin = directGapMin;
+          // Desl. Intervalo for end-of-day interval: Liberada → Início Intervalo is sem_os time
+          if (hasIntervalInFimWindow && lastIntStart) {
+            semOsFimDeslIntervalMin = round2(minutesBetween(lastIntStart, lastLiberada));
+            if (semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+              semOsValues.push(semOsFimDeslIntervalMin);
+            }
           }
-          // Subtract Retorno a Base: use row value if present, otherwise fall back to average
+          // Retorno a Base: row value for display; avg for fallback threshold only
           const retornoBaseRow = retornoBaseCol ? parseNumber(String(lastRow[retornoBaseCol] ?? '')) : null;
-          const retornoBaseDiscount = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
-            ? retornoBaseRow
-            : retornoBaseAvg;
-          if (retornoBaseDiscount > 0) {
-            gapMin -= retornoBaseDiscount;
-            semOsFimRetornoBaseDiscount = retornoBaseDiscount;
-            semOsFimRetornoBaseUsedRow = retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0;
-          }
-          if (gapMin > 0) {
-            semOsFimJornadaMin = gapMin;
-            semOsValues.push(gapMin);
+          const retornoBaseRowVal = (retornoBaseRow !== null && Number.isFinite(retornoBaseRow) && retornoBaseRow > 0)
+            ? retornoBaseRow : 0;
+          if (retornoBaseRowVal > 0) {
+            // Row has Retorno a base → segment relabeled "Retorno a base" in UI
+            semOsFimRetornoBaseRowVal = round2(retornoBaseRowVal);
+            semOsFimRetornoBaseUsedRow = true;
+            // Flag if total gap exceeds global avg by ≥15 min (Antes Log Off excess)
+            if (retornoBaseAvg > 0 && (directGapMin - retornoBaseAvg) >= 15) {
+              semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
+              semOsFimAboveThreshold = true;
+              semOsValues.push(semOsFimJornadaMin);
+            }
+          } else if (retornoBaseAvg > 0) {
+            // Row empty: flag if ≥15 min above global avg
+            if ((directGapMin - retornoBaseAvg) >= 15) {
+              semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
+              semOsFimAboveThreshold = true;
+              semOsValues.push(semOsFimJornadaMin);
+            }
+          } else {
+            // No retorno base data: fall back to SEM_OS_THRESHOLD_MIN
+            if (directGapMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+              semOsFimJornadaMin = round2(directGapMin);
+              semOsFimAboveThreshold = true;
+              semOsValues.push(semOsFimJornadaMin);
+            }
           }
         }
       }
@@ -719,31 +754,45 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         });
       }
       // Always attach fim_jornada to the last OS for timeline rendering (Log Off segment).
-      // The sem_os_alto flag is only activated when the gap exceeds the threshold.
-      const fimJornadaThreshold = retornoBaseAvg > 0 ? retornoBaseAvg * 0.15 : SEM_OS_THRESHOLD_MIN;
+      // sem_os_alto activates when excess > 5 above retorno base (row), or > 20% above avg (row empty),
+      // or when Desl. Intervalo before end-of-day interval is ≥10 min.
       {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
         const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() || undefined : undefined;
         const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
         if (logOffStr) {
-          const aboveThreshold = Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin >= fimJornadaThreshold + TOLERANCE_MIN;
+          const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
+          const aboveThreshold = semOsFimAboveThreshold || fimDeslAbove;
           const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
             type: 'fim_jornada',
-            min:  Number.isFinite(semOsFimJornadaMin) && semOsFimJornadaMin > 0 ? round2(semOsFimJornadaMin) : 0,
-            from: liberadaStr,
+            min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
+            from: semOsFimFrom ?? liberadaStr,
             to:   logOffStr,
-            interval_discounted: semOsFimIntervalDiscounted || undefined,
-            retorno_base_discounted: semOsFimRetornoBaseDiscount > 0 ? round2(semOsFimRetornoBaseDiscount) : undefined,
+            from_label: semOsFimFromLabel,
+            retorno_base_discounted: semOsFimRetornoBaseRowVal > 0 ? semOsFimRetornoBaseRowVal : undefined,
             retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
+            excess_min: semOsFimAboveThreshold && Number.isFinite(semOsFimJornadaMin) && retornoBaseAvg > 0 ? round2(semOsFimJornadaMin) : undefined,
+            global_avg_min: semOsFimAboveThreshold && retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
           };
-          const fimInicioIntervalo = semOsFimIntervalDiscounted && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
-          const fimFimIntervalo    = semOsFimIntervalDiscounted && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
+          const fimInicioIntervalo = semOsFimHasIntervalInWindow && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
+          const fimFimIntervalo    = semOsFimHasIntervalInWindow && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
+          // Desl. Intervalo detail for end-of-day interval (Liberada → Início Intervalo)
+          const fimDeslDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null = fimDeslAbove
+            ? {
+                type: 'intervalo_deslocamento',
+                min:  round2(semOsFimDeslIntervalMin),
+                from: liberadaStr,
+                to:   fimInicioIntervalo || undefined,
+                from_label: 'Liberada',
+              }
+            : null;
 
           const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
           if (existingEvidence) {
             const details = existingEvidence.sem_os_details ?? [];
             details.push(fimDetail);
+            if (fimDeslDetail) details.push(fimDeslDetail);
             existingEvidence.sem_os_details = details;
             if (aboveThreshold) {
               existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
@@ -751,8 +800,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 existingEvidence.flags.push('sem_os_alto');
               }
             }
-            // Show interval chip if discounted from fim_jornada window
-            if (semOsFimIntervalDiscounted && !existingEvidence.inicio_intervalo) {
+            // Show interval chip when interval is in the fim window
+            if (semOsFimHasIntervalInWindow && !existingEvidence.inicio_intervalo) {
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
@@ -767,6 +816,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
             const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
             const prevRow = i > 0 ? ordered[i - 1] : null;
+            const allFimDetails = [fimDetail, ...(fimDeslDetail ? [fimDeslDetail] : [])];
             evidences.push({
               source:           'Scanner 4.4 - CE M300',
               date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
@@ -797,8 +847,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
                 trOrdemMin > tempoPadraoRaw
               ) ? true : undefined,
-              sem_os_details:    [fimDetail],
-              sem_os_total_min:  round2(semOsFimJornadaMin),
+              sem_os_details:    allFimDetails,
+              sem_os_total_min:  round2(allFimDetails.reduce((s, d) => s + d.min, 0)),
               flags:             ['sem_os_alto'],
             });
           } else {
