@@ -192,7 +192,8 @@ export class TimelineVisualComponent implements OnInit {
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
-    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0);
+    return ((TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0))
+      || (seg.label === 'Retorno a base' && (seg.flags?.length ?? 0) > 0);
   }
 
   isRepairAlarmSegment(seg: TimelineSegment): boolean {

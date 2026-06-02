@@ -588,7 +588,7 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d, ev.nr_ordem_despacho_anterior) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d, ev.nr_ordem_despacho_anterior))"></span></li>
+                                    <li *ngFor="let d of alertSemOsDetails(ev.sem_os_details)"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d, ev.nr_ordem_despacho_anterior) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d, ev.nr_ordem_despacho_anterior))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
@@ -821,7 +821,7 @@ type SavedFilterState = {
                                 <li *ngIf="ev.flags.includes('sem_os_alto') || entreOsAfterIntervalo(ev)" class="osdia-ev-alert">
                                   <strong>Sem Ordem/OS:</strong> <span [innerHTML]="highlightMin(osDiaAlertBody('sem_os_alto', ev))"></span>
                                   <ol class="osdia-sem-os-list">
-                                    <li *ngFor="let d of ev.sem_os_details"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
+                                    <li *ngFor="let d of alertSemOsDetails(ev.sem_os_details)"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
@@ -5996,6 +5996,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected formatEntreOsText(eo: { min: number; from?: string; to?: string }): string {
     const m = Math.round(eo.min);
     return `${m} min sem nova OS — Fim Intervalo (${eo.from ?? '—'}) até Despachada (${eo.to ?? '—'}) — ${Math.round(((m - 10) / 10) * 100)}% acima do limite (10 min).`;
+  }
+
+  /** Filtra sem_os_details para exibição na lista de alertas.
+   * Remove entradas fim_jornada com "Retorno a base" puro (sem excess_min),
+   * pois são uma etapa de deslocamento, não uma flag de ociosidade. */
+  protected alertSemOsDetails(details: any[] | undefined): any[] {
+    if (!details) return [];
+    // Hide fim_jornada entries with no excess_min: either Case B (row present, no excess)
+    // or Antes Log Off below the global avg threshold — not a flag, just a timeline segment.
+    return details.filter((d: any) => !(d.type === 'fim_jornada' && d.excess_min == null));
   }
 
   protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
