@@ -904,8 +904,10 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
       // Ordenação estritamente decrescente pelo tempo total ocioso
       allMerged.sort((a, b) => {
-        const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0);
-        const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0);
+        const fjA = a.flags?.includes('antes_log_off_alto') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const fjB = b.flags?.includes('antes_log_off_alto') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0) + fjA;
+        const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0) + fjB;
         return idleB - idleA;
       });
 
