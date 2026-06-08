@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { CommonModule } from '@angular/common';
 import { TimelineVisualComponent } from '../../shared/components/timeline-visual/timeline-visual.component';
@@ -600,19 +600,24 @@ type SavedFilterState = {
                                 </li>
                               </ul>
                             </ng-template>
-                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders || [], []); trackBy: trackByDateRef">
                               <div class="ev-date-group-header">{{ grp.dateRef }}</div>
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="isDateExpanded('OS Dia', analysis.team, grp.dateRef)">
-                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
-                                  <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
-                                </div>
-                              </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('OS Dia', analysis.team, grp.dateRef)">
-                                {{ isDateExpanded('OS Dia', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                            </ng-container>
+                            <ng-container *ngIf="analysis.extraFlaggedOrders?.length">
+                              <button class="ev-ver-mais-btn team-ver-mais" style="background-color: lightblue; color: #000; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; text-align: center; font-weight: bold;" (click)="toggleTeamExpanded('OS Dia', analysis.team)">
+                                {{ isTeamExpanded('OS Dia', analysis.team) ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedOrders?.length || 0) + ' OS(s) com baixo tempo' }}
                               </button>
+                              <div *ngIf="isTeamExpanded('OS Dia', analysis.team)" class="extra-orders-container" style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                                <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.extraFlaggedOrders || [], []); trackBy: trackByDateRef">
+                                  <div class="ev-date-group-header" style="opacity: 0.8">{{ grp.dateRef }} (Extra)</div>
+                                  <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of grp.items">
+                                    <ng-container *ngTemplateOutlet="osDiaEvTpl; context: {$implicit: ev}"></ng-container>
+                                  </div>
+                                </ng-container>
+                              </div>
                             </ng-container>
                           </div>
                         </div>
@@ -701,19 +706,24 @@ type SavedFilterState = {
                                 </li>
                               </ul>
                             </ng-template>
-                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, undefined); trackBy: trackByDateRef">
                               <div class="ev-date-group-header">{{ grp.dateRef }}</div>
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="isDateExpanded('Eficiência', analysis.team, grp.dateRef)">
-                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
-                                  <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
-                                </div>
-                              </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Eficiência', analysis.team, grp.dateRef)">
-                                {{ isDateExpanded('Eficiência', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                            </ng-container>
+                            <ng-container *ngIf="analysis.extraFlaggedOrders?.length">
+                              <button class="ev-ver-mais-btn team-ver-mais" style="background-color: lightblue; color: #000; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; text-align: center; font-weight: bold;" (click)="toggleTeamExpanded('Eficiência', analysis.team)">
+                                {{ isTeamExpanded('Eficiência', analysis.team) ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedOrders?.length || 0) + ' OS(s) com baixo tempo' }}
                               </button>
+                              <div *ngIf="isTeamExpanded('Eficiência', analysis.team)" class="extra-orders-container" style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                                <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.extraFlaggedOrders || [], []); trackBy: trackByDateRef">
+                                  <div class="ev-date-group-header" style="opacity: 0.8">{{ grp.dateRef }} (Extra)</div>
+                                  <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of grp.items">
+                                    <ng-container *ngTemplateOutlet="eficienciaEvTpl; context: {$implicit: ev}"></ng-container>
+                                  </div>
+                                </ng-container>
+                              </div>
                             </ng-container>
                           </div>
 
@@ -836,19 +846,24 @@ type SavedFilterState = {
                                 </li>
                               </ul>
                             </ng-template>
-                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, undefined); trackBy: trackByDateRef">
                               <div class="ev-date-group-header">{{ grp.dateRef }}</div>
                               <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                                 <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
                               </div>
-                              <ng-container *ngIf="isDateExpanded('Utilização', analysis.team, grp.dateRef)">
-                                <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
-                                  <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
-                                </div>
-                              </ng-container>
-                              <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('Utilização', analysis.team, grp.dateRef)">
-                                {{ isDateExpanded('Utilização', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                            </ng-container>
+                            <ng-container *ngIf="analysis.extraFlaggedOrders?.length">
+                              <button class="ev-ver-mais-btn team-ver-mais" style="background-color: lightblue; color: #000; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; text-align: center; font-weight: bold;" (click)="toggleTeamExpanded('Utilização', analysis.team)">
+                                {{ isTeamExpanded('Utilização', analysis.team) ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedOrders?.length || 0) + ' OS(s) com baixo tempo' }}
                               </button>
+                              <div *ngIf="isTeamExpanded('Utilização', analysis.team)" class="extra-orders-container" style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                                <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.extraFlaggedOrders || [], []); trackBy: trackByDateRef">
+                                  <div class="ev-date-group-header" style="opacity: 0.8">{{ grp.dateRef }} (Extra)</div>
+                                  <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of grp.items">
+                                    <ng-container *ngTemplateOutlet="utilizacaoEvTpl; context: {$implicit: ev}"></ng-container>
+                                  </div>
+                                </ng-container>
+                              </div>
                             </ng-container>
                           </div>
                         </div>
@@ -948,19 +963,24 @@ type SavedFilterState = {
                             </li>
                           </ul>
                         </ng-template>
-                        <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, analysis.extraFlaggedOrders); trackBy: trackByDateRef">
+                        <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.flaggedOrders, undefined); trackBy: trackByDateRef">
                           <div class="ev-date-group-header">{{ grp.dateRef }}</div>
                           <div class="osdia-ev-item" *ngFor="let ev of grp.items">
                             <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
                           </div>
-                          <ng-container *ngIf="isDateExpanded('TME IMP', analysis.team, grp.dateRef)">
-                            <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of getExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)">
-                              <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
-                            </div>
-                          </ng-container>
-                          <button class="ev-ver-mais-btn" *ngIf="hasExtraForDate(analysis.extraFlaggedOrders, grp.dateRef)" (click)="toggleDateExpanded('TME IMP', analysis.team, grp.dateRef)">
-                            {{ isDateExpanded('TME IMP', analysis.team, grp.dateRef) ? '▲ Ver menos' : '▼ Ver mais...' }}
+                        </ng-container>
+                        <ng-container *ngIf="analysis.extraFlaggedOrders?.length">
+                          <button class="ev-ver-mais-btn team-ver-mais" style="background-color: lightblue; color: #000; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; text-align: center; font-weight: bold;" (click)="toggleTeamExpanded('TME IMP', analysis.team)">
+                            {{ isTeamExpanded('TME IMP', analysis.team) ? '▲ Ver menos' : '▼ Ver mais ' + (analysis.extraFlaggedOrders?.length || 0) + ' OS(s) com baixo tempo' }}
                           </button>
+                          <div *ngIf="isTeamExpanded('TME IMP', analysis.team)" class="extra-orders-container" style="margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                            <ng-container *ngFor="let grp of allDateGroupsForKpi(analysis.extraFlaggedOrders || [], []); trackBy: trackByDateRef">
+                              <div class="ev-date-group-header" style="opacity: 0.8">{{ grp.dateRef }} (Extra)</div>
+                              <div class="osdia-ev-item osdia-ev-item--extra" *ngFor="let ev of grp.items">
+                                <ng-container *ngTemplateOutlet="tmeImpEvTpl; context: {$implicit: ev}"></ng-container>
+                              </div>
+                            </ng-container>
+                          </div>
                         </ng-container>
                       </div>
                       <ng-template #noTmeImpEvidence>
@@ -5554,7 +5574,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     exportType: 'atual' | 'proprias' | 'parceiras',
   ): void {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
-    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceDateKeysSet() : undefined;
+    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceKeysSet() : undefined;
     this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
   }
 
@@ -5566,7 +5586,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     exportType: 'atual' | 'proprias' | 'parceiras',
   ): Promise<File> {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
-    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceDateKeysSet() : undefined;
+    const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceKeysSet() : undefined;
     return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
   }
 
@@ -5619,9 +5639,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly analyticLegendOpen = signal<Record<number, boolean>>({});
   protected readonly analyticSearch = signal<Record<number, string>>({});
 
-  // ─── "Ver mais..." per date-ref group state ────────────────────────────────
-  /** Key format: `{kpiName}|{team}|{dateRef}` — true when expanded. */
-  protected readonly expandedEvidenceDates = signal<Record<string, boolean>>({});
+  // ─── "Ver mais..." per team state ────────────────────────────────
+  /** Key format: `{kpiName}|{team}` — true when expanded. */
+  protected readonly expandedEvidenceTeams = signal<Record<string, boolean>>({});
 
   /** Groups an array of evidence items by their date_ref field, sorted chronologically. */
   protected groupByDateRef<T extends { date_ref?: string }>(
@@ -5669,6 +5689,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return grp.dateRef;
   }
 
+  protected isTeamExpanded(kpiKey: string, team: string): boolean {
+    return this.expandedEvidenceTeams()[`${kpiKey}|${team}`] ?? false;
+  }
+
+  protected toggleTeamExpanded(kpiKey: string, team: string): void {
+    const key = `${kpiKey}|${team}`;
+    this.expandedEvidenceTeams.update((cur) => ({ ...cur, [key]: !cur[key] }));
+  }
+
+  // ─── "Ver mais..." per date-ref group state (Legacy for Day-based KPIs) ───
+  /** Key format: `{kpiName}|{team}|{dateRef}` — true when expanded. */
+  protected readonly expandedEvidenceDates = signal<Record<string, boolean>>({});
+
   protected isDateExpanded(kpiKey: string, team: string, dateRef: string): boolean {
     return this.expandedEvidenceDates()[`${kpiKey}|${team}|${dateRef}`] ?? false;
   }
@@ -5692,13 +5725,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return (extra ?? []).some((o) => ((o.date_ref ?? '').trim() || '—') === dateRef);
   }
 
-  /** Returns the set of expanded evidence date keys for PDF injection. */
-  private getExpandedEvidenceDateKeysSet(): Set<string> {
-    return new Set(
-      Object.entries(this.expandedEvidenceDates())
+  /** Returns the set of expanded evidence keys for PDF injection.
+   *  Since expansion is now per-team, this could map all team dates if expanded.
+   *  We merge both team keys and date keys so the PDF service can handle them.
+   */
+  private getExpandedEvidenceKeysSet(): Set<string> {
+    return new Set([
+      ...Object.entries(this.expandedEvidenceTeams())
         .filter(([, v]) => v)
         .map(([k]) => k),
-    );
+      ...Object.entries(this.expandedEvidenceDates())
+        .filter(([, v]) => v)
+        .map(([k]) => k)
+    ]);
   }
 
   protected toggleAnalyticLegend(index: number): void {

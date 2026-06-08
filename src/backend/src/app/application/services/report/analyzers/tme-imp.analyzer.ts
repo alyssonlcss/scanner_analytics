@@ -145,18 +145,33 @@ export function analyzeTmeImp(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis:
         });
       }
 
-      // Sort: highest TME IMP first
-      flaggedOrders.sort((a, b) => b.tme_imp_min - a.tme_imp_min);
-
-      const topTmeImpFlagged = flaggedOrders.slice(0, 10);
-      const enrichedFlaggedOrders = enrichTmeImpEvidence(topTmeImpFlagged);
-      // Extras: all orders (flagged + non-flagged) not in top-displayed
-      const topTmeKeys = new Set(topTmeImpFlagged.map(o => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
       const flaggedTmeById = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
-      const allTmeExtra = allOrders
-        .filter(o => !topTmeKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`))
-        .map(o => flaggedTmeById.get(o.nr_ordem || `${o.despachada}|${o.a_caminho}`) ?? o);
-      const extraEnrichedFlaggedOrders = allTmeExtra.length ? enrichTmeImpEvidence(allTmeExtra) : [];
+      const allMergedTme: TmeImpOrderEvidence[] = [];
+      const seenTmeExtra = new Set<string>();
+      for (const o of allOrders) {
+        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
+        if (!seenTmeExtra.has(key)) {
+          seenTmeExtra.add(key);
+          allMergedTme.push(flaggedTmeById.get(key) ?? o);
+        }
+      }
+
+      // Ordenação estritamente decrescente pelo tempo de reparo
+      allMergedTme.sort((a, b) => b.tr_ordem_min - a.tr_ordem_min);
+
+      const finalFlagged: TmeImpOrderEvidence[] = [];
+      const finalExtra: TmeImpOrderEvidence[] = [];
+
+      for (const o of allMergedTme) {
+        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+          finalFlagged.push(o);
+        } else if (finalFlagged.length + finalExtra.length < 50) {
+          finalExtra.push(o);
+        }
+      }
+
+      const enrichedFlaggedOrders = enrichTmeImpEvidence(finalFlagged);
+      const extraEnrichedFlaggedOrders = finalExtra.length ? enrichTmeImpEvidence(finalExtra) : [];
 
       result.push({
         team,

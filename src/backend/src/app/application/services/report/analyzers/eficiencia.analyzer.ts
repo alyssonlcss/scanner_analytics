@@ -333,6 +333,36 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
         }
       }
 
+      const allMerged = mergeEvidenceFlags(allOrders);
+      const flaggedByKey = new Map(mergedFlaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const finalAllMerged: EficienciaOrderEvidence[] = [];
+      const seenExtra = new Set<string>();
+      for (const o of allMerged) {
+        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
+        if (!seenExtra.has(key)) {
+          seenExtra.add(key);
+          finalAllMerged.push(flaggedByKey.get(key) ?? o);
+        }
+      }
+
+      // Ordenação estritamente decrescente pelo tempo de reparo
+      finalAllMerged.sort((a, b) => {
+        const trA = a.tr_ordem_min ?? 0;
+        const trB = b.tr_ordem_min ?? 0;
+        return trB - trA;
+      });
+
+      const finalFlagged: EficienciaOrderEvidence[] = [];
+      const finalExtra: EficienciaOrderEvidence[] = [];
+
+      for (const o of finalAllMerged) {
+        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+          finalFlagged.push(o);
+        } else if (finalFlagged.length + finalExtra.length < 50) {
+          finalExtra.push(o);
+        }
+      }
+
       // Team-level flags — computed after order loop
       const flags: EficienciaTeamAnalysis['flags'] = [];
       const countDeslocamentoCurtoCalc = mergedFlaggedOrders.filter((o) => o.flags.includes('deslocamento_curto')).length;
@@ -341,20 +371,13 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
       }
 
       const countTempoPadraoVazio = mergedFlaggedOrders.filter((o) => o.flags.includes('tempo_padrao_vazio')).length;
-      const allFlagged = mergedFlaggedOrders.slice(0, 10);
-      const enrichedFlagged = enrichEficienciaEvidence(allFlagged, {
+      
+      const enrichedFlagged = enrichEficienciaEvidence(finalFlagged, {
         globalAvgExecucaoMin: round2(globalAvgExecucao),
         globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
       });
-      // Extras: all orders (flagged + non-flagged) not in top-displayed
-      const mergedAllOrders = mergeEvidenceFlags(allOrders);
-      const flaggedByKey = new Map(mergedFlaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
-      const topFlaggedKeys = new Set(allFlagged.map(o => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
-      const extraFlagged = mergedAllOrders
-        .filter(o => !topFlaggedKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`))
-        .map(o => flaggedByKey.get(o.nr_ordem || `${o.despachada}|${o.a_caminho}`) ?? o);
-      const extraEnrichedFlagged = extraFlagged.length
-        ? enrichEficienciaEvidence(extraFlagged, {
+      const extraEnrichedFlagged = finalExtra.length
+        ? enrichEficienciaEvidence(finalExtra, {
             globalAvgExecucaoMin: round2(globalAvgExecucao),
             globalAvgDeslocamentoMin: round2(globalAvgDeslocamento),
           })

@@ -879,21 +879,38 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       }
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const topFlagged = distinctDates > 7 ? selectTopOsDiaEvidences(flaggedOrders) : flaggedOrders.slice(0, 10);
-      const prioritizedFlaggedOrders = enrichOsDiaEvidence(topFlagged);
-      // Extras: all orders (flagged + non-flagged) not in top-displayed
       const allBasic = teamAllBasicOrders.get(team) ?? [];
       const flaggedByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
       const seenExtra = new Set<string>();
       const allMerged: OsDiaOrderEvidence[] = [];
       for (const o of allBasic) {
         const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
-        if (!seenExtra.has(key)) { seenExtra.add(key); allMerged.push(flaggedByKey.get(key) ?? o); }
+        if (!seenExtra.has(key)) { 
+          seenExtra.add(key); 
+          allMerged.push(flaggedByKey.get(key) ?? o); 
+        }
       }
-      const topKeys = new Set(topFlagged.map((o) => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
-      const extraFlaggedOrders = enrichOsDiaEvidence(
-        allMerged.filter((o) => !topKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`)),
-      );
+
+      // Ordenação estritamente decrescente pelo tempo total ocioso
+      allMerged.sort((a, b) => {
+        const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0);
+        const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0);
+        return idleB - idleA;
+      });
+
+      const finalFlagged: OsDiaOrderEvidence[] = [];
+      const finalExtra: OsDiaOrderEvidence[] = [];
+      
+      for (const o of allMerged) {
+        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+          finalFlagged.push(o);
+        } else if (finalFlagged.length + finalExtra.length < 50) {
+          finalExtra.push(o);
+        }
+      }
+
+      const prioritizedFlaggedOrders = enrichOsDiaEvidence(finalFlagged);
+      const extraFlaggedOrders = enrichOsDiaEvidence(finalExtra);
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
@@ -993,103 +1010,7 @@ export function countDistinctDates(rows: CsvRow[], dateCol: string): number {
     return dates.size;
   }
 
-export function selectTopUtilizacaoEvidences(
-    evidences: UtilizacaoOrderEvidence[],
-    maxPerFlag = 2,
-  ): UtilizacaoOrderEvidence[] {
-    if (evidences.length === 0) return [];
 
-    const selected = new Map<string, UtilizacaoOrderEvidence>();
-    const flagOrder: Array<UtilizacaoOrderEvidence['flags'][number]> = ['temp_prep_alto', 'sem_os_alto'];
-
-    for (const flag of flagOrder) {
-      const topByFlag = evidences
-        .filter((ev) => ev.flags.includes(flag))
-        .sort((a, b) => {
-          const scoreA = flag === 'temp_prep_alto' ? (a.temp_prep_os_min ?? 0) : (a.sem_os_total_min ?? 0);
-          const scoreB = flag === 'temp_prep_alto' ? (b.temp_prep_os_min ?? 0) : (b.sem_os_total_min ?? 0);
-          return scoreB - scoreA;
-        })
-        .slice(0, maxPerFlag);
-
-      for (const ev of topByFlag) {
-        const key = `${ev.nr_ordem}|${ev.despachada}|${ev.a_caminho}`;
-        if (!selected.has(key)) {
-          selected.set(key, ev);
-        }
-      }
-    }
-
-    return Array.from(selected.values())
-      .sort((a, b) => {
-        const scoreA = (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0);
-        const scoreB = (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0);
-        return scoreB - scoreA;
-      })
-      .slice(0, maxPerFlag * flagOrder.length);
-  }
-
-export function selectTopOsDiaEvidences(
-    evidences: OsDiaOrderEvidence[],
-    maxPerFlag = 2,
-  ): OsDiaOrderEvidence[] {
-    if (evidences.length === 0) {
-      return [];
-    }
-
-    const selected = new Map<string, OsDiaOrderEvidence>();
-    const flagPriority: OsDiaOrderEvidence['flags'] = [
-      'tr_excede_hd',
-      'tl_excede_hd',
-      'temp_prep_alto',
-      'sem_os_alto',
-    ];
-
-    for (const flag of flagPriority) {
-      const topByFlag = evidences
-        .filter((evidence) => evidence.flags.includes(flag))
-        .sort((left, right) => scoreOsDiaEvidenceForFlag(right, flag) - scoreOsDiaEvidenceForFlag(left, flag))
-        .slice(0, maxPerFlag);
-
-      for (const evidence of topByFlag) {
-        const key = `${evidence.nr_ordem}|${evidence.despachada}|${evidence.a_caminho}`;
-        if (!selected.has(key)) {
-          selected.set(key, evidence);
-        }
-      }
-    }
-
-    return Array.from(selected.values())
-      .sort((left, right) => scoreOsDiaEvidence(right) - scoreOsDiaEvidence(left))
-      .slice(0, maxPerFlag * flagPriority.length);
-  }
-
-export function scoreOsDiaEvidenceForFlag(
-    evidence: OsDiaOrderEvidence,
-    flag: OsDiaOrderEvidence['flags'][number],
-  ): number {
-    switch (flag) {
-      case 'tr_excede_hd':
-        return evidence.hd_pct_tr;
-      case 'tl_excede_hd':
-        return evidence.hd_pct_tl;
-      case 'temp_prep_alto':
-        return evidence.temp_prep_os_min ?? 0;
-      case 'sem_os_alto':
-        return evidence.sem_os_total_min ?? 0;
-      default:
-        return 0;
-    }
-  }
-
-export function scoreOsDiaEvidence(evidence: OsDiaOrderEvidence): number {
-    return (
-      evidence.hd_pct_tr +
-      evidence.hd_pct_tl +
-      (evidence.temp_prep_os_min ?? 0) +
-      (evidence.sem_os_total_min ?? 0)
-    );
-  }
 
   // ─── Business logic text helpers — single source of truth for alert texts ──
 

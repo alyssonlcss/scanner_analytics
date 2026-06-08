@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { Injectable } from '@angular/core';
 import type { GeneratedReport, ReportKpiInsight } from '../../../core/api/scanner-api.service';
@@ -248,7 +248,7 @@ export class DashboardPdfService {
    * Gera e baixa o PDF usando pdfmake.
    */
   downloadPdf(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): void {
-    const effectiveSection = expandedKeys?.size ? { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) } : section;
+    const effectiveSection = { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) };
     const docDef = this.buildPdfDocDef(effectiveSection, helpers);
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
   }
@@ -258,7 +258,7 @@ export class DashboardPdfService {
    * pdfmake 0.3.x: getBlob() é async — retorna Promise<Blob>, não usa callback.
    */
   async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): Promise<File> {
-    const effectiveSection = expandedKeys?.size ? { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) } : section;
+    const effectiveSection = { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) };
     const docDef = this.buildPdfDocDef(effectiveSection, helpers);
     const blob: Blob = await pdfMake.createPdf(docDef).getBlob();
     if (!blob || blob.size === 0) {
@@ -272,19 +272,30 @@ export class DashboardPdfService {
    * for the analysis entries that match the user's expanded date keys.
    * Returns a shallow-cloned report — only the relevant nested arrays are replaced.
    */
-  private injectExpandedOrders(report: any, expandedKeys: Set<string>): any {
-    const mergeOrderExtras = (analysisList: any[], kpiName: string): any[] =>
+  private injectExpandedOrders(report: any, expandedKeys?: Set<string>): any {
+    const mergeOrderExtrasAndSort = (analysisList: any[], kpiName: string): any[] =>
       analysisList.map((a: any) => {
-        const extras = (a.extraFlaggedOrders ?? []).filter((o: any) => {
-          const dateRef = (o.date_ref ?? '').trim() || '\u2014';
-          return expandedKeys.has(`${kpiName}|${a.team}|${dateRef}`);
-        });
-        return extras.length ? { ...a, flaggedOrders: [...a.flaggedOrders, ...extras] } : a;
+        const extras = (a.extraFlaggedOrders ?? []).filter((o: any) => (o.flags?.length ?? 0) > 0);
+        if (extras.length === 0) return a;
+        
+        const merged = [...a.flaggedOrders, ...extras];
+        
+        if (kpiName === 'OS Dia' || kpiName === 'Utilização') {
+          merged.sort((x, y) => {
+            const idleX = (x.ocioso_min ?? 0) + (x.temp_prep_os_min ?? 0) + (x.sem_os_total_min ?? 0);
+            const idleY = (y.ocioso_min ?? 0) + (y.temp_prep_os_min ?? 0) + (y.sem_os_total_min ?? 0);
+            return idleY - idleX;
+          });
+        } else if (kpiName === 'Eficiência' || kpiName === 'TME IMP') {
+          merged.sort((x, y) => (y.tr_ordem_min ?? 0) - (x.tr_ordem_min ?? 0));
+        }
+        
+        return { ...a, flaggedOrders: merged };
       });
 
     const mergeDayExtras = (analysisList: any[], kpiName: string): any[] =>
       analysisList.map((a: any) => {
-        if (expandedKeys.has(`${kpiName}|${a.team}|__extra__`)) {
+        if (expandedKeys?.has(`${kpiName}|${a.team}|__extra__`)) {
           const extras = a.extraFlaggedDays ?? [];
           return extras.length ? { ...a, flaggedDays: [...a.flaggedDays, ...extras] } : a;
         }
@@ -295,13 +306,13 @@ export class DashboardPdfService {
       ...report,
       specialAnalysis: {
         ...report.specialAnalysis,
-        osDiaAnalysis: mergeOrderExtras(report.specialAnalysis?.osDiaAnalysis ?? [], 'OS Dia'),
-        utilizacaoAnalysis: mergeOrderExtras(report.specialAnalysis?.utilizacaoAnalysis ?? [], 'Utilização'),
+        osDiaAnalysis: mergeOrderExtrasAndSort(report.specialAnalysis?.osDiaAnalysis ?? [], 'OS Dia'),
+        utilizacaoAnalysis: mergeOrderExtrasAndSort(report.specialAnalysis?.utilizacaoAnalysis ?? [], 'Utilização'),
       },
       kpis: (report.kpis ?? []).map((kpi: any) => ({
         ...kpi,
-        evidenceAnalysis: mergeOrderExtras(kpi.evidenceAnalysis ?? [], 'Eficiência'),
-        tmeImpAnalysis: mergeOrderExtras(kpi.tmeImpAnalysis ?? [], 'TME IMP'),
+        evidenceAnalysis: mergeOrderExtrasAndSort(kpi.evidenceAnalysis ?? [], 'Eficiência'),
+        tmeImpAnalysis: mergeOrderExtrasAndSort(kpi.tmeImpAnalysis ?? [], 'TME IMP'),
         primeiroLoginAnalysis: mergeDayExtras(kpi.primeiroLoginAnalysis ?? [], '1\u00ba Login'),
         primeiroDeslocAnalysis: mergeDayExtras(kpi.primeiroDeslocAnalysis ?? [], '1\u00ba Desloc.'),
         retornoBaseAnalysis: mergeDayExtras(kpi.retornoBaseAnalysis ?? [], 'Retorno Base'),
@@ -989,8 +1000,8 @@ export class DashboardPdfService {
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
               (ev.sem_os_details as any[]).filter((d: any) => d.type !== 'fim_jornada').forEach((d: any, di: number) => {
-                const semLabel = helpers.semOsDetailLabel(d);
-                const semBody = helpers.semOsDetailBody(d);
+                const semLabel = helpers.semOsDetailLabel(d, ev.nr_ordem_despacho_anterior);
+                const semBody = helpers.semOsDetailBody(d, ev.nr_ordem_despacho_anterior);
                 orderItems.push({ text: [{ text: `${di + 1}. `, color: RED, bold: true, italics: true }, { text: semLabel, color: RED, italics: true }, ...(semBody ? [{ text: ': ', color: DARK }, ...minRuns(semBody)] : [])], fontSize: 6.5, margin: [10, 0, 0, 1] });
               });
             }
@@ -1005,7 +1016,7 @@ export class DashboardPdfService {
             if (ev.flags?.includes('antes_log_off_alto')) {
               const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
               if (fjDetail) {
-                const fjBody = helpers.semOsDetailBody(fjDetail);
+                const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
                 orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
               }
             }

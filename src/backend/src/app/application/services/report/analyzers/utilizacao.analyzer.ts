@@ -2,7 +2,6 @@ import type { CsvRow } from '../csv-utils.js';
 import type { UtilizacaoTeamAnalysis, UtilizacaoOrderEvidence, KpiInsight } from '../types.js';
 import { createAccessor, parseNumber, normalizeToken, round2, parseDateTimeBr, minutesBetween } from '../csv-utils.js';
 import { calculateTempPrepValue, calculateSemOsValue } from '../builders/team-stats.builder.js';
-import { selectTopUtilizacaoEvidences } from './os-dia.analyzer.js';
 import { enrichUtilizacaoEvidence } from './enrich-utils.js';
 
 import { countDistinctDates, mergeEvidenceFlags } from './os-dia.analyzer.js';
@@ -832,21 +831,38 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       if (!Array.from(grouped.values()).some((g) => g.team === team)) continue;
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const topFlaggedUtil = distinctDates > 7 ? selectTopUtilizacaoEvidences(flaggedOrders) : flaggedOrders.slice(0, 10);
-      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(topFlaggedUtil);
-      // Extras: all orders (flagged + non-flagged) not in top-displayed
-      const allBasicUtil = teamAllBasicUtil.get(team) ?? [];
+      const allBasic = teamAllBasicUtil.get(team) ?? [];
       const flaggedUtilByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
-      const seenExtraUtil = new Set<string>();
-      const allMergedUtil: UtilizacaoOrderEvidence[] = [];
-      for (const o of allBasicUtil) {
+      const seenExtra = new Set<string>();
+      const allMerged: UtilizacaoOrderEvidence[] = [];
+      for (const o of allBasic) {
         const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
-        if (!seenExtraUtil.has(key)) { seenExtraUtil.add(key); allMergedUtil.push(flaggedUtilByKey.get(key) ?? o); }
+        if (!seenExtra.has(key)) {
+          seenExtra.add(key);
+          allMerged.push(flaggedUtilByKey.get(key) ?? o);
+        }
       }
-      const topUtilKeys = new Set(topFlaggedUtil.map((o) => o.nr_ordem || `${o.despachada}|${o.a_caminho}`));
-      const extraEnrichedFlaggedOrders = enrichUtilizacaoEvidence(
-        allMergedUtil.filter((o) => !topUtilKeys.has(o.nr_ordem || `${o.despachada}|${o.a_caminho}`)),
-      );
+
+      // Ordenação estritamente decrescente pelo tempo total ocioso
+      allMerged.sort((a, b) => {
+        const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0);
+        const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0);
+        return idleB - idleA;
+      });
+
+      const finalFlagged: UtilizacaoOrderEvidence[] = [];
+      const finalExtra: UtilizacaoOrderEvidence[] = [];
+
+      for (const o of allMerged) {
+        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+          finalFlagged.push(o);
+        } else if (finalFlagged.length + finalExtra.length < 50) {
+          finalExtra.push(o);
+        }
+      }
+
+      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(finalFlagged);
+      const extraEnrichedFlaggedOrders = enrichUtilizacaoEvidence(finalExtra);
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
