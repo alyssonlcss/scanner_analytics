@@ -456,6 +456,17 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             basicInicioIntervaloDate.getTime() <= basicLiberadaAtualDate.getTime() &&
             (basicPrevLiberadaDate === null || basicInicioIntervaloDate.getTime() >= basicPrevLiberadaDate.getTime()),
           );
+          let basicFimJornadaJanela = false;
+          if (bIdx === ordered.length - 1 && logOffCorrigidoCol2 && basicLiberadaAtualDate) {
+            const logOff = parseDateTimeBr(String(row[logOffCorrigidoCol2] ?? ''));
+            if (logOff && logOff.getTime() > basicLiberadaAtualDate.getTime()) {
+              if (basicInicioIntervaloDate && basicInicioIntervaloDate.getTime() >= basicLiberadaAtualDate.getTime() && basicInicioIntervaloDate.getTime() <= logOff.getTime()) {
+                basicFimJornadaJanela = true;
+              }
+            }
+          }
+          const keepInterval = basicIntervaloNaJanela || basicFimJornadaJanela;
+
           basicArr.push({
             source: 'Scanner 4.4 - CE M300',
             date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
@@ -467,8 +478,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             a_caminho: String(row[caminhoCol] ?? '').trim(),
             no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
-            inicio_intervalo: basicIntervaloNaJanela ? basicInicioIntervaloRaw : '',
-            fim_intervalo:    basicIntervaloNaJanela ? basicFimIntervaloRaw    : '',
+            inicio_intervalo: keepInterval ? basicInicioIntervaloRaw : '',
+            fim_intervalo:    keepInterval ? basicFimIntervaloRaw    : '',
             inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
             tr_ordem_min: round2(trMin),
             tl_ordem_min: round2(tlMin),

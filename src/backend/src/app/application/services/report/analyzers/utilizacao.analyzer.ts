@@ -434,6 +434,28 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
           const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
           const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          const basicInicioIntervaloRaw = inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '';
+          const basicFimIntervaloRaw    = fimIntervaloCol    ? String(row[fimIntervaloCol]    ?? '').trim() : '';
+          const basicInicioIntervaloDate = basicInicioIntervaloRaw ? parseDateTimeBr(basicInicioIntervaloRaw) : null;
+          const basicLiberadaAtualDate   = liberadaCol ? parseDateTimeBr(String(row[liberadaCol] ?? '')) : null;
+          const basicPrevLiberadaDate    = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
+          const basicIntervaloNaJanela   = Boolean(
+            basicInicioIntervaloDate &&
+            basicLiberadaAtualDate &&
+            basicInicioIntervaloDate.getTime() <= basicLiberadaAtualDate.getTime() &&
+            (basicPrevLiberadaDate === null || basicInicioIntervaloDate.getTime() >= basicPrevLiberadaDate.getTime()),
+          );
+          let basicFimJornadaJanela = false;
+          if (bIdx === ordered.length - 1 && logOffCorrigidoCol && basicLiberadaAtualDate) {
+            const logOff = parseDateTimeBr(String(row[logOffCorrigidoCol] ?? ''));
+            if (logOff && logOff.getTime() > basicLiberadaAtualDate.getTime()) {
+              if (basicInicioIntervaloDate && basicInicioIntervaloDate.getTime() >= basicLiberadaAtualDate.getTime() && basicInicioIntervaloDate.getTime() <= logOff.getTime()) {
+                basicFimJornadaJanela = true;
+              }
+            }
+          }
+          const keepInterval = basicIntervaloNaJanela || basicFimJornadaJanela;
+
           basicArr.push({
             nr_ordem: nr,
             date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
@@ -444,8 +466,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             a_caminho: String(row[caminhoCol] ?? '').trim(),
             no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
-            inicio_intervalo: inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '',
-            fim_intervalo: fimIntervaloCol ? String(row[fimIntervaloCol] ?? '').trim() : '',
+            inicio_intervalo: keepInterval ? basicInicioIntervaloRaw : '',
+            fim_intervalo: keepInterval ? basicFimIntervaloRaw : '',
             inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
             log_in: bIdx === 0 && logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
             tr_ordem_min: round2(trMin),
