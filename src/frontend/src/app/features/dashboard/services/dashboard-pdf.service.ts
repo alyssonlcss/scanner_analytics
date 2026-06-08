@@ -659,18 +659,21 @@ export class DashboardPdfService {
         margin: [0, 1, 0, 1],
       });
 
-      const orderHead = (nr_ordem: string, flags: string[], labelFn: (f: string) => string, extra?: string, isPrimeiraOs?: boolean): any => ({
-        text: [
-          { text: `OS ${nr_ordem}${extra ? ' | ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
-          { text: '    ', fontSize: 7 },
-          ...(isPrimeiraOs ? [{ text: '1\u00aa OS', bold: true, color: BLUE, fontSize: 6.5 }] : []),
-          ...flags.flatMap((f, i) => [
-            ...(i > 0 || isPrimeiraOs ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
-            { text: labelFn(f), bold: true, color: RED, fontSize: 6.5 },
-          ]),
-        ],
-        margin: [0, 6, 0, 2],
-      });
+      const orderHead = (nr_ordem: string, flags: string[], labelFn: (f: string) => string, extra?: string, isPrimeiraOs?: boolean, customFlags: string[] = []): any => {
+        const allFlags = [...(flags || []).map(labelFn), ...customFlags];
+        return {
+          text: [
+            { text: `OS ${nr_ordem}${extra ? ' | ' + extra : ''}`, bold: true, fontSize: 7.5, color: DARK },
+            { text: '    ', fontSize: 7 },
+            ...(isPrimeiraOs ? [{ text: '1\u00aa OS', bold: true, color: BLUE, fontSize: 6.5 }] : []),
+            ...allFlags.flatMap((f, i) => [
+              ...(i > 0 || isPrimeiraOs ? [{ text: '  |  ', color: MUTED, fontSize: 6.5 }] : []),
+              { text: f, bold: true, color: RED, fontSize: 6.5 },
+            ]),
+          ],
+          margin: [0, 6, 0, 2],
+        };
+      };
 
       const minRuns = (text: string): any[] => {
         const parts = text.split(/(\d+(?:[.,]\d+)? min\b)/);
@@ -867,7 +870,14 @@ export class DashboardPdfService {
                   orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
                 }
               }
-              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
+              const customFlags: string[] = [];
+              if (ev.sem_os_details?.find((d: any) => d.type === 'entre_os' && d.interval_discounted && d.min >= 10)) {
+                customFlags.push('Entre OS\u226510min');
+              }
+              if (ev.ocioso_min != null) {
+                customFlags.push(`Ocioso: ${Math.round(ev.ocioso_min)} min`);
+              }
+              const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada, customFlags)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
               teamItems.push({ stack: orderBlock, unbreakable: true });
               if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
@@ -1020,7 +1030,14 @@ export class DashboardPdfService {
                 orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
               }
             }
-            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada)];
+            const customFlags: string[] = [];
+            if (ev.sem_os_details?.find((d: any) => d.type === 'entre_os' && d.interval_discounted && d.min >= 10)) {
+              customFlags.push('Entre OS\u226510min');
+            }
+            if (ev.ocioso_min != null) {
+              customFlags.push(`Ocioso: ${Math.round(ev.ocioso_min)} min`);
+            }
+            const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada, customFlags)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
             teamItems.push({ stack: orderBlock, unbreakable: true });
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
