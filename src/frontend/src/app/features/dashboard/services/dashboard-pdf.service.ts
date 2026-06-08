@@ -760,10 +760,10 @@ export class DashboardPdfService {
       const indentBlock = (items: any[], color: string, indent = 8): any => ({
         table: {
           widths: [2, '*'],
-          body: [[
+          body: items.map((item, index) => [
             { text: '' },
-            { stack: items, margin: [indent, 2, 0, 2] },
-          ]],
+            { stack: [item], margin: [indent, index === 0 ? 2 : 0, 0, index === items.length - 1 ? 2 : 0] },
+          ]),
         },
         layout: {
           hLineWidth: () => 0,
@@ -887,9 +887,9 @@ export class DashboardPdfService {
           const osDiaHdr = cardHeader(analysis.team, `${fmt(analysis.osDiaValue)} OS/Dia`, !isAbove(kpi, analysis.osDiaValue));
           const osDiaBlock = indentBlock(teamItems, osDiaBarColor, 8);
           if (analysisIdx === 0 && osDiaDrillHead) {
-            content.push({ stack: [osDiaDrillHead, osDiaHdr, osDiaBlock], unbreakable: true });
+            content.push({ stack: [osDiaDrillHead, osDiaHdr, osDiaBlock] });
           } else {
-            content.push({ stack: [cardDivider(), osDiaHdr, osDiaBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), osDiaHdr, osDiaBlock] });
           }
         });
       }
@@ -948,9 +948,9 @@ export class DashboardPdfService {
           const efHdr = cardHeader(analysis.team, `${analysis.eficienciaValue}% efic.`, !isTop);
           const efBlock = indentBlock(teamItems, teamBarColor, 8);
           if (analysisIdx === 0 && efDrillHead) {
-            content.push({ stack: [efDrillHead, efHdr, efBlock], unbreakable: true });
+            content.push({ stack: [efDrillHead, efHdr, efBlock] });
           } else {
-            content.push({ stack: [cardDivider(), efHdr, efBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), efHdr, efBlock] });
           }
         });
       }
@@ -1046,9 +1046,9 @@ export class DashboardPdfService {
           const utilHdr = cardHeader(analysis.team, `Gap ${analysis.gap?.toFixed(1)}%`, true);
           const utilBlock = indentBlock(teamItems, utilizacaoBarColor, 8);
           if (analysisIdx === 0 && utilDrillHead) {
-            content.push({ stack: [utilDrillHead, utilHdr, utilBlock], unbreakable: true });
+            content.push({ stack: [utilDrillHead, utilHdr, utilBlock] });
           } else {
-            content.push({ stack: [cardDivider(), utilHdr, utilBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), utilHdr, utilBlock] });
           }
         });
       }
@@ -1089,9 +1089,9 @@ export class DashboardPdfService {
           const tmeHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
           const tmeBlock = indentBlock(teamItems, tmeBarColor, 8);
           if (analysisIdx === 0 && tmeDrillHead) {
-            content.push({ stack: [tmeDrillHead, tmeHdr, tmeBlock], unbreakable: true });
+            content.push({ stack: [tmeDrillHead, tmeHdr, tmeBlock] });
           } else {
-            content.push({ stack: [cardDivider(), tmeHdr, tmeBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), tmeHdr, tmeBlock] });
           }
         });
       }
@@ -1135,9 +1135,9 @@ export class DashboardPdfService {
           const loginHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
           const loginBlock = indentBlock(teamItems, loginBarColor, 8);
           if (analysisIdx === 0 && loginDrillHead) {
-            content.push({ stack: [loginDrillHead, loginHdr, loginBlock], unbreakable: true });
+            content.push({ stack: [loginDrillHead, loginHdr, loginBlock] });
           } else {
-            content.push({ stack: [cardDivider(), loginHdr, loginBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), loginHdr, loginBlock] });
           }
         });
       }
@@ -1195,9 +1195,9 @@ export class DashboardPdfService {
           const deslocHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
           const deslocBlock = indentBlock(teamItems, deslocBarColor, 8);
           if (analysisIdx === 0 && deslocDrillHead) {
-            content.push({ stack: [deslocDrillHead, deslocHdr, deslocBlock], unbreakable: true });
+            content.push({ stack: [deslocDrillHead, deslocHdr, deslocBlock] });
           } else {
-            content.push({ stack: [cardDivider(), deslocHdr, deslocBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), deslocHdr, deslocBlock] });
           }
         });
       }
@@ -1241,9 +1241,9 @@ export class DashboardPdfService {
           const retornoHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
           const retornoBlock = indentBlock(teamItems, retornoBarColor, 8);
           if (analysisIdx === 0 && retornoDrillHead) {
-            content.push({ stack: [retornoDrillHead, retornoHdr, retornoBlock], unbreakable: true });
+            content.push({ stack: [retornoDrillHead, retornoHdr, retornoBlock] });
           } else {
-            content.push({ stack: [cardDivider(), retornoHdr, retornoBlock], unbreakable: true });
+            content.push({ stack: [cardDivider(), retornoHdr, retornoBlock] });
           }
         });
       }
