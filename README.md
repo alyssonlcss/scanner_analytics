@@ -85,7 +85,45 @@ Após o build inicial, o aplicativo frontend estará acessível em `http://local
 
 ## ⚙️ Configuração Adicional
 
-O projeto pode exigir variáveis de ambiente específicas para o acesso aos sistemas fontes, bem como credenciais ou configurações de diretório de extração, dependendo da sua fonte de BI original.
-Todas as referências textuais externas ou URLs dinâmicas para a automação estão devidamente desacopladas no arquivo `.env` do backend.
+### Configuração do Arquivo `.env`
+O backend requer credenciais de acesso e a URL do sistema corporativo para que o robô possa autenticar e raspar os dados do seu BI de origem. Para configurar, duplique o arquivo `.env.example` na pasta `src/backend`, renomeie-o para `.env` e preencha as variáveis de acordo com o padrão abaixo:
 
-- A estrutura de **polos** e **bases operacionais** que aparecem nos filtros e no exportador é dinamicamente lida e totalmente customizável através do arquivo `src/backend/bases.json`.
+```env
+# Porta do Servidor (Opcional, Padrão: 3000)
+PORT=3000
+
+# URLs da Ferramenta de BI (Substitua pelos links internos da sua empresa)
+SPOTFIRE_LOGIN_URL=http://<SEU-DOMINIO-INTERNO>:8090/spotfire/wp/login
+SPOTFIRE_ANALYSIS_URL=http://<SEU-DOMINIO-INTERNO>:8090/spotfire/wp/analysis?file=/Caminho/do/Painel
+
+# Credenciais de Rede (Conta de serviço/usuário do robô)
+SPOTFIRE_USERNAME=seu_login_aqui
+SPOTFIRE_PASSWORD=sua_senha_aqui
+
+# Configurações de Comportamento do Navegador (Puppeteer)
+SPOTFIRE_HEADLESS=true # true para rodar em background invisível (servidor); false para debugar visualmente
+SPOTFIRE_DEBUG=false   # true para habilitar logs detalhados dos passos do robô
+
+# (Opcional) Especificar um caminho de executável ou porta remota
+SPOTFIRE_BROWSER_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+SPOTFIRE_BROWSER_URL=http://127.0.0.1:9222
+
+# Mapeamento de botões na interface (Ajuste conforme o idioma do seu Spotfire)
+SPOTFIRE_DEFAULT_REPORT_TITLE=Nome do Seu Relatorio
+SPOTFIRE_FILTER_PANEL_LABEL=Filters
+SPOTFIRE_EXPORT_MENU_LABEL=Export table
+SPOTFIRE_EXPORT_PARENT_MENU_LABEL=Export
+
+# Diretório de Sandbox e nomes exatos das tabelas que o robô deve exportar
+SPOTFIRE_OUTPUT_DIR=../../data
+SPOTFIRE_DOWNLOAD_TABLES=Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios
+
+# Geração e processamento da Engine Analítica
+REPORT_AUTO_GENERATE=true
+REPORT_OUTPUT_FILE_NAME=scanner-analytics-report.json
+```
+
+> **Aviso de Segurança**: Por padrão, o arquivo `.env` está incluso no `.gitignore` para prevenir o vazamento acidental das credenciais e da URL corporativa em repositórios públicos. Nunca o versione!
+
+### Configuração de Polos e Bases
+- A estrutura hierárquica de **polos** e **bases operacionais** que aparecem nos menus e no exportador é construída de maneira dinâmica e pode ser integralmente customizada através do arquivo de metadados localizado em `src/backend/bases.json`.
