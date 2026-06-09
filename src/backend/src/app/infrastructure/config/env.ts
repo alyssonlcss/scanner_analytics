@@ -2,6 +2,8 @@
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { config as loadEnvironment } from 'dotenv';
 import { z } from 'zod';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 loadEnvironment();
 
@@ -48,15 +50,6 @@ const environmentSchema = z.object({
   SPOTFIRE_OUTPUT_DIR: z.string().default('../../data'),
   SPOTFIRE_DOWNLOAD_TABLES: z.string().default('Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios'),
   SPOTFIRE_DEBUG: booleanFromEnvironment.default(false),
-  FILTER_BASE_ITAPAJE_OWN_PREFIX: z.string().default('ITJ-'),
-  FILTER_BASE_ITAPAJE_PARTNER_PREFIX: z.string().default('ITE-'),
-  FILTER_BASE_ITAPIPOCA_OWN_PREFIX: z.string().default('ITK-'),
-  FILTER_BASE_ITAPIPOCA_PARTNER_PREFIX: z.string().default('IPK-'),
-  FILTER_BASE_TRAIRI_OWN_PREFIX: z.string().default('TRR-'),
-  FILTER_BASE_TRAIRI_PARTNER_PREFIX: z.string().default('IPT-'),
-  FILTER_BASE_ACARAU_OWN_PREFIX: z.string().default('ACU-'),
-  FILTER_BASE_ACARAU_PARTNER_PREFIX: z.string().default('ACA-'),
-  TAGS_EQUIPES_EXTRAS: z.string().default('-PD-,-ML-,-EP-,-LC-,-LL-,-CO-,-MP-,-IN-,-EN-,-MO-,-LV-'),
   REPORT_AUTO_GENERATE: booleanFromEnvironment.default(true),
   REPORT_OUTPUT_FILE_NAME: z.string().default('scanner-analytics-report.json'),
 });
@@ -99,6 +92,29 @@ if (!resolvedAnalysisUrl) {
   throw new Error('Missing Spotfire analysis URL. Define SPOTFIRE_ANALYSIS_URL or SPOTFIRE_REPORT_URL in src/backend/.env.');
 }
 
+export type BasesConfig = {
+  extraTeamTags?: string[];
+  polos: Array<{
+    name: string;
+    matchType: 'direct_prefix' | 'infix_type_with_base_prefix';
+    typeIdentifiers?: { propria: string[]; parceira: string[] };
+    bases: Array<{
+      name: string;
+      propria?: string[];
+      parceira?: string[];
+      prefixes?: string[];
+    }>;
+  }>;
+};
+
+let basesConfig: BasesConfig = { polos: [] };
+try {
+  const basesConfigPath = join(process.cwd(), 'bases.json');
+  basesConfig = JSON.parse(readFileSync(basesConfigPath, 'utf-8'));
+} catch (err) {
+  console.warn('Failed to load bases.json, bases filtering might not work properly.', err);
+}
+
 export const environment = {
   port: parsedEnvironment.PORT,
   spotfire: {
@@ -124,25 +140,8 @@ export const environment = {
   report: {
     autoGenerate: parsedEnvironment.REPORT_AUTO_GENERATE,
     outputFileName: parsedEnvironment.REPORT_OUTPUT_FILE_NAME,
-    basePrefixMap: {
-      Itapaje: {
-        ownPrefix: parsedEnvironment.FILTER_BASE_ITAPAJE_OWN_PREFIX,
-        partnerPrefix: parsedEnvironment.FILTER_BASE_ITAPAJE_PARTNER_PREFIX,
-      },
-      Itapipoca: {
-        ownPrefix: parsedEnvironment.FILTER_BASE_ITAPIPOCA_OWN_PREFIX,
-        partnerPrefix: parsedEnvironment.FILTER_BASE_ITAPIPOCA_PARTNER_PREFIX,
-      },
-      Trairi: {
-        ownPrefix: parsedEnvironment.FILTER_BASE_TRAIRI_OWN_PREFIX,
-        partnerPrefix: parsedEnvironment.FILTER_BASE_TRAIRI_PARTNER_PREFIX,
-      },
-      Acarau: {
-        ownPrefix: parsedEnvironment.FILTER_BASE_ACARAU_OWN_PREFIX,
-        partnerPrefix: parsedEnvironment.FILTER_BASE_ACARAU_PARTNER_PREFIX,
-      },
-    },
-    extraTeamTags: parseCsvList(parsedEnvironment.TAGS_EQUIPES_EXTRAS),
+    basesConfig,
+    extraTeamTags: basesConfig.extraTeamTags || [],
   },
 } as const;
 

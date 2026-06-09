@@ -94,6 +94,10 @@ export async function createServer() {
     reportTitle: environment.spotfire.defaultReportTitle,
   }));
 
+  server.get('/api/scanner/config/bases', async () => {
+    return (environment.report as any).basesConfig;
+  });
+
   server.post('/api/scanner/executions', async (request, reply) => {
     const payload = createExecutionSchema.parse(request.body);
     const job = await startScannerJob.execute(payload);

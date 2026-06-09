@@ -5,7 +5,27 @@ import { TimelineVisualComponent } from '../../shared/components/timeline-visual
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { forkJoin, firstValueFrom } from 'rxjs';
-import { type GeneratedReport, type ReportKpiInsight, type OsDiaOrderEvidence, type EficienciaOrderEvidence, type EficienciaTeamAnalysis, type TmeImpOrderEvidence, type TmeImpTeamAnalysis, type PrimeiroLoginDayEvidence, type PrimeiroLoginTeamAnalysis, type PrimeiroDeslocDayEvidence, type PrimeiroDeslocTeamAnalysis, type RetornoBaseDayEvidence, type RetornoBaseTeamAnalysis, type TeamKpiScorecard, ScannerApiService } from '../../core/api/scanner-api.service';
+import {
+  DataDownloadCallbacks,
+  GeneratedReport,
+  ReportKpiInsight,
+  OsDiaOrderEvidence,
+  EficienciaOrderEvidence,
+  EficienciaTeamAnalysis,
+  TmeImpOrderEvidence,
+  TmeImpTeamAnalysis,
+  PrimeiroLoginDayEvidence,
+  PrimeiroLoginTeamAnalysis,
+  PrimeiroDeslocDayEvidence,
+  PrimeiroDeslocTeamAnalysis,
+  RetornoBaseDayEvidence,
+  RetornoBaseTeamAnalysis,
+  TeamKpiScorecard,
+  ScannerApiService,
+  ScannerDataDownloadResult,
+  ScannerJob,
+  BasesConfig
+} from '../../core/api/scanner-api.service';
 import { DashboardPdfService } from './services/dashboard-pdf.service';
 import { DashboardChartService } from './services/dashboard-chart.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -52,14 +72,7 @@ const DEFAULT_REPORT_TITLE = 'Scanner 4.0 - CE';
 const MONTH_OPTIONS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ATUACAO_HD_OPTIONS = ['Cadastrar', 'CORTE E RELIGAÇÃO', 'EMERGENCIA', 'LIGAÇÕES NOVAS', 'MANUTENÇÃO/OBRAS', 'PERDAS'];
 const BASE_OPTIONS = ['Cadastrar', 'ATLÂNTICO', 'CENTRO-NORTE', 'CENTRO-SUL', 'FORTALEZA', 'LESTE', 'METROPOLITANA', 'NORTE', 'SUL'];
-const REPORT_BASE_OPTIONS = ['Itapajé', 'Itapipoca', 'Trairi', 'Acaraú'];
 const REPORT_TEAM_TYPE_OPTIONS = ['Própria', 'Parceira'];
-const REPORT_BASE_PREFIX_MAP: Record<string, { own: string; partner: string }> = {
-  'Itapajé':   { own: 'ITJ-', partner: 'ITE-' },
-  'Itapipoca': { own: 'ITK-', partner: 'IPK-' },
-  'Trairi':    { own: 'TRR-', partner: 'IPT-' },
-  'Acaraú':    { own: 'ACU-', partner: 'ACA-' },
-};
 const FILTER_SOURCE_MAP: Record<'atuacaoHd' | 'base', { sourceTitle: string; sourceKind: SpotfireFilter['kind'] }> = {
   atuacaoHd: { sourceTitle: 'Atuação', sourceKind: 'list' },
   base: { sourceTitle: 'Base', sourceKind: 'list' },
@@ -331,7 +344,8 @@ type SavedFilterState = {
                       <span class="export-option-icon">🏢</span>
                       <div class="export-option-body">
                         <span class="export-option-title">Relatório Próprias</span>
-                        <span class="export-option-sub">4 PDFs por base — equipes próprias (ITJ, ITK, TRR, ACU).</span>
+                        <span class="export-option-sub" *ngIf="availablePropriasBases.length > 0">{{ availablePropriasBases.length }} {{ availablePropriasBases.length === 1 ? 'PDF' : 'PDFs' }} (1 por base) — equipes próprias ({{ availablePropriasBases.join(', ') }}).</span>
+                        <span class="export-option-sub" *ngIf="availablePropriasBases.length === 0">Nenhuma equipe própria disponível nos dados.</span>
                       </div>
                     </div>
                     <div class="export-option-actions">
@@ -351,7 +365,8 @@ type SavedFilterState = {
                       <span class="export-option-icon">🤝</span>
                       <div class="export-option-body">
                         <span class="export-option-title">Relatório Parceiras</span>
-                        <span class="export-option-sub">4 PDFs por base — equipes parceiras (ITE, IPK, IPT, ACA).</span>
+                        <span class="export-option-sub" *ngIf="availableParceirasBases.length > 0">{{ availableParceirasBases.length }} {{ availableParceirasBases.length === 1 ? 'PDF' : 'PDFs' }} (1 por base) — equipes parceiras ({{ availableParceirasBases.join(', ') }}).</span>
+                        <span class="export-option-sub" *ngIf="availableParceirasBases.length === 0">Nenhuma equipe parceira disponível nos dados.</span>
                       </div>
                     </div>
                     <div class="export-option-actions">
@@ -373,7 +388,7 @@ type SavedFilterState = {
               <ng-container *ngIf="exportModalStep() === 'bases'">
                 <p class="export-modal-desc">Clique em cada base para abrir o PDF correspondente. No diálogo do navegador escolha "Salvar como PDF".</p>
                 <div class="export-base-grid">
-                  <button class="export-base-card" *ngFor="let base of reportBaseOptions" (click)="exportBase(base)">
+                  <button class="export-base-card" *ngFor="let base of (exportModeType() === 'proprias' ? availablePropriasBases : availableParceirasBases)" (click)="exportBase(base)">
                     <div class="export-base-card-top">
                       <span class="export-base-name">{{ base }}</span>
                       <span class="export-base-prefix">{{ exportModeType() === 'proprias' ? reportBasePrefixMap[base].own : reportBasePrefixMap[base].partner }}</span>
@@ -4919,8 +4934,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly pendingShareMode = signal<'current' | 'proprias' | 'parceiras' | null>(null);
   /** Modo cujo botão Compartilhar está carregando no momento. */
   protected readonly shareModeLoading = signal<'current' | 'proprias' | 'parceiras' | null>(null);
-  protected readonly reportBaseOptions = REPORT_BASE_OPTIONS;
-  protected readonly reportBasePrefixMap = REPORT_BASE_PREFIX_MAP;
+  protected reportBaseOptions: string[] = [];
+  protected availablePropriasBases: string[] = [];
+  protected availableParceirasBases: string[] = [];
+  protected reportBasePrefixMap: Record<string, { own: string; partner: string }> = {};
+  protected basesConfig: BasesConfig | null = null;
   protected readonly reportBarHidden = signal(true);
   protected readonly reportData = signal<GeneratedReport | null>(null);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
@@ -5133,6 +5151,37 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   };
 
   public ngOnInit(): void {
+    this.api.getBasesConfig().subscribe(config => {
+      this.basesConfig = config;
+      const options: string[] = [];
+      const prefixMap: Record<string, { own: string; partner: string }> = {};
+      for (const polo of config.polos) {
+        for (const base of polo.bases) {
+          options.push(base.name);
+          if (polo.matchType === 'direct_prefix') {
+             prefixMap[base.name] = {
+               own: base.propria?.[0] || '',
+               partner: base.parceira?.[0] || ''
+             };
+          } else if (polo.matchType === 'infix_type_with_base_prefix') {
+             prefixMap[base.name] = {
+               own: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.propria[0] || ''),
+               partner: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.parceira[0] || '')
+             };
+          }
+        }
+      }
+      this.reportBaseOptions = options;
+      this.reportBasePrefixMap = prefixMap;
+      
+      const currentFilters = this.reportFilterStates();
+      const baseFilter = currentFilters.find(f => f.key === 'reportBase');
+      if (baseFilter) {
+        baseFilter.options = this.withAllOption(options);
+      }
+      this.reportFilterStates.set(this.cascadeReportFilters(currentFilters));
+    });
+
     const saved = this.loadFromStorage();
     // Restore extraction filters (ano, mes, etc.) only for context — not used on F5
     const overrides = saved ? new Map(Object.entries(saved.filters) as [FilterKey, string[]][]) : undefined;
@@ -5299,14 +5348,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
       const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
       const et = mode as 'proprias' | 'parceiras';
+      const basesToExport = et === 'proprias' ? this.availablePropriasBases : this.availableParceirasBases;
       const results = await firstValueFrom(
-        forkJoin(this.reportBaseOptions.map(base =>
+        forkJoin(basesToExport.map(base =>
           this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
         ))
       );
       const sections = results.map((r, i) => ({
         report: r.generatedReport,
-        title: this.reportBaseOptions[i],
+        title: basesToExport[i],
         subtitle: typeLabel,
       }));
       return Promise.all(sections.map(s => this.buildPdfFileForShare(s, et)));
@@ -5380,11 +5430,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
     const et = exportType as 'proprias' | 'parceiras';
+    
+    const basesToExport = et === 'proprias' ? this.availablePropriasBases : this.availableParceirasBases;
 
     this.exportLoading.set(true);
     this.exportError.set('');
 
-    const requests = this.reportBaseOptions.map((base) =>
+    const requests = basesToExport.map((base) =>
       this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
     );
 
@@ -5392,7 +5444,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       next: async (results) => {
         const sections = results.map((result, i) => ({
           report: result.generatedReport,
-          title: this.reportBaseOptions[i],
+          title: basesToExport[i],
           subtitle: typeLabel,
         }));
         if (!shareAfter) {
@@ -6637,7 +6689,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         key: 'reportBase',
         title: 'Base (Relatório)',
         value: [ALL_OPTION],
-        options: this.withAllOption(REPORT_BASE_OPTIONS),
+        options: this.withAllOption(this.reportBaseOptions),
         enabled: true,
       },
       {
@@ -6698,46 +6750,84 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const selectedTipos = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value : [];
     const selectedEquipes = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value : [];
 
-    // Build allowed prefixes from selected bases + tipos
-    const allowedPrefixes: string[] = [];
-    const bases = selectedBases.length > 0 ? selectedBases : REPORT_BASE_OPTIONS;
-    for (const base of bases) {
-      const mapping = REPORT_BASE_PREFIX_MAP[base];
-      if (!mapping) continue;
-      if (selectedTipos.length === 0 || selectedTipos.includes('Própria')) allowedPrefixes.push(mapping.own.toUpperCase());
-      if (selectedTipos.length === 0 || selectedTipos.includes('Parceira')) allowedPrefixes.push(mapping.partner.toUpperCase());
+    const config = this.basesConfig;
+    if (!config) return filters; // Not loaded yet
+
+    const activeBases = selectedBases.length > 0 ? selectedBases : this.reportBaseOptions;
+    
+    const teamMetadata = new Map<string, { base: string, type: string }>();
+
+    for (const team of this.availableTeams) {
+      const upper = team.toUpperCase();
+      let matchedBase: string | null = null;
+      let matchedType: string | null = null;
+      for (const polo of config.polos) {
+        if (polo.matchType === 'direct_prefix') {
+          for (const base of polo.bases) {
+            if (base.propria?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name; matchedType = 'Própria'; break;
+            }
+            if (base.parceira?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name; matchedType = 'Parceira'; break;
+            }
+          }
+        } else if (polo.matchType === 'infix_type_with_base_prefix') {
+          for (const base of polo.bases) {
+            if (base.prefixes?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name;
+              if (polo.typeIdentifiers?.propria.some((inf: string) => upper.includes(inf.toUpperCase()))) matchedType = 'Própria';
+              else if (polo.typeIdentifiers?.parceira.some((inf: string) => upper.includes(inf.toUpperCase()))) matchedType = 'Parceira';
+              break;
+            }
+          }
+        }
+        if (matchedBase) break;
+      }
+      if (matchedBase && matchedType) {
+        teamMetadata.set(team, { base: matchedBase, type: matchedType });
+      }
     }
 
-    // Filter equipe options
+    // Filter equipe options based on selected bases and tipos
     const filteredTeams = this.availableTeams.filter((team) => {
-      const upper = team.toUpperCase();
-      return allowedPrefixes.length === 0 || allowedPrefixes.some((p) => upper.startsWith(p));
+      const meta = teamMetadata.get(team);
+      if (!meta) return true; // Keep unknown teams if no filters applied? Actually, let's keep them if no filters.
+      if (selectedBases.length > 0 && !selectedBases.includes(meta.base)) return false;
+      if (selectedTipos.length > 0 && !selectedTipos.includes(meta.type)) return false;
+      return true;
     });
 
     // Retain only selected equipes still present in filtered list
     const validEquipes = selectedEquipes.filter((e) => filteredTeams.includes(e));
 
     // Reverse: if equipes are selected, narrow Base and Tipo options
-    let filteredBases = REPORT_BASE_OPTIONS;
-    let filteredTypes = REPORT_TEAM_TYPE_OPTIONS;
+    let filteredBases: string[] = [];
+    let filteredTypes: string[] = [];
 
     if (validEquipes.length > 0) {
-      const uppers = validEquipes.map((e) => e.toUpperCase());
-      filteredBases = REPORT_BASE_OPTIONS.filter((base) => {
-        const m = REPORT_BASE_PREFIX_MAP[base];
-        return m && uppers.some((upper) => upper.startsWith(m.own.toUpperCase()) || upper.startsWith(m.partner.toUpperCase()));
-      });
-      filteredTypes = REPORT_TEAM_TYPE_OPTIONS.filter((tipo) => {
-        return REPORT_BASE_OPTIONS.some((base) => {
-          const m = REPORT_BASE_PREFIX_MAP[base];
-          if (!m) return false;
-          return uppers.some((upper) => {
-            if (tipo === 'Própria') return upper.startsWith(m.own.toUpperCase());
-            if (tipo === 'Parceira') return upper.startsWith(m.partner.toUpperCase());
-            return false;
-          });
-        });
-      });
+      const basesSet = new Set<string>();
+      const typesSet = new Set<string>();
+      for (const e of validEquipes) {
+        const meta = teamMetadata.get(e);
+        if (meta) {
+          basesSet.add(meta.base);
+          typesSet.add(meta.type);
+        }
+      }
+      filteredBases = Array.from(basesSet);
+      filteredTypes = Array.from(typesSet);
+    } else {
+      const basesSet = new Set<string>();
+      const typesSet = new Set<string>();
+      for (const team of this.availableTeams) {
+        const meta = teamMetadata.get(team);
+        if (meta) {
+          if (selectedTipos.length === 0 || selectedTipos.includes(meta.type)) basesSet.add(meta.base);
+          if (selectedBases.length === 0 || selectedBases.includes(meta.base)) typesSet.add(meta.type);
+        }
+      }
+      filteredBases = Array.from(basesSet);
+      filteredTypes = Array.from(typesSet);
     }
 
     return filters.map((f) => {
@@ -6772,10 +6862,51 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.api.getTeams().subscribe({
       next: (result) => {
         this.availableTeams = result.teams;
+        this.updateAvailableBasesForExport();
         const current = this.reportFilterStates();
         this.reportFilterStates.set(this.cascadeReportFilters(current));
       },
     });
+  }
+
+  private updateAvailableBasesForExport(): void {
+    const config = this.basesConfig;
+    if (!config) return;
+    const proprias = new Set<string>();
+    const parceiras = new Set<string>();
+    for (const team of this.availableTeams) {
+      const upper = team.toUpperCase();
+      let matchedBase: string | null = null;
+      let matchedType: string | null = null;
+      for (const polo of config.polos) {
+        if (polo.matchType === 'direct_prefix') {
+          for (const base of polo.bases) {
+            if (base.propria?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name; matchedType = 'Própria'; break;
+            }
+            if (base.parceira?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name; matchedType = 'Parceira'; break;
+            }
+          }
+        } else if (polo.matchType === 'infix_type_with_base_prefix') {
+          for (const base of polo.bases) {
+            if (base.prefixes?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name;
+              if (polo.typeIdentifiers?.propria.some((inf: string) => upper.includes(inf.toUpperCase()))) matchedType = 'Própria';
+              else if (polo.typeIdentifiers?.parceira.some((inf: string) => upper.includes(inf.toUpperCase()))) matchedType = 'Parceira';
+              break;
+            }
+          }
+        }
+        if (matchedBase) break;
+      }
+      if (matchedBase) {
+        if (matchedType === 'Própria') proprias.add(matchedBase);
+        else if (matchedType === 'Parceira') parceiras.add(matchedBase);
+      }
+    }
+    this.availablePropriasBases = Array.from(proprias);
+    this.availableParceirasBases = Array.from(parceiras);
   }
 
   private scheduleInstantReportRefresh(): void {

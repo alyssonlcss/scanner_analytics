@@ -1,0 +1,83 @@
+{
+  "extraTeamTags": ["-PD-", "-ML-", "-EP-", "-LC-", "-LL-", "-CO-", "-MP-", "-IN-", "-EN-", "-MO-", "-LV-"],
+  "polos": [
+    {
+      "name": "Norte",
+      "matchType": "direct_prefix",
+      "bases": [
+        {
+          "name": "Inhuçu",
+          "propria": ["INH-"],
+          "parceira": ["STB-"]
+        },
+        {
+          "name": "Tianguá",
+          "propria": ["TNG-"],
+          "parceira": ["STM-", "STV-", "STT-"]
+        },
+        {
+          "name": "Camocim",
+          "propria": ["CMC-"],
+          "parceira": ["CMK-"]
+        },
+        {
+          "name": "Sobral",
+          "propria": ["SBL-"],
+          "parceira": ["SBC-", "SBF-", "SBM-", "SBR-", "SBU-"]
+        }
+      ]
+    },
+    {
+      "name": "Centro-Norte",
+      "matchType": "infix_type_with_base_prefix",
+      "typeIdentifiers": {
+        "propria": ["-EN-"],
+        "parceira": ["-RD-"]
+      },
+      "bases": [
+        {
+          "name": "Canindé",
+          "prefixes": ["CNB-", "CND-", "CNM-", "CNI-"]
+        },
+        {
+          "name": "Quixadá",
+          "prefixes": ["CNQ-", "CNX-", "QXD-", "QXB-", "QXU-"]
+        },
+        {
+          "name": "Crateús",
+          "prefixes": ["NVC-", "CAT-"]
+        },
+        {
+          "name": "Nova Russas",
+          "prefixes": ["NVQ-", "NVR-", "NVV-", "NVI-", "NVM-"]
+        }
+      ]
+    },
+    {
+      "name": "Atlântico",
+      "matchType": "direct_prefix",
+      "bases": [
+        {
+          "name": "Itapajé",
+          "propria": ["ITJ-"],
+          "parceira": ["ITE-"]
+        },
+        {
+          "name": "Itapipoca",
+          "propria": ["ITK-"],
+          "parceira": ["IPK-"]
+        },
+        {
+          "name": "Trairi",
+          "propria": ["TRR-"],
+          "parceira": ["IPT-"]
+        },
+        {
+          "name": "Acaraú",
+          "propria": ["ACU-"],
+          "parceira": ["ACA-"]
+        }
+      ]
+    }
+  ]
+}

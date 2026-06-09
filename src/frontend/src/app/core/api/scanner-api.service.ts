@@ -559,6 +559,21 @@ export interface DataDownloadCallbacks {
   onError?: (error: string) => void;
 }
 
+export interface BasesConfig {
+  extraTeamTags?: string[];
+  polos: Array<{
+    name: string;
+    matchType: 'direct_prefix' | 'infix_type_with_base_prefix';
+    typeIdentifiers?: { propria: string[]; parceira: string[] };
+    bases: Array<{
+      name: string;
+      propria?: string[];
+      parceira?: string[];
+      prefixes?: string[];
+    }>;
+  }>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ScannerApiService {
   private readonly http = inject(HttpClient);
@@ -693,5 +708,9 @@ export class ScannerApiService {
 
   public getExportDownloadUrl(jobId: string): string {
     return `${this.baseUrl}/scanner/executions/${jobId}/export`;
+  }
+
+  public getBasesConfig(): Observable<BasesConfig> {
+    return this.http.get<BasesConfig>(`${this.baseUrl}/scanner/config/bases`);
   }
 }

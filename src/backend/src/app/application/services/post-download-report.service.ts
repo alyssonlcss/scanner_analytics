@@ -388,43 +388,61 @@ export class PostDownloadReportService {
     const selectedTypes = new Set(reportFilters?.teamTypes ?? []);
     const hasBaseFilter = selectedBases.size > 0;
     const hasTypeFilter = selectedTypes.size > 0;
-    const allowedPrefixes = new Set<string>();
-
-    for (const [baseName, prefixes] of Object.entries(this.environment.report.basePrefixMap)) {
-      const baseMatch = !hasBaseFilter || selectedBases.has(normalizeToken(baseName));
-      if (!baseMatch) {
-        continue;
-      }
-
-      if (!hasTypeFilter || selectedTypes.has('propria')) {
-        allowedPrefixes.add(prefixes.ownPrefix.toUpperCase());
-      }
-      if (!hasTypeFilter || selectedTypes.has('parceira')) {
-        allowedPrefixes.add(prefixes.partnerPrefix.toUpperCase());
-      }
-    }
+    const config = (this.environment.report as any).basesConfig;
 
     const extraTags = includeExtraTags
       ? this.environment.report.extraTeamTags.map((tag) => tag.toUpperCase())
       : [];
-
     const useExtraTagsFallback = !hasBaseFilter && !hasTypeFilter;
 
     return (teamNameRaw: string): boolean => {
       const teamName = teamNameRaw.toUpperCase().trim();
-      if (teamName.length === 0) {
-        return false;
+      if (teamName.length === 0) return false;
+
+      let matchedBase: string | null = null;
+      let matchedType: 'propria' | 'parceira' | null = null;
+
+      for (const polo of config.polos) {
+        if (polo.matchType === 'direct_prefix') {
+          for (const base of polo.bases) {
+            if (base.propria?.some((p: string) => teamName.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name;
+              matchedType = 'propria';
+              break;
+            }
+            if (base.parceira?.some((p: string) => teamName.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name;
+              matchedType = 'parceira';
+              break;
+            }
+          }
+        } else if (polo.matchType === 'infix_type_with_base_prefix') {
+          for (const base of polo.bases) {
+            if (base.prefixes?.some((p: string) => teamName.startsWith(p.toUpperCase()))) {
+              matchedBase = base.name;
+              if (polo.typeIdentifiers?.propria.some((inf: string) => teamName.includes(inf.toUpperCase()))) {
+                matchedType = 'propria';
+              } else if (polo.typeIdentifiers?.parceira.some((inf: string) => teamName.includes(inf.toUpperCase()))) {
+                matchedType = 'parceira';
+              }
+              break;
+            }
+          }
+        }
+        if (matchedBase) break;
       }
 
-      const prefixMatch = allowedPrefixes.size === 0
-        ? true
-        : Array.from(allowedPrefixes).some((prefix) => teamName.startsWith(prefix));
-
-      if (!prefixMatch) {
-        return useExtraTagsFallback && extraTags.some((tag) => teamName.includes(tag));
+      if (matchedBase && matchedType) {
+        if (hasBaseFilter && !selectedBases.has(normalizeToken(matchedBase))) return false;
+        if (hasTypeFilter && !selectedTypes.has(matchedType)) return false;
+        return true;
       }
 
-      return true;
+      if (useExtraTagsFallback && extraTags.some((tag) => teamName.includes(tag))) {
+        return true;
+      }
+
+      return false;
     };
   }
 
