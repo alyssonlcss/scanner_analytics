@@ -903,17 +903,17 @@ export class DashboardPdfService {
           const teamBarColor = isTop ? BLUE : RED;
           const chips: string[] = [
             `Média ${analysis.averageEficiencia}%`,
-            `TL Médio: ${analysis.avgDeslocamentoMin?.toFixed(1)} min`,
-            `TR Médio: ${analysis.avgExecucaoMin?.toFixed(1)} min`,
+            `TL Médio: ${analysis.avgDeslocamentoMin?.toFixed(0)} min`,
+            `TR Médio: ${analysis.avgExecucaoMin?.toFixed(0)} min`,
           ];
-          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. Padrão Médio: ${analysis.avgTempoPadraoMin?.toFixed(1)} min`);
+          if (analysis.avgTempoPadraoMin > 0) chips.push(`T. Padrão Médio: ${analysis.avgTempoPadraoMin?.toFixed(0)} min`);
           if (analysis.summary?.countDeslocamentoCurto > 0) chips.push(`TL Curto: ${analysis.summary.countDeslocamentoCurto}`);
           const teamItems: any[] = [chipRow(chips)];
           if (analysis.flags?.length > 0) {
             teamItems.push(chipRow([
-              `TL Global: ${analysis.globalAvgDeslocamentoMin?.toFixed(1)} min`,
-              `TR Global: ${analysis.globalAvgExecucaoMin?.toFixed(1)} min`,
-              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(1)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(1)} min – 25% global)`] : []),
+              `TL Global: ${analysis.globalAvgDeslocamentoMin?.toFixed(0)} min`,
+              `TR Global: ${analysis.globalAvgExecucaoMin?.toFixed(0)} min`,
+              ...(analysis.flags.includes('short_displacement') ? [`TL curto: ${analysis.avgDeslocamentoMin?.toFixed(0)} min (\u2264 ${(analysis.globalAvgDeslocamentoMin * 0.25)?.toFixed(0)} min – 25% global)`] : []),
             ]));
           }
           analysis.flaggedOrders?.forEach((ev: any, evIdx: number, evArr: any[]) => {
@@ -1059,10 +1059,10 @@ export class DashboardPdfService {
         const tmeDrillHead = tmeList.length > 0 ? drillHead('Análise Detalhada – TME IMP (Ordens com TME Elevado)') : null;
         tmeList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `TME IMP: ${analysis.tmeImpValue?.toFixed(1)} min`,
+            `TME IMP: ${analysis.tmeImpValue?.toFixed(0)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgTmeImpMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgTmeImpMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgTmeImpMin?.toFixed(0)} min`,
+            `Média global: ${analysis.globalAvgTmeImpMin?.toFixed(0)} min`,
             `Total OS: ${analysis.totalOrders}`,
           ];
           if (analysis.summary?.countTmeMuitoAlto > 0) chips.push(`TME\u22651.5\u00d7avg: ${analysis.summary.countTmeMuitoAlto}`);
@@ -1086,7 +1086,7 @@ export class DashboardPdfService {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const tmeBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          const tmeHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          const tmeHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(0)} min s/meta`, true);
           const tmeBlock = indentBlock(teamItems, tmeBarColor, 8);
           if (analysisIdx === 0 && tmeDrillHead) {
             content.push({ stack: [tmeDrillHead, tmeHdr, tmeBlock] });
@@ -1102,10 +1102,10 @@ export class DashboardPdfService {
         const loginDrillHead = loginList.length > 0 ? drillHead('Análise Detalhada – 1º Login (Dias Acima da Meta)') : null;
         loginList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(1)} min`,
+            `1\u00ba Login: ${analysis.primeiroLoginValue?.toFixed(0)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgLoginMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgLoginMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgLoginMin?.toFixed(0)} min`,
+            `Média global: ${analysis.globalAvgLoginMin?.toFixed(0)} min`,
             `Dias com atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countLoginMuitoTardio > 0) chips.push(`Login>16min: ${analysis.summary.countLoginMuitoTardio}`);
@@ -1132,7 +1132,7 @@ export class DashboardPdfService {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const loginBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          const loginHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          const loginHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(0)} min s/meta`, true);
           const loginBlock = indentBlock(teamItems, loginBarColor, 8);
           if (analysisIdx === 0 && loginDrillHead) {
             content.push({ stack: [loginDrillHead, loginHdr, loginBlock] });
@@ -1148,10 +1148,10 @@ export class DashboardPdfService {
         const deslocDrillHead = deslocList.length > 0 ? drillHead('Análise Detalhada – 1º Desloc. (Dias Acima da Meta)') : null;
         deslocList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(1)} min`,
+            `1\u00ba Desloc.: ${analysis.primeiroDeslocValue?.toFixed(0)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgDeslocMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgDeslocMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgDeslocMin?.toFixed(0)} min`,
+            `Média global: ${analysis.globalAvgDeslocMin?.toFixed(0)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countDeslocMuitoLento > 0) chips.push(`Desloc.>37min: ${analysis.summary.countDeslocMuitoLento}`);
@@ -1192,7 +1192,7 @@ export class DashboardPdfService {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const deslocBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          const deslocHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          const deslocHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(0)} min s/meta`, true);
           const deslocBlock = indentBlock(teamItems, deslocBarColor, 8);
           if (analysisIdx === 0 && deslocDrillHead) {
             content.push({ stack: [deslocDrillHead, deslocHdr, deslocBlock] });
@@ -1208,10 +1208,10 @@ export class DashboardPdfService {
         const retornoDrillHead = retornoList.length > 0 ? drillHead('Análise Detalhada – Retorno Base (Dias Acima da Meta)') : null;
         retornoList.forEach((analysis: any, analysisIdx: number) => {
           const chips: string[] = [
-            `Retorno Base: ${analysis.retornoBaseValue?.toFixed(1)} min`,
+            `Retorno Base: ${analysis.retornoBaseValue?.toFixed(0)} min`,
             `Meta: ${analysis.metaTarget} min`,
-            `Média equipe: ${analysis.avgRetornoMin?.toFixed(1)} min`,
-            `Média global: ${analysis.globalAvgRetornoMin?.toFixed(1)} min`,
+            `Média equipe: ${analysis.avgRetornoMin?.toFixed(0)} min`,
+            `Média global: ${analysis.globalAvgRetornoMin?.toFixed(0)} min`,
             `Dias c/ atraso: ${analysis.diasAcimaMetaCount}/${analysis.totalDays}`,
           ];
           if (analysis.summary?.countRetornoMuitoAlto > 0) chips.push(`Retorno>60min: ${analysis.summary.countRetornoMuitoAlto}`);
@@ -1238,7 +1238,7 @@ export class DashboardPdfService {
             if (evIdx < evArr.length - 1) teamItems.push(orderDivider());
           });
           const retornoBarColor = (analysis.gap ?? 1) <= 0 ? BLUE : RED;
-          const retornoHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(1)} min s/meta`, true);
+          const retornoHdr = cardHeader(analysis.team, `${analysis.gap > 0 ? '+' : ''}${analysis.gap?.toFixed(0)} min s/meta`, true);
           const retornoBlock = indentBlock(teamItems, retornoBarColor, 8);
           if (analysisIdx === 0 && retornoDrillHead) {
             content.push({ stack: [retornoDrillHead, retornoHdr, retornoBlock] });

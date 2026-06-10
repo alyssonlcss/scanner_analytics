@@ -2,7 +2,7 @@
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import type { OsDiaOrderEvidence, EficienciaOrderEvidence, TmeImpOrderEvidence, PrimeiroLoginDayEvidence, PrimeiroDeslocDayEvidence, RetornoBaseDayEvidence, UtilizacaoOrderEvidence } from '../types.js';
 
-export function nfBr(v: number, minDec = 1, maxDec = 1): string {
+export function nfBr(v: number, minDec = 0, maxDec = 0): string {
     return v.toLocaleString('pt-BR', { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
   }
 

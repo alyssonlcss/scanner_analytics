@@ -664,9 +664,9 @@ type SavedFilterState = {
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">Média <strong>{{ analysis.averageEficiencia }}%</strong></span>
-                        <span class="rpt-osdia-chip">TL Médio <strong>{{ analysis.avgDeslocamentoMin | number:'1.1-1' }} min</strong></span>
-                        <span class="rpt-osdia-chip">TR Médio <strong>{{ analysis.avgExecucaoMin | number:'1.1-1' }} min</strong></span>
-                        <span class="rpt-osdia-chip" *ngIf="analysis.avgTempoPadraoMin > 0">T. Padrão Médio <strong>{{ analysis.avgTempoPadraoMin | number:'1.1-1' }} min</strong></span>
+                        <span class="rpt-osdia-chip">TL Médio <strong>{{ analysis.avgDeslocamentoMin | number:'1.0-0' }} min</strong></span>
+                        <span class="rpt-osdia-chip">TR Médio <strong>{{ analysis.avgExecucaoMin | number:'1.0-0' }} min</strong></span>
+                        <span class="rpt-osdia-chip" *ngIf="analysis.avgTempoPadraoMin > 0">T. Padrão Médio <strong>{{ analysis.avgTempoPadraoMin | number:'1.0-0' }} min</strong></span>
                         <span class="rpt-osdia-chip" *ngIf="analysis.summary.countDeslocamentoCurto > 0">
                           TL Curto: <strong>{{ analysis.summary.countDeslocamentoCurto }}</strong>
                         </span>
@@ -681,10 +681,10 @@ type SavedFilterState = {
 
                           <!-- Flags de equipe -->
                           <div class="osdia-idle-metrics" *ngIf="analysis.flags.length > 0">
-                            <span class="osdia-idle-chip osdia-idle-chip--hd">TL Global <strong>{{ analysis.globalAvgDeslocamentoMin | number:'1.1-1' }} min</strong></span>
-                            <span class="osdia-idle-chip osdia-idle-chip--prep">TR Global <strong>{{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min</strong></span>
+                            <span class="osdia-idle-chip osdia-idle-chip--hd">TL Global <strong>{{ analysis.globalAvgDeslocamentoMin | number:'1.0-0' }} min</strong></span>
+                            <span class="osdia-idle-chip osdia-idle-chip--prep">TR Global <strong>{{ analysis.globalAvgExecucaoMin | number:'1.0-0' }} min</strong></span>
                             <span class="osdia-idle-chip osdia-idle-chip--idle" *ngIf="analysis.flags.includes('short_displacement')">
-                              TL curto: <strong>{{ analysis.avgDeslocamentoMin | number:'1.1-1' }} min (≤ {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.1-1' }} min — 25% global)</strong>
+                              TL curto: <strong>{{ analysis.avgDeslocamentoMin | number:'1.0-0' }} min (≤ {{ (analysis.globalAvgDeslocamentoMin * 0.25) | number:'1.0-0' }} min — 25% global)</strong>
                             </span>
                           </div>
 
@@ -747,7 +747,7 @@ type SavedFilterState = {
                             <p class="osdia-idle-desc">
                               <strong>Equipe penalizada por ausência de Tempo Padrão:</strong>
                               {{ analysis.summary.countTempoPadraoVazio }} ordem(ns) sem tempo padrão cadastrado. O sistema calcula a eficiência como <em>Tempo Padrão / TR</em>, portanto ordens vazias contam como zero, prejudicando o resultado.<ng-container *ngIf="analysis.simulatedEficiencia !== undefined && analysis.simulatedEficiencia !== null">
-                              <br><strong>Simulação:</strong> se usassem o TR médio global ({{ analysis.globalAvgExecucaoMin | number:'1.1-1' }} min), a eficiência estimada seria
+                              <br><strong>Simulação:</strong> se usassem o TR médio global ({{ analysis.globalAvgExecucaoMin | number:'1.0-0' }} min), a eficiência estimada seria
                               <strong>{{ analysis.simulatedEficiencia | number:'1.1-1' }}%</strong>
                               vs. atual <strong>{{ analysis.eficienciaValue }}%</strong>.</ng-container>
                             </p>

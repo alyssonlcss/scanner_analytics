@@ -81,7 +81,7 @@ export function parseDateTimeBr(valueRaw: string): Date | null {
 }
 
 export function minutesBetween(later: Date, earlier: Date): number {
-  return (later.getTime() - earlier.getTime()) / 60_000;
+  return Math.round((later.getTime() - earlier.getTime()) / 60_000);
 }
 
 export function applyIntervalDiscount(value: number, intervaloMinutes: number | null): number {
@@ -128,7 +128,7 @@ export function percentile(values: number[], p: number): number {
 }
 
 export function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return Math.round(value);
 }
 
 export function scoreKpi(value: number, threshold: KpiThreshold): number {
