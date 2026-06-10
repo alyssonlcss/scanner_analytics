@@ -533,7 +533,13 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         const ocisoForFlag = ocisoValues[i];
         if (i === 0 && ocisoForFlag !== undefined && ocisoForFlag >= 25) flags.push('primeiro_desloc_alto');
         if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) flags.push('sem_os_alto');
-        if (hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD) flags.push('tr_excede_hd');
+        if (
+          hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
+          tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+          trOrdemMin > tempoPadraoRaw
+        ) {
+          flags.push('tr_excede_hd');
+        }
 
         const prevLiberadaDate   = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
         const aCaminhoDate       = parseDateTimeBr(String(row[caminhoCol] ?? ''));
@@ -831,7 +837,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
                 ...(semOsFimAboveThreshold ? ['antes_log_off_alto' as const] : []),
-                ...((hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD) ? ['tr_excede_hd' as const] : []),
+                ...((
+                  hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
+                  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+                  trOrdemMin > tempoPadraoRaw
+                ) ? ['tr_excede_hd' as const] : []),
               ],
             });
           } else {

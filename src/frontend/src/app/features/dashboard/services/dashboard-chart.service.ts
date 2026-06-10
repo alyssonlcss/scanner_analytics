@@ -13,7 +13,7 @@ export class DashboardChartService {
 
   // ─── Flag metadata for analytic drill-down ────────────────────────────────
   readonly FLAG_COLORS: Record<string, string> = {
-    tr_excede_hd:          '#d97706',
+    tr_excede_hd:          '#dc2626',
     tl_excede_hd:          '#7c3aed',
     temp_prep_alto:        '#2563eb',
     sem_os_alto:           '#c0122d',

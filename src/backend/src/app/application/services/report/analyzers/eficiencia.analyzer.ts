@@ -227,12 +227,12 @@ export function analyzeEficiencia(deslocRows: CsvRow[], rankingRows: CsvRow[], k
             orderFlags.push('deslocamento_curto');
           }
 
-          // TR excede HD ou TR excede 200% do tempo_padrão — apenas para equipes abaixo da média
+          // TR excede HD E TR excede tempo_padrão — apenas para equipes abaixo da média
           if (analysisType === 'underperformer') {
             const trExcedeHd = hdMin > 0 && trMin !== null && Number.isFinite(trMin) && trMin > hdMin * TR_HD_THRESHOLD;
             const trExcedeTempoPadrao = tpMin !== null && Number.isFinite(tpMin) && tpMin > 0 &&
-              trMin !== null && Number.isFinite(trMin) && trMin > tpMin * 2.0;
-            if (trExcedeHd || trExcedeTempoPadrao) {
+              trMin !== null && Number.isFinite(trMin) && trMin > tpMin;
+            if (trExcedeHd && trExcedeTempoPadrao) {
               orderFlags.push('tr_excede_hd');
             }
           }
