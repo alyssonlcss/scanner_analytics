@@ -866,6 +866,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
               ) ? true : undefined,
               sem_os_details:    allFimDetails,
               sem_os_total_min:  semOsAbove ? round2(allFimDetails.filter((d) => d.type !== 'fim_jornada').reduce((s, d) => s + d.min, 0)) : undefined,
+              ocioso_min:        ocisoValues[i],
+              temp_prep_os_min:  tempPrepValues[i],
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
                 ...(semOsFimAboveThreshold ? ['antes_log_off_alto' as const] : []),
@@ -877,6 +879,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             const basicOrder = basicOrders.find((o) => o.nr_ordem === lastNrOrdem);
             if (basicOrder) {
               basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDetail);
+              if (fimDeslDetail) basicOrder.sem_os_details.push(fimDeslDetail);
             }
           }
         }
