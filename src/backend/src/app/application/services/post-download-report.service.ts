@@ -79,8 +79,9 @@ export class PostDownloadReportService {
 
     // Attach per-day trend (computed from desloc rows) to each KPI insight
     for (const kpi of kpis) {
-      const trend = buildKpiDailyTrend(filtered.deslocamentos, kpi.kpi);
-      if (trend.length > 0) kpi.dailyTrend = trend;
+      const trend = buildKpiDailyTrend(filtered.deslocamentos, kpi.kpi, filtered.resolvedTeams);
+      if (trend.globalTrend.length > 0) kpi.dailyTrend = trend.globalTrend;
+      if (trend.trendByBase.length > 0) kpi.dailyTrendByBase = trend.trendByBase;
     }
 
     // For OS Dia: compute per-team-per-day Nr_Ordem counts so the analytic chart
@@ -165,9 +166,10 @@ export class PostDownloadReportService {
     if (tmeKpi && tmeImpAnalysis.length > 0) tmeKpi.tmeImpAnalysis = tmeImpAnalysis;
     // Override TME IMP per-team daily data and global trend with per-OS Improdutivo computation
     if (tmeKpi) {
-      const tmeImpDaily = buildPerTeamDailyTmeImp(filtered.deslocamentos);
+      const tmeImpDaily = buildPerTeamDailyTmeImp(filtered.deslocamentos, filtered.resolvedTeams);
       if (tmeImpDaily.globalTrend.length > 0) {
         tmeKpi.dailyTrend = tmeImpDaily.globalTrend;
+        tmeKpi.dailyTrendByBase = tmeImpDaily.trendByBase;
         // Only include teams that had at least one Improdutiva (TR > 0).
         // Teams without any Improdutiva must not appear in the chart.
         tmeKpi.perTeamDailyData = tmeImpDaily.perTeam;
@@ -350,58 +352,63 @@ export class PostDownloadReportService {
   private applyTeamFilters(
     datasets: { deslocamentos: CsvRow[]; ranking: CsvRow[]; desvios: CsvRow[] },
     reportFilters?: ReportFilterInput,
-  ): { deslocamentos: CsvRow[]; ranking: CsvRow[]; desvios: CsvRow[] } {
+  ): { deslocamentos: CsvRow[]; ranking: CsvRow[]; desvios: CsvRow[]; resolvedTeams: Map<string, { base: string; teamType: 'propria' | 'parceira' }> } {
     const includeExtra = reportFilters?.includeExtraTags ?? true;
-    const teamMatcher = this.buildTeamMatcher(reportFilters, includeExtra);
+    const teamResolver = this.buildTeamResolver(reportFilters, includeExtra);
+    const resolvedTeams = new Map<string, { base: string; teamType: 'propria' | 'parceira' }>();
 
     const filterRows = (rows: CsvRow[]): CsvRow[] => {
-      if (rows.length === 0) {
-        return rows;
-      }
-
+      if (rows.length === 0) return rows;
       const accessor = createAccessor(rows[0]);
       const teamColumn = accessor.resolve(['Equipe', 'Team', 'Equipe Nome']);
-      if (!teamColumn) {
-        return rows;
-      }
+      if (!teamColumn) return rows;
 
-      return rows.filter((row) => teamMatcher(String(row[teamColumn] ?? '')));
+      return rows.filter((row) => {
+        const teamRaw = String(row[teamColumn] ?? '');
+        const teamUpper = teamRaw.toUpperCase().trim();
+        const resolution = teamResolver(teamUpper);
+        if (resolution.isMatch && resolution.base && resolution.teamType) {
+          if (!resolvedTeams.has(teamUpper)) {
+            resolvedTeams.set(teamUpper, { base: resolution.base, teamType: resolution.teamType });
+          }
+        }
+        return resolution.isMatch;
+      });
     };
 
     return {
       deslocamentos: filterRows(datasets.deslocamentos),
       ranking: filterRows(datasets.ranking),
       desvios: filterRows(datasets.desvios),
+      resolvedTeams,
     };
   }
 
-  private buildTeamMatcher(reportFilters: ReportFilterInput | undefined, includeExtraTags: boolean): (team: string) => boolean {
+  private buildTeamResolver(reportFilters: ReportFilterInput | undefined, includeExtraTags: boolean): (teamName: string) => { isMatch: boolean; base: string | null; teamType: 'propria' | 'parceira' | null } {
     const selectedTeams = new Set((reportFilters?.teams ?? []).map((t) => t.toUpperCase().trim()));
-    if (selectedTeams.size > 0) {
-      return (teamNameRaw: string): boolean => {
-        const teamName = teamNameRaw.toUpperCase().trim();
-        return teamName.length > 0 && selectedTeams.has(teamName);
-      };
-    }
+    const config = (this.environment.report as any).basesConfig;
 
     const selectedBases = new Set((reportFilters?.bases ?? []).map((base) => normalizeToken(base)));
     const selectedTypes = new Set(reportFilters?.teamTypes ?? []);
+    
+    selectedBases.delete(normalizeToken('Média Global'));
+    selectedTypes.delete('Contrastar' as any);
+
     const hasBaseFilter = selectedBases.size > 0;
     const hasTypeFilter = selectedTypes.size > 0;
-    const config = (this.environment.report as any).basesConfig;
 
     const extraTags = includeExtraTags
       ? this.environment.report.extraTeamTags.map((tag) => tag.toUpperCase())
       : [];
     const useExtraTagsFallback = !hasBaseFilter && !hasTypeFilter;
 
-    return (teamNameRaw: string): boolean => {
-      const teamName = teamNameRaw.toUpperCase().trim();
-      if (teamName.length === 0) return false;
+    return (teamName: string) => {
+      if (teamName.length === 0) return { isMatch: false, base: null, teamType: null };
 
       let matchedBase: string | null = null;
       let matchedType: 'propria' | 'parceira' | null = null;
 
+      // Find the base and type regardless of filters (to build the map)
       for (const polo of config.polos) {
         if (polo.matchType === 'direct_prefix') {
           for (const base of polo.bases) {
@@ -432,17 +439,22 @@ export class PostDownloadReportService {
         if (matchedBase) break;
       }
 
+      // If a specific team list was provided, match only by team list, but return the base/type we found
+      if (selectedTeams.size > 0) {
+        return { isMatch: selectedTeams.has(teamName), base: matchedBase, teamType: matchedType };
+      }
+
       if (matchedBase && matchedType) {
-        if (hasBaseFilter && !selectedBases.has(normalizeToken(matchedBase))) return false;
-        if (hasTypeFilter && !selectedTypes.has(matchedType)) return false;
-        return true;
+        if (hasBaseFilter && !selectedBases.has(normalizeToken(matchedBase))) return { isMatch: false, base: matchedBase, teamType: matchedType };
+        if (hasTypeFilter && !selectedTypes.has(matchedType)) return { isMatch: false, base: matchedBase, teamType: matchedType };
+        return { isMatch: true, base: matchedBase, teamType: matchedType };
       }
 
       if (useExtraTagsFallback && extraTags.some((tag) => teamName.includes(tag))) {
-        return true;
+        return { isMatch: true, base: null, teamType: null };
       }
 
-      return false;
+      return { isMatch: false, base: matchedBase, teamType: matchedType };
     };
   }
 

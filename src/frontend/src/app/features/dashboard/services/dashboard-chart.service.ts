@@ -408,7 +408,7 @@ export class DashboardChartService {
     return dayFlags.reduce((sum, f) => sum + f.totalMin, 0);
   }
 
-  analyticChartData(kpi: GeneratedReport['kpis'][number], report: GeneratedReport | null): {
+  analyticChartData(kpi: GeneratedReport['kpis'][number], report: GeneratedReport | null, comparePartner = false): {
     lines: Array<{
       team: string;
       color: string;
@@ -426,7 +426,8 @@ export class DashboardChartService {
     chartRight: number;
     labelBaseY: number;
     viewBox: string;
-    trendLine: { polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> } | null;
+    trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> }>;
+    trendArea: string | null;
   } {
     const padLeft = 46, padRight = 52, padTop = 22, padBottom = 44;
     const svgW = 680, svgH = 230;
@@ -577,18 +578,43 @@ export class DashboardChartService {
     const perTeamValues = kpi.perTeamDailyData
       ? kpi.perTeamDailyData.flatMap((t) => t.dailyPoints.map((p) => p.value))
       : [];
-    const allVals = [
-      ...kpi.scores.map((s) => s.rawValue),
-      kpi.metaTarget,
-      kpi.average,
-      ...trendValues,
-      ...perTeamValues,
-    ];
+    const teamTypes = report?.filtersApplied?.teamTypes || [];
+    const bases = report?.filtersApplied?.bases || [];
+    const wantsCombined = teamTypes.includes('All') || teamTypes.length === 0;
+    const wantsContrast = teamTypes.includes('Contrastar');
+    const wantsPropria = teamTypes.includes('Própria') || teamTypes.includes('propria');
+    const wantsParceira = teamTypes.includes('Parceira') || teamTypes.includes('parceira');
+    const isBaseAll = bases.includes('All') || bases.length === 0;
+
+    let allVals = [kpi.metaTarget, kpi.average];
+    if (kpi.dailyTrendByBase && kpi.dailyTrendByBase.length > 0) {
+      for (const tb of kpi.dailyTrendByBase) {
+        if (isBaseAll && tb.base === 'Média Global') continue;
+        if (!isBaseAll && !bases.includes(tb.base)) continue;
+        if (wantsCombined && tb.teamType !== 'All') continue;
+        if (wantsContrast && tb.teamType !== 'propria' && tb.teamType !== 'parceira' && tb.teamType !== 'Própria' && tb.teamType !== 'Parceira') continue;
+        if (!wantsCombined && !wantsContrast) {
+           if (wantsPropria && !wantsParceira && tb.teamType !== 'propria' && tb.teamType !== 'Própria') continue;
+           if (wantsParceira && !wantsPropria && tb.teamType !== 'parceira' && tb.teamType !== 'Parceira') continue;
+           if (wantsPropria && wantsParceira && tb.teamType !== 'propria' && tb.teamType !== 'Própria' && tb.teamType !== 'parceira' && tb.teamType !== 'Parceira') continue;
+        }
+        allVals.push(...tb.trend.map(pt => pt.avgValue));
+      }
+    } else {
+      allVals.push(...kpi.scores.map((s) => s.rawValue), ...trendValues, ...perTeamValues);
+    }
+
     let minVal = Math.min(...allVals);
     let maxVal = Math.max(...allVals);
-    const buf = Math.max((maxVal - minVal) * 0.18, 0.1);
-    minVal = Math.max(0, minVal - buf);
-    maxVal = maxVal + buf;
+    const buf = Math.max((maxVal - minVal) * 0.1, 1);
+    minVal = Math.floor(Math.max(0, minVal - buf));
+    maxVal = Math.ceil(maxVal + buf);
+
+    let range = maxVal - minVal;
+    if (range < 4) { maxVal = minVal + 4; range = 4; }
+    const remainder = range % 4;
+    if (remainder !== 0) { maxVal += (4 - remainder); }
+
     const toY = (v: number) => padTop + chartH * (1 - (v - minVal) / (maxVal - minVal));
 
     // ── Build per-team lines (varying Y per day if perTeamDailyData available) ──
@@ -635,7 +661,9 @@ export class DashboardChartService {
     });
 
     // ── Build daily trend line (global average per day) ───────────────────────
-    let trendLine: { polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> } | null = null;
+    const trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> }> = [];
+    let trendArea: string | null = null;
+
     if (hasDailyTrend) {
       const trendPoints = kpi.dailyTrend!.map((pt, i) => ({
         x: Math.round(toX(i) * 10) / 10,
@@ -643,10 +671,79 @@ export class DashboardChartService {
         label: pt.date,
         value: pt.avgValue,
       }));
-      trendLine = {
-        polyline: trendPoints.map((p) => `${p.x},${p.y}`).join(' '),
-        points: trendPoints,
+      const globalPolyline = trendPoints.map((p) => `${p.x},${p.y}`).join(' ');
+
+      let baseIndex = 0;
+      const baseColors = new Map<string, string>();
+
+      const adjustColor = (hex: string, amount: number) => {
+        return '#' + hex.replace(/^#/, '').replace(/../g, color => 
+          ('0' + Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2)
+        );
       };
+
+      if (kpi.dailyTrendByBase && kpi.dailyTrendByBase.length > 0) {
+        for (const tb of kpi.dailyTrendByBase) {
+          if (isBaseAll) {
+             if (tb.base === 'Média Global') continue;
+          } else {
+             if (!bases.includes(tb.base)) continue;
+          }
+
+          if (wantsCombined) {
+             if (tb.teamType !== 'All') continue;
+          } else if (wantsContrast) {
+             if (tb.teamType !== 'propria' && tb.teamType !== 'parceira' && tb.teamType !== 'Própria' && tb.teamType !== 'Parceira') continue;
+          } else {
+             if (wantsPropria && !wantsParceira && tb.teamType !== 'propria' && tb.teamType !== 'Própria') continue;
+             if (wantsParceira && !wantsPropria && tb.teamType !== 'parceira' && tb.teamType !== 'Parceira') continue;
+             if (wantsPropria && wantsParceira && tb.teamType !== 'propria' && tb.teamType !== 'Própria' && tb.teamType !== 'parceira' && tb.teamType !== 'Parceira') continue;
+          }
+
+          if (!baseColors.has(tb.base)) {
+            baseColors.set(tb.base, colors[baseIndex % colors.length]);
+            baseIndex++;
+          }
+
+          const baseColor = baseColors.get(tb.base)!;
+          const isPartner = tb.teamType === 'parceira' || tb.teamType === 'Parceira';
+          const color = isPartner ? adjustColor(baseColor, 80) : baseColor;
+
+          const pts = tb.trend.map((pt) => {
+            const di = sortedDays.indexOf(pt.date);
+            const x = Math.round(toX(di >= 0 ? di : 0) * 10) / 10;
+            return {
+              x,
+              y: Math.round(toY(pt.avgValue) * 10) / 10,
+              label: pt.date,
+              value: pt.avgValue,
+            };
+          });
+
+          trendLines.push({
+            base: tb.base,
+            teamType: tb.teamType,
+            color,
+            isPartner,
+            polyline: pts.map((p) => `${p.x},${p.y}`).join(' '),
+            points: pts,
+          });
+        }
+      }
+
+      if (trendLines.length === 0 && trendPoints.length > 0) {
+        trendLines.push({
+          base: 'Global',
+          teamType: 'Média',
+          color: '#111111',
+          isPartner: false,
+          polyline: globalPolyline,
+          points: trendPoints,
+        });
+      }
+
+      // Area path: polyline + bottom right corner + bottom left corner
+      trendArea = `${globalPolyline} ${chartRight},${padTop + chartH} ${padLeft},${padTop + chartH}`;
     }
 
     // ── Day axis labels (cap at 20 visible to avoid clutter) ─────────────────
@@ -663,6 +760,6 @@ export class DashboardChartService {
       return { y: Math.round(toY(v) * 10) / 10, label: fmt(Math.round(v * 10) / 10) };
     });
 
-    return { lines, days, metaY, avgY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}`, trendLine };
+    return { lines, days, metaY, avgY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}`, trendLines, trendArea };
   }
 }

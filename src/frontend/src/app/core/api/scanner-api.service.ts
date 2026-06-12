@@ -46,6 +46,7 @@ export interface ReportKpiInsight {
   /** Chart scaling config from backend KPI_THRESHOLDS — worst/best/direction/meta. */
   chartConfig?: { worst: number; best: number; direction: 'h' | 'l'; meta: number };
   dailyTrend?: Array<{ date: string; avgValue: number }>;
+  dailyTrendByBase?: Array<{ base: string; teamType: string; trend: Array<{ date: string; avgValue: number }> }>;
   /** Per-team per-day counts for OS Dia (enables non-flat team lines in the analytic chart). */
   perTeamDailyData?: Array<{ team: string; dailyPoints: Array<{ date: string; value: number }> }>;
   evidenceAnalysis?: EficienciaTeamAnalysis[];

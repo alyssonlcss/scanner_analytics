@@ -2,6 +2,7 @@ import type { CsvRow } from '../csv-utils.js';
 import type { KpiInsight, KpiRankItem, KpiTeamScore, DailyTrendPoint, PerTeamDailyPoint } from '../types.js';
 import { createAccessor, parseNumber, normalizeToken, round2, scoreKpi } from '../csv-utils.js';
 import { KPI_DEDUP_BY_DATE, KPI_DIRECTIONS, KPI_ALIASES, KPI_THRESHOLDS, KPI_DESLOC_DAILY_CONFIG } from '../constants.js';
+import { aggregateDailyTrends, TrendInput } from './trend-aggregator.js';
 
 export function buildKpiInsights(rows: CsvRow[]): KpiInsight[] {
     if (rows.length === 0) {
@@ -105,17 +106,18 @@ export function buildKpiInsights(rows: CsvRow[]): KpiInsight[] {
 export function buildKpiDailyTrend(
     deslocRows: CsvRow[],
     kpiName: string,
-  ): DailyTrendPoint[] {
-    if (deslocRows.length === 0) return [];
+    resolvedTeams?: Map<string, { base: string; teamType: 'propria' | 'parceira' }>
+  ): { globalTrend: DailyTrendPoint[]; trendByBase: Array<{ base: string; teamType: string; trend: DailyTrendPoint[] }> } {
+    if (deslocRows.length === 0) return { globalTrend: [], trendByBase: [] };
 
     const config = KPI_DESLOC_DAILY_CONFIG[kpiName];
-    if (!config) return [];
+    if (!config) return { globalTrend: [], trendByBase: [] };
 
     const acc = createAccessor(deslocRows[0]);
     const teamCol  = acc.resolve(['Equipe']);
     const dateCol  = acc.resolve(['Data Referência', 'Data Referencia']);
 
-    if (!teamCol || !dateCol) return [];
+    if (!teamCol || !dateCol) return { globalTrend: [], trendByBase: [] };
 
     const parseFullDate = (s: string): number => {
       const parts = s.split('/');
@@ -128,7 +130,7 @@ export function buildKpiDailyTrend(
     // ── countBy mode: count distinct values of a column per team per date ────
     if (config.countBy && config.countBy.length > 0) {
       const countByCol = acc.resolve(config.countBy);
-      if (!countByCol) return [];
+      if (!countByCol) return { globalTrend: [], trendByBase: [] };
 
       // date → team → Set of distinct countBy values
       const dateTeamSets = new Map<string, Map<string, Set<string>>>();
@@ -145,30 +147,24 @@ export function buildKpiDailyTrend(
       }
 
       const sortedDates = [...dateTeamSets.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
-      const result: DailyTrendPoint[] = [];
+      const inputs: TrendInput[] = [];
 
       for (const fullDate of sortedDates) {
         const teamMap = dateTeamSets.get(fullDate)!;
-        const counts: number[] = [];
-        for (const teamSet of teamMap.values()) {
-          counts.push(teamSet.size);
-        }
-        if (counts.length > 0) {
-          const avg = counts.reduce((s, v) => s + v, 0) / counts.length;
-          const ddMm = `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`;
-          result.push({ date: ddMm, avgValue: round2(avg) });
+        for (const [team, teamSet] of teamMap.entries()) {
+          inputs.push({ fullDate, team, value: teamSet.size });
         }
       }
 
-      return result;
+      return aggregateDailyTrends(inputs, resolvedTeams);
     }
 
     // ── value mode: read a numeric column per team per date ──────────────────
     const valueCol  = acc.resolve(config.aliases);
     const value2Col = config.aliases2 ? acc.resolve(config.aliases2) : null;
 
-    if (!valueCol) return [];
-    if (config.aliases2 && !value2Col) return [];
+    if (!valueCol) return { globalTrend: [], trendByBase: [] };
+    if (config.aliases2 && !value2Col) return { globalTrend: [], trendByBase: [] };
 
     if (config.aliases2 && value2Col) {
       if (config.dedup) {
@@ -185,26 +181,20 @@ export function buildKpiDailyTrend(
         }
 
         const sortedDates = [...dateTeamMap.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
-        const result: DailyTrendPoint[] = [];
+        const inputs: TrendInput[] = [];
 
         for (const fullDate of sortedDates) {
           const teamMap = dateTeamMap.get(fullDate)!;
-          const values: number[] = [];
-          for (const row of teamMap.values()) {
+          for (const [team, row] of teamMap.entries()) {
             const num = parseNumber(String(row[valueCol] ?? ''));
             const den = parseNumber(String(row[value2Col] ?? ''));
             if (num !== null && den !== null && den > 0 && Number.isFinite(num) && Number.isFinite(den)) {
-              values.push((num / den) * (config.scale ?? 1));
+              inputs.push({ fullDate, team, value: (num / den) * (config.scale ?? 1) });
             }
-          }
-          if (values.length > 0) {
-            const avg = values.reduce((s, v) => s + v, 0) / values.length;
-            const ddMm = `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`;
-            result.push({ date: ddMm, avgValue: round2(avg) });
           }
         }
 
-        return result;
+        return aggregateDailyTrends(inputs, resolvedTeams);
       }
 
       // Ratio mode: sum(numerator) / sum(denominator) per (date, team), then average across teams per date.
@@ -227,24 +217,18 @@ export function buildKpiDailyTrend(
       }
 
       const sortedDates = [...dateTeamSums.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
-      const result: DailyTrendPoint[] = [];
+      const inputs: TrendInput[] = [];
 
       for (const fullDate of sortedDates) {
         const teamMap = dateTeamSums.get(fullDate)!;
-        const values: number[] = [];
-        for (const { sumNum, sumDen } of teamMap.values()) {
+        for (const [team, { sumNum, sumDen }] of teamMap.entries()) {
           if (sumDen > 0 && Number.isFinite(sumNum) && Number.isFinite(sumDen)) {
-            values.push((sumNum / sumDen) * (config.scale ?? 1));
+            inputs.push({ fullDate, team, value: (sumNum / sumDen) * (config.scale ?? 1) });
           }
-        }
-        if (values.length > 0) {
-          const avg = values.reduce((s, v) => s + v, 0) / values.length;
-          const ddMm = `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`;
-          result.push({ date: ddMm, avgValue: round2(avg) });
         }
       }
 
-      return result;
+      return aggregateDailyTrends(inputs, resolvedTeams);
     }
 
     // Single-column mode: first row per team-day (deduplication — column is a jornada-level value)
@@ -259,28 +243,20 @@ export function buildKpiDailyTrend(
     }
 
     const sortedDates = [...dateTeamMap.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
-    const result: DailyTrendPoint[] = [];
+    const inputs: TrendInput[] = [];
 
     for (const fullDate of sortedDates) {
       const teamMap = dateTeamMap.get(fullDate)!;
-      const values: number[] = [];
 
-      for (const row of teamMap.values()) {
+      for (const [team, row] of teamMap.entries()) {
         const v = parseNumber(String(row[valueCol] ?? ''));
         if (v !== null && Number.isFinite(v) && v >= 0) {
-          values.push(config.scale ? v * config.scale : v);
+          inputs.push({ fullDate, team, value: config.scale ? v * config.scale : v });
         }
-      }
-
-      if (values.length > 0) {
-        const avg = values.reduce((s, v) => s + v, 0) / values.length;
-        // Display date as dd/mm (strip year from dd/mm/yyyy)
-        const ddMm = `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`;
-        result.push({ date: ddMm, avgValue: round2(avg) });
       }
     }
 
-    return result;
+    return aggregateDailyTrends(inputs, resolvedTeams);
   }
 
   /**
@@ -473,11 +449,13 @@ export function buildPerTeamDailyCount(
    */
 export function buildPerTeamDailyTmeImp(
     deslocRows: CsvRow[],
+    resolvedTeams?: Map<string, { base: string; teamType: 'propria' | 'parceira' }>
   ): {
     perTeam: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }>;
     globalTrend: DailyTrendPoint[];
+    trendByBase: Array<{ base: string; teamType: string; trend: DailyTrendPoint[] }>;
   } {
-    if (deslocRows.length === 0) return { perTeam: [], globalTrend: [] };
+    if (deslocRows.length === 0) return { perTeam: [], globalTrend: [], trendByBase: [] };
 
     const acc = createAccessor(deslocRows[0]);
     const teamCol   = acc.resolve(['Equipe']);
@@ -485,7 +463,7 @@ export function buildPerTeamDailyTmeImp(
     const statusCol = acc.resolve(['status', 'Status']);
     const trCol     = acc.resolve(['TR Ordem', 'TR_Ordem']);
 
-    if (!teamCol || !dateCol || !statusCol || !trCol) return { perTeam: [], globalTrend: [] };
+    if (!teamCol || !dateCol || !statusCol || !trCol) return { perTeam: [], globalTrend: [], trendByBase: [] };
 
     const parseFullDate = (s: string): number => {
       const parts = s.split('/');
@@ -537,32 +515,20 @@ export function buildPerTeamDailyTmeImp(
     }
     perTeam.sort((a, b) => a.team.localeCompare(b.team, 'pt-BR'));
 
-    // Build global daily trend: per date, average of qualifying (non-zero) team values
-    const dateTeamValues = new Map<string, number[]>();
-    for (const { dailyPoints } of perTeam) {
-      for (const pt of dailyPoints) {
-        if (pt.value > 0) {
-          const vals = dateTeamValues.get(pt.date) ?? [];
-          vals.push(pt.value);
-          dateTeamValues.set(pt.date, vals);
+    // Build trend aggregation using raw values before perTeam transformation to keep correct logic
+    const inputs: TrendInput[] = [];
+    for (const [team, impDateMap] of teamDateTrs) {
+      for (const [fullDate, vals] of impDateMap) {
+        const value = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+        if (value > 0) {
+          inputs.push({ fullDate, team, value });
         }
       }
     }
-    // Sort dates dd/mm chronologically using full-date sort from perTeam (already ordered)
-    const allDdMm = [...dateTeamValues.keys()].sort((a, b) => {
-      const [da, ma] = a.split('/').map(Number);
-      const [db, mb] = b.split('/').map(Number);
-      return (ma! * 100 + da!) - (mb! * 100 + db!);
-    });
-    const globalTrend: DailyTrendPoint[] = allDdMm.map((ddMm) => {
-      const vals = dateTeamValues.get(ddMm)!;
-      return { date: ddMm, avgValue: round2(vals.reduce((s, v) => s + v, 0) / vals.length) };
-    });
+    const { globalTrend, trendByBase } = aggregateDailyTrends(inputs, resolvedTeams);
 
     // Ensure every team has an entry for every globalTrend date.
-    // Teams that have no CSV rows for a given date won't have that date in their dailyPoints;
-    // without this fill, the chart falls back to the team's flat ranking value instead of 0.
-    const trendDateSet = new Set(allDdMm);
+    const trendDateSet = new Set(globalTrend.map((t) => t.date));
     for (const entry of perTeam) {
       const existing = new Set(entry.dailyPoints.map((p) => p.date));
       for (const ddMm of trendDateSet) {
@@ -578,6 +544,6 @@ export function buildPerTeamDailyTmeImp(
       });
     }
 
-    return { perTeam, globalTrend };
+    return { perTeam, globalTrend, trendByBase };
   }
 

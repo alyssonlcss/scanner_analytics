@@ -62,6 +62,7 @@ export interface KpiInsight {
   /** Chart scaling config derived from KPI_THRESHOLDS — worst/best/direction/meta for bar chart rendering. */
   chartConfig?: { worst: number; best: number; direction: 'h' | 'l'; meta: number };
   dailyTrend?: DailyTrendPoint[];
+  dailyTrendByBase?: Array<{ base: string; teamType: string; trend: DailyTrendPoint[] }>;
   /** Per-team per-day values (e.g. Nr_Ordem count for OS Dia). Enables non-flat team lines in the analytic chart. */
   perTeamDailyData?: Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }>;
   evidenceAnalysis?: EficienciaTeamAnalysis[];

@@ -290,7 +290,9 @@ type SavedFilterState = {
                 <span class="rpt-hero-author">Autor: Alysson Pinheiro &mdash; Analista de Dados</span>
               </div>
 
-              <button class="rpt-export-btn" (click)="openExportModal()">Exportar PDF</button>
+              <div class="rpt-hero-actions" style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                <button class="rpt-export-btn" (click)="openExportModal()">Exportar PDF</button>
+              </div>
             </div>
 
             <!-- Export Modal -->
@@ -1355,278 +1357,102 @@ type SavedFilterState = {
               <!-- TOC sidebar — mesmo sistema do modo operacional -->
               <app-toc-nav [kpis]="report.kpis" />
 
-              <!-- Gráfico multi-linha por KPI -->
+              <!-- Gráfico de Tendência Macro por KPI -->
               <section class="analytic-kpi-section anim-el" [id]="'kpi-' + i" *ngFor="let kpi of report.kpis; let i = index">
                 <ng-container *ngIf="analyticChartData(kpi) as cd">
-                <div class="analytic-kpi-header">
-                  <div class="analytic-kpi-title-row">
-                    <h2 class="analytic-kpi-title">
-                      <ng-container *ngIf="getAnalyticSelectedTeam(i) === null">{{ kpi.kpi }}</ng-container>
-                      <ng-container *ngIf="getAnalyticSelectedTeam(i) !== null">
-                        <button class="ac-breadcrumb-back" type="button" (click)="clearAnalyticTeam(i)">{{ kpi.kpi }}</button>
-                        <span class="ac-breadcrumb-sep">›</span>
-                        <span class="ac-breadcrumb-team">{{ getAnalyticSelectedTeam(i) }}</span>
-                        <ng-container *ngIf="getAnalyticSelectedDay(i) !== null">
-                          <span class="ac-breadcrumb-sep">›</span>
-                          <span class="ac-breadcrumb-day">Dia {{ getAnalyticSelectedDay(i) }}</span>
-                        </ng-container>
-                      </ng-container>
-                    </h2>
-                    <span class="analytic-kpi-dir-badge"
-                          [class.analytic-kpi-dir-badge--up]="kpi.direction === 'higher-is-better'"
-                          [class.analytic-kpi-dir-badge--down]="kpi.direction !== 'higher-is-better'">
-                      {{ kpi.direction === 'higher-is-better' ? '↑ Maior é melhor' : '↓ Menor é melhor' }}
-                    </span>
-                  </div>
-                  <div class="analytic-kpi-meta-row">
-                    <div class="analytic-kpi-chips">
-                      <span class="analytic-kpi-chip">Meta <strong>{{ kpi.metaTarget }}</strong></span>
-                      <span class="analytic-kpi-chip">Média <strong>{{ kpi.average }}</strong></span>
-                      <span class="analytic-kpi-chip">Acima da meta <strong>{{ kpi.topTeams.length }}/{{ kpi.scores.length }}</strong></span>
-                      <span class="analytic-kpi-chip analytic-kpi-chip--trend" *ngIf="kpi.dailyTrend && kpi.dailyTrend.length > 0">
-                        <span class="ac-trend-legend-dot"></span>Tendência diária
+                  <div class="analytic-kpi-header">
+                    <div class="analytic-kpi-title-row">
+                      <h2 class="analytic-kpi-title">{{ kpi.kpi }}</h2>
+                      <span class="analytic-kpi-dir-badge"
+                            [class.analytic-kpi-dir-badge--up]="kpi.direction === 'higher-is-better'"
+                            [class.analytic-kpi-dir-badge--down]="kpi.direction !== 'higher-is-better'">
+                        {{ kpi.direction === 'higher-is-better' ? '↑ Maior é melhor' : '↓ Menor é melhor' }}
                       </span>
                     </div>
+                    <div class="analytic-kpi-meta-row">
+                      <div class="analytic-kpi-chips">
+                        <span class="analytic-kpi-chip">Meta <strong>{{ kpi.metaTarget | number:'1.0-1' }}</strong></span>
+                        <span class="analytic-kpi-chip">Média Global <strong>{{ kpi.average | number:'1.0-1' }}</strong></span>
+                        <span class="analytic-kpi-chip">Acima da meta <strong>{{ kpi.topTeams.length }}/{{ kpi.scores.length }}</strong></span>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                  <!-- Chart + persistent legend sidebar -->
-                  <div class="ac-chart-row">
-                  <div class="analytic-chart-wrap">
-                    <svg class="analytic-chart-svg" [attr.viewBox]="cd.viewBox" preserveAspectRatio="xMidYMid meet">
-                      <!-- Grid + Y axis -->
-                      <ng-container *ngFor="let tick of cd.yTicks">
-                        <line [attr.x1]="cd.padLeft" [attr.y1]="tick.y" [attr.x2]="cd.chartRight" [attr.y2]="tick.y" class="ac-grid" />
-                        <text [attr.x]="cd.padLeft - 6" [attr.y]="tick.y + 4" class="ac-y-label" text-anchor="end">{{ tick.label }}</text>
-                      </ng-container>
-                      <!-- X axis day labels -->
-                      <ng-container *ngFor="let day of cd.days">
-                        <text [attr.x]="day.x" [attr.y]="cd.labelBaseY" class="ac-x-label" text-anchor="middle">{{ day.label }}</text>
-                      </ng-container>
-                      <!-- Meta line dashed -->
-                      <line [attr.x1]="cd.padLeft" [attr.y1]="cd.metaY" [attr.x2]="cd.chartRight" [attr.y2]="cd.metaY" class="ac-meta-line" />
-                      <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.metaY + 4" class="ac-meta-label">Meta</text>
-                      <!-- Overall average horizontal line -->
-                      <line [attr.x1]="cd.padLeft" [attr.y1]="cd.avgY" [attr.x2]="cd.chartRight" [attr.y2]="cd.avgY" class="ac-avg-line" />
-                      <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.avgY + 4" class="ac-avg-label">Méd.</text>
-                      <!-- Daily trend line (global average per day from Tab_Completa) -->
-                      <ng-container *ngIf="cd.trendLine">
-                        <polyline [attr.points]="cd.trendLine.polyline" class="ac-trend-line" />
-                        <ng-container *ngFor="let pt of cd.trendLine.points">
-                          <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="4" class="ac-trend-dot">
-                            <title>{{ pt.label }}: {{ pt.value }}</title>
-                          </circle>
+                  <div class="ac-macro-row">
+                    <!-- Gráfico de Tendência (Média da Base) -->
+                    <div class="ac-macro-chart-wrap">
+                      <h3 class="ac-macro-subtitle">Tendência Diária da Base</h3>
+                      <svg class="analytic-chart-svg" [attr.viewBox]="cd.viewBox" preserveAspectRatio="xMidYMid meet">
+                        <!-- Grid + Y axis -->
+                        <ng-container *ngFor="let tick of cd.yTicks">
+                          <line [attr.x1]="cd.padLeft" [attr.y1]="tick.y" [attr.x2]="cd.chartRight" [attr.y2]="tick.y" class="ac-grid" />
+                          <text [attr.x]="cd.padLeft - 6" [attr.y]="tick.y + 4" class="ac-y-label" text-anchor="end">{{ tick.label }}</text>
                         </ng-container>
-                      </ng-container>
-                      <!-- One polyline + dots per team (faded behind trend line) -->
-                      <!-- Pass 1: non-selected teams (painted first / behind) -->
-                      <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
-                        <ng-container *ngIf="getAnalyticSelectedTeam(i) !== line.team">
-                          <polyline
-                            [attr.points]="line.polyline"
-                            class="ac-line"
-                            [attr.stroke]="line.color"
-                            [class.ac-line--faded]="getAnalyticSelectedTeam(i) !== null"
-                            (click)="toggleAnalyticTeam(line.team, i)" />
-                          <polyline
-                            [attr.points]="line.polyline"
-                            class="ac-line-hit"
-                            (click)="toggleAnalyticTeam(line.team, i)" />
-                          <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
-                            <circle
-                              [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 5 : 3.5"
-                              [attr.fill]="line.color"
-                              [class.ac-pt]="true"
-                              [class.ac-pt--flagged]="pt.flagged"
-                              [class.ac-pt--faded]="getAnalyticSelectedTeam(i) !== null"
-                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)">
-                              <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
+                        <!-- X axis day labels -->
+                        <ng-container *ngFor="let day of cd.days">
+                          <text [attr.x]="day.x" [attr.y]="cd.labelBaseY" class="ac-x-label" text-anchor="middle">{{ day.label }}</text>
+                        </ng-container>
+                        <!-- Meta line dashed -->
+                        <line [attr.x1]="cd.padLeft" [attr.y1]="cd.metaY" [attr.x2]="cd.chartRight" [attr.y2]="cd.metaY" class="ac-meta-line" />
+                        <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.metaY + 4" class="ac-meta-label">Meta</text>
+                        <!-- Overall average horizontal line -->
+                        <line [attr.x1]="cd.padLeft" [attr.y1]="cd.avgY" [attr.x2]="cd.chartRight" [attr.y2]="cd.avgY" class="ac-avg-line" />
+                        <text [attr.x]="cd.chartRight + 6" [attr.y]="cd.avgY + 4" class="ac-avg-label">Méd.</text>
+
+                        <!-- Area Chart para a Tendência Global (fundo) -->
+                        <ng-container *ngIf="cd.trendArea && cd.trendLines.length === 0">
+                          <polygon [attr.points]="cd.trendArea" class="ac-trend-area" />
+                        </ng-container>
+
+                        <!-- Linhas de Tendência por Base -->
+                        <ng-container *ngFor="let tl of cd.trendLines">
+                          <polyline [attr.points]="tl.polyline" class="ac-trend-line" [attr.stroke]="tl.color" />
+                          <ng-container *ngFor="let pt of tl.points">
+                            <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="6" fill="transparent" stroke="transparent" class="ac-pt-hit" />
+                            <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="1.5" class="ac-trend-dot" [attr.fill]="tl.color">
+                              <title>{{ tl.base }} ({{ tl.teamType }}) dia {{ pt.label }}: {{ pt.value | number:'1.0-1' }}</title>
                             </circle>
                           </ng-container>
                         </ng-container>
-                      </ng-container>
-                      <!-- Pass 2: selected team last (painted on top) -->
-                      <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
-                        <ng-container *ngIf="getAnalyticSelectedTeam(i) === line.team">
-                          <polyline
-                            [attr.points]="line.polyline"
-                            class="ac-line ac-line--active"
-                            [attr.stroke]="line.color"
-                            (click)="toggleAnalyticTeam(line.team, i)" />
-                          <polyline
-                            [attr.points]="line.polyline"
-                            class="ac-line-hit"
-                            (click)="toggleAnalyticTeam(line.team, i)" />
-                          <ng-container *ngFor="let pt of line.points; trackBy: trackByDayIndex">
-                            <!-- wider transparent hit area so the dot is easy to click -->
-                            <circle
-                              [attr.cx]="pt.x" [attr.cy]="pt.y" r="10"
-                              fill="transparent"
-                              class="ac-pt-hit"
-                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)" />
-                            <circle
-                              [attr.cx]="pt.x" [attr.cy]="pt.y" [attr.r]="pt.flagged ? 6 : 5"
-                              [attr.fill]="line.color"
-                              [class.ac-pt]="true"
-                              [class.ac-pt--flagged]="pt.flagged"
-                              [class.ac-pt--active]="true"
-                              [class.ac-pt--selected-day]="getAnalyticSelectedDay(i) === pt.dayLabel"
-                              (click)="selectAnalyticPoint(line.team, pt.dayLabel, i, $event)">
-                              <title>{{ line.team }} — dia {{ pt.dayLabel }}: {{ pt.displayVal }}{{ pt.flagged ? ' ⚠' : '' }}</title>
-                            </circle>
-                          </ng-container>
-                        </ng-container>
-                      </ng-container>
-                    </svg>
-                  </div>
 
-                  <!-- Persistent legend sidebar (always visible) -->
-                  <div class="ac-legend-panel">
-                    <!-- Pre-selection: team list with search -->
-                    <ng-container *ngIf="getAnalyticSelectedTeam(i) === null">
-                      <div class="ac-legend-panel-head">
-                        <span class="ac-legend-panel-title">Equipes</span>
-                        <span class="ac-legend-panel-count">{{ cd.lines.length }}</span>
-                      </div>
-                      <div class="ac-legend-search-wrap">
-                        <svg class="ac-drawer-search-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none">
-                          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.4"/>
-                          <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                        </svg>
-                        <input class="ac-drawer-search"
-                               type="text"
-                               placeholder="Buscar equipe..."
-                               [value]="analyticSearch()[i] || ''"
-                               (input)="setAnalyticSearch(i, $any($event.target).value)" />
-                      </div>
-                      <div class="ac-legend-scroll">
-                        <div class="ac-legend">
-                          <button *ngFor="let line of filterAnalyticLines(cd.lines, i); trackBy: trackByTeam"
-                                  type="button"
-                                  class="ac-legend-item"
-                                  [class.ac-legend-item--active]="getAnalyticSelectedTeam(i) === line.team"
-                                  [class.ac-legend-item--faded]="getAnalyticSelectedTeam(i) !== null && getAnalyticSelectedTeam(i) !== line.team"
-                                  [style.--lc]="line.color"
-                                  (click)="toggleAnalyticTeam(line.team, i)">
-                            <span class="ac-legend-dot"></span>
-                            <span class="ac-legend-name">{{ line.team }}</span>
-                            <span class="ac-legend-val"
-                                  [class.ac-legend-val--above]="line.above"
-                                  [class.ac-legend-val--below]="!line.above">{{ line.displayValue }}</span>
-                          </button>
-                          <p class="ac-legend-empty" *ngIf="filterAnalyticLines(cd.lines, i).length === 0">Nenhuma equipe encontrada.</p>
+                        <text *ngIf="!cd.trendArea" [attr.x]="(cd.padLeft + cd.chartRight) / 2" [attr.y]="(cd.metaY + cd.avgY) / 2" text-anchor="middle" class="ac-no-data-text" fill="#94a3b8" font-size="12px">Sem dados de tendência diária disponíveis</text>
+                      </svg>
+                      <div class="ac-trend-legend" *ngIf="cd.trendLines.length > 0">
+                        <div class="ac-legend-item" *ngFor="let tl of cd.trendLines">
+                          <span class="ac-legend-color" [style.background]="tl.color"></span>
+                          <span class="ac-legend-label">{{ tl.base }} {{ tl.teamType !== 'All' ? '(' + tl.teamType + ')' : '' }}</span>
                         </div>
                       </div>
-                    </ng-container>
-                    <!-- Post-selection: flag legend for selected team -->
-                    <ng-container *ngIf="getAnalyticSelectedTeam(i) !== null">
-                      <div class="ac-legend-panel-head">
-                        <span class="ac-legend-panel-title">Legenda de Flags</span>
-                        <button class="ac-flag-back-btn" type="button" (click)="clearAnalyticTeam(i)">← Equipes</button>
-                      </div>
-                      <ng-container *ngIf="getTeamFlagSummary(kpi, getAnalyticSelectedTeam(i) ?? '', report) as flagSummary">
-                        <div class="ac-flag-list">
-                          <ng-container *ngFor="let fs of flagSummary">
-                            <div class="ac-flag-row" [style.--fc]="fs.color">
-                              <span class="ac-flag-row-dot"></span>
-                              <span class="ac-flag-row-label">{{ fs.label }}</span>
-                              <span class="ac-flag-row-count">{{ fs.count }}×</span>
-                              <span class="ac-flag-row-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
-                            </div>
-                            <ng-container *ngFor="let sf of fs.subFlags">
-                              <div class="ac-flag-row ac-flag-row--sub" [style.--fc]="sf.color">
-                                <span class="ac-flag-row-dot"></span>
-                                <span class="ac-flag-row-label">└ {{ sf.label }}</span>
-                                <span class="ac-flag-row-count">{{ sf.count }}×</span>
-                                <span class="ac-flag-row-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
-                              </div>
-                            </ng-container>
-                          </ng-container>
-                          <p class="ac-flag-empty" *ngIf="flagSummary.length === 0">✅ Nenhum desvio para esta equipe.</p>
-                        </div>
-                      </ng-container>
-                    </ng-container>
-                  </div>
-                  </div><!-- /ac-chart-row -->
+                    </div>
 
-                  <!-- Painel de desvios da equipe selecionada -->
-                  <div class="ac-deviation-panel" *ngIf="getAnalyticSelectedTeam(i) !== null">
-                    <ng-container *ngFor="let line of cd.lines; trackBy: trackByTeam">
-                      <ng-container *ngIf="line.team === getAnalyticSelectedTeam(i)">
-                        <div class="ac-dev-header">
-                          <div class="ac-dev-context">
-                            <span class="ac-dev-context-label">{{ getAnalyticSelectedDay(i) !== null ? 'Dia ' + getAnalyticSelectedDay(i) : 'Média Geral' }}</span>
-                            <span class="ac-dev-team" [style.border-color]="line.color">{{ line.team }}</span>
+                    <!-- Destaques (Top / Bottom) -->
+                    <div class="ac-macro-highlights">
+                      <div class="ac-macro-card">
+                        <div class="ac-macro-card-head">
+                          <span class="ac-macro-card-title">🏆 Top Melhores</span>
+                        </div>
+                        <div class="ac-macro-list">
+                          <div class="ac-macro-item" *ngFor="let t of kpi.topTeams | slice:0:3">
+                            <span class="ac-macro-team">{{ t.team }}</span>
+                            <span class="ac-macro-val ac-macro-val--good">{{ t.value | number:'1.0-1' }}</span>
                           </div>
-                          <span class="ac-dev-kpi-val" [class.ac-dev-kpi-val--above]="line.above" [class.ac-dev-kpi-val--below]="!line.above">
-                            {{ kpi.kpi }}: <strong>{{ (getAnalyticSelectedDay(i) !== null ? getDayKpiValue(cd.lines, line.team, getAnalyticSelectedDay(i)) : null) ?? line.displayValue }}</strong>
-                          </span>
-                          <span class="ac-dev-meta">Meta: {{ kpi.metaTarget }}</span>
-                          <button *ngIf="getAnalyticSelectedDay(i) !== null" type="button" class="ac-dev-day-back" (click)="clearAnalyticDay(i)" aria-label="Voltar para média">← Média</button>
-                          <button type="button" class="ac-dev-close" (click)="clearAnalyticTeam(i)" aria-label="Fechar">✕</button>
+                          <div class="ac-macro-empty" *ngIf="kpi.topTeams.length === 0">Nenhuma equipe acima da meta.</div>
                         </div>
-                        <!-- Modo linha: médias de desvios de todas as datas -->
-                        <ng-container *ngIf="getAnalyticSelectedDay(i) === null">
-                          <ng-container *ngIf="getTeamFlagSummary(kpi, line.team, report) as flagSummary">
-                            <div class="ac-dev-flags-section" *ngIf="flagSummary.length > 0">
-                              <h4 class="ac-dev-flags-title">Média de Desvios — Todos os Dias</h4>
-                              <div class="ac-dev-flags-list">
-                                <ng-container *ngFor="let fs of flagSummary">
-                                  <div class="ac-dev-flag-row" [style.--fc]="fs.color">
-                                    <span class="ac-dev-flag-dot"></span>
-                                    <span class="ac-dev-flag-name">{{ fs.label }}</span>
-                                    <span class="ac-dev-flag-count">{{ fs.count }}×</span>
-                                    <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
-                                  </div>
-                                  <ng-container *ngFor="let sf of fs.subFlags">
-                                    <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
-                                      <span class="ac-dev-flag-dot"></span>
-                                      <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
-                                      <span class="ac-dev-flag-count">{{ sf.count }}×</span>
-                                      <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
-                                    </div>
-                                  </ng-container>
-                                </ng-container>
-                              </div>
-                            </div>
-                            <p class="ac-dev-ok" *ngIf="flagSummary.length === 0">✅ Nenhum desvio registrado para esta equipe neste KPI.</p>
-                          </ng-container>
-                        </ng-container>
-                        <!-- Modo ponto: desvios do dia específico -->
-                        <ng-container *ngIf="getAnalyticSelectedDay(i) !== null">
-                          <ng-container *ngIf="getDayFlagSummary(kpi, line.team, getAnalyticSelectedDay(i), report) as dayFlags">
-                            <div class="ac-dev-flags-section" *ngIf="dayFlags.length > 0">
-                              <h4 class="ac-dev-flags-title">Desvios — Dia {{ getAnalyticSelectedDay(i) }}</h4>
-                              <div class="ac-dev-flags-list">
-                                <ng-container *ngFor="let fs of dayFlags">
-                                  <div class="ac-dev-flag-row" [style.--fc]="fs.color">
-                                    <span class="ac-dev-flag-dot"></span>
-                                    <span class="ac-dev-flag-name">{{ fs.label }}</span>
-                                    <span class="ac-dev-flag-count">{{ fs.count }}×</span>
-                                    <span class="ac-dev-flag-min" *ngIf="fs.totalMin > 0">{{ fs.totalMin | number:'1.0-0' }} min</span>
-                                  </div>
-                                  <ng-container *ngFor="let sf of fs.subFlags">
-                                    <div class="ac-dev-flag-row ac-dev-flag-row--sub" [style.--fc]="sf.color">
-                                      <span class="ac-dev-flag-dot"></span>
-                                      <span class="ac-dev-flag-name">└ {{ sf.label }}</span>
-                                      <span class="ac-dev-flag-count">{{ sf.count }}×</span>
-                                      <span class="ac-dev-flag-min" *ngIf="sf.totalMin > 0">{{ sf.totalMin | number:'1.0-0' }} min</span>
-                                    </div>
-                                  </ng-container>
-                                </ng-container>
-                                <div class="ac-dev-flag-row ac-dev-day-total" *ngIf="getDayDeviationTotal(dayFlags) > 0">
-                                  <span class="ac-dev-flag-dot" style="visibility:hidden"></span>
-                                  <span class="ac-dev-flag-name"><strong>Total desvios</strong></span>
-                                  <span class="ac-dev-flag-count"></span>
-                                  <span class="ac-dev-flag-min"><strong>{{ getDayDeviationTotal(dayFlags) | number:'1.0-0' }} min</strong></span>
-                                </div>
-                              </div>
-                            </div>
-                            <p class="ac-dev-ok" *ngIf="dayFlags.length === 0">✅ Nenhum desvio registrado neste dia.</p>
-                          </ng-container>
-                        </ng-container>
-                      </ng-container>
-                    </ng-container>
+                      </div>
+
+                      <div class="ac-macro-card">
+                        <div class="ac-macro-card-head">
+                          <span class="ac-macro-card-title">⚠️ Maiores Oportunidades</span>
+                        </div>
+                        <div class="ac-macro-list">
+                          <div class="ac-macro-item" *ngFor="let t of kpi.opportunityTeams | slice:0:3">
+                            <span class="ac-macro-team">{{ t.team }}</span>
+                            <span class="ac-macro-val ac-macro-val--bad">{{ t.value | number:'1.0-1' }}</span>
+                          </div>
+                          <div class="ac-macro-empty" *ngIf="kpi.opportunityTeams.length === 0">Nenhuma equipe abaixo da meta.</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </ng-container>
               </section>
@@ -4278,18 +4104,127 @@ type SavedFilterState = {
       .ac-legend-val--above { background: var(--green-bg);  color: var(--green); }
       .ac-legend-val--below { background: var(--red-bg);    color: var(--accent); }
 
-      /* ── Chart + legend row ── */
-      .ac-chart-row {
+      /* ── Macro Layout (Analítico) ── */
+      .ac-macro-row {
         display: flex;
-        gap: 12px;
-        align-items: flex-start;
+        gap: 16px;
+        align-items: stretch;
       }
 
-      /* ── SVG ── */
-      .analytic-chart-wrap {
+      .ac-macro-chart-wrap {
+        flex: 2;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .ac-trend-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 8px;
+      }
+
+      .ac-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-2);
+      }
+
+      .ac-legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        display: inline-block;
+      }
+
+      .ac-macro-subtitle {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--muted-strong);
+        margin-bottom: 8px;
+        letter-spacing: 0.05em;
+      }
+
+      .ac-macro-highlights {
         flex: 1;
-        min-width: 0;
-        overflow-x: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ac-macro-card {
+        flex: 1;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .ac-macro-card-head {
+        margin-bottom: 10px;
+      }
+
+      .ac-macro-card-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--text);
+        letter-spacing: 0.05em;
+      }
+
+      .ac-macro-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .ac-macro-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--bg);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 11px;
+        border: 1px solid var(--border);
+      }
+
+      .ac-macro-team {
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ac-macro-val {
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 10px;
+      }
+
+      .ac-macro-val--good { background: var(--green-bg); color: var(--green); }
+      .ac-macro-val--bad { background: var(--red-bg); color: var(--accent); }
+
+      .ac-macro-empty {
+        font-size: 11px;
+        color: var(--muted-strong);
+        font-style: italic;
+        padding: 8px 4px;
+      }
+
+      .ac-trend-area {
+        fill: rgba(37, 99, 235, 0.1);
       }
 
       /* ── Persistent legend panel ── */
@@ -4399,16 +4334,14 @@ type SavedFilterState = {
       /* Daily trend line — bold coloured line showing global average per day */
       .ac-trend-line {
         fill: none;
-        stroke: #111;
-        stroke-width: 2.5;
+        stroke-width: 1.5;
         stroke-linejoin: round;
         stroke-linecap: round;
       }
 
       .ac-trend-dot {
-        fill: #111;
-        stroke: white;
-        stroke-width: 1.5;
+        stroke: none;
+        stroke-width: 0;
       }
 
       .ac-line {
@@ -4453,6 +4386,9 @@ type SavedFilterState = {
       }
 
       .ac-pt-hit {
+        fill: transparent;
+        stroke: transparent;
+        stroke-width: 0;
         cursor: pointer;
       }
 
@@ -5177,7 +5113,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const currentFilters = this.reportFilterStates();
       const baseFilter = currentFilters.find(f => f.key === 'reportBase');
       if (baseFilter) {
-        baseFilter.options = this.withAllOption(options);
+        baseFilter.options = this.reportType() === 'analitico'
+          ? this.withAllOption(['Média Global', ...options])
+          : this.withAllOption(options);
       }
       this.reportFilterStates.set(this.cascadeReportFilters(currentFilters));
     });
@@ -5627,7 +5565,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ): void {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
     const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceKeysSet() : undefined;
-    this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
+    this.pdfService.downloadPdf({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys, this.reportType());
   }
 
   /**
@@ -5639,7 +5577,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ): Promise<File> {
     const { safeName, dateRangeLabel } = this.buildPdfFileName(section, exportType);
     const expandedKeys = exportType === 'atual' ? this.getExpandedEvidenceKeysSet() : undefined;
-    return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys);
+    return this.pdfService.generatePdfFile({ ...section, dateRangeLabel }, safeName, this.buildPdfHelpers(), expandedKeys, this.reportType());
   }
 
 
@@ -5656,6 +5594,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       loginFlagLabel: (f: string) => this.loginFlagLabel(f),
       deslocFlagLabel: (f: string) => this.deslocFlagLabel(f),
       retornoFlagLabel: (f: string) => this.retornoFlagLabel(f),
+      analyticChartData: (kpi: any) => this.analyticChartData(kpi),
       osDiaAlertBody: (flag: string, ev: any) => this.osDiaAlertBody(flag, ev),
       eficienciaAlertBody: (flag: string, ev: any) => this.eficienciaAlertBody(flag, ev),
       tmeImpAlertBody: (flag: string, ev: any) => this.tmeImpAlertBody(flag, ev),
@@ -5679,6 +5618,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     this.reportType.set(value as ReportTypeValue);
+    
+    // Update report filters to reflect changes in available options for 'analitico' mode
+    // and re-evaluate valid combinations via cascadeReportFilters
+    this.reportFilterStates.set(this.cascadeReportFilters(this.reportFilterStates()));
+
     this.saveToStorage();
     // Re-observe newly rendered anim-el elements after Angular renders the switched mode.
     setTimeout(() => this.setupAnimations(), 80);
@@ -6689,14 +6633,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         key: 'reportBase',
         title: 'Base (Relatório)',
         value: [ALL_OPTION],
-        options: this.withAllOption(this.reportBaseOptions),
+        options: this.reportType() === 'analitico' 
+           ? this.withAllOption(['Média Global', ...this.reportBaseOptions]) 
+           : this.withAllOption(this.reportBaseOptions),
         enabled: true,
       },
       {
         key: 'reportTipoEquipe',
         title: 'Tipo de Equipe (Relatório)',
         value: [ALL_OPTION],
-        options: this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
+        options: this.reportType() === 'analitico'
+           ? this.withAllOption(['Contrastar', ...REPORT_TEAM_TYPE_OPTIONS])
+           : this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
         enabled: true,
       },
       {
@@ -6727,7 +6675,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
 
     const selectedTypes = normalize(teamTypeFilter)
-      .map((value) => value === 'Própria' ? 'propria' : value === 'Parceira' ? 'parceira' : null)
+      .map((value) => {
+        if (value === 'Própria') return ['propria'];
+        if (value === 'Parceira') return ['parceira'];
+        if (value === 'Contrastar') return ['propria', 'parceira'];
+        return [];
+      })
+      .flat()
       .filter((value): value is 'propria' | 'parceira' => value !== null);
 
     const selectedBases = normalize(baseFilter);
@@ -6749,6 +6703,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const selectedBases = baseF && !baseF.value.includes(ALL_OPTION) ? baseF.value : [];
     const selectedTipos = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value : [];
     const selectedEquipes = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value : [];
+
+    const effectiveBases = selectedBases.filter(b => b !== 'Média Global');
+    const effectiveTipos = selectedTipos.filter(t => t !== 'Contrastar');
 
     const config = this.basesConfig;
     if (!config) return filters; // Not loaded yet
@@ -6792,8 +6749,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const filteredTeams = this.availableTeams.filter((team) => {
       const meta = teamMetadata.get(team);
       if (!meta) return true; // Keep unknown teams if no filters applied? Actually, let's keep them if no filters.
-      if (selectedBases.length > 0 && !selectedBases.includes(meta.base)) return false;
-      if (selectedTipos.length > 0 && !selectedTipos.includes(meta.type)) return false;
+      if (effectiveBases.length > 0 && !effectiveBases.includes(meta.base)) return false;
+      if (effectiveTipos.length > 0 && !effectiveTipos.includes(meta.type)) return false;
       return true;
     });
 
@@ -6822,8 +6779,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       for (const team of this.availableTeams) {
         const meta = teamMetadata.get(team);
         if (meta) {
-          if (selectedTipos.length === 0 || selectedTipos.includes(meta.type)) basesSet.add(meta.base);
-          if (selectedBases.length === 0 || selectedBases.includes(meta.base)) typesSet.add(meta.type);
+          if (effectiveTipos.length === 0 || effectiveTipos.includes(meta.type)) basesSet.add(meta.base);
+          if (effectiveBases.length === 0 || effectiveBases.includes(meta.base)) typesSet.add(meta.type);
         }
       }
       filteredBases = Array.from(basesSet);
@@ -6839,6 +6796,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         };
       }
       if (f.key === 'reportBase') {
+        if (this.reportType() === 'analitico') {
+          if (!filteredBases.includes('Média Global')) {
+             filteredBases.unshift('Média Global');
+          }
+        }
         const validBases = selectedBases.filter((b) => filteredBases.includes(b));
         return {
           ...f,
@@ -6847,6 +6809,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         };
       }
       if (f.key === 'reportTipoEquipe') {
+        if (this.reportType() === 'analitico') {
+          if (!filteredTypes.includes('Contrastar')) {
+             filteredTypes.unshift('Contrastar');
+          }
+        }
         const validTipos = selectedTipos.filter((t) => filteredTypes.includes(t));
         return {
           ...f,

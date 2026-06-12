@@ -15,6 +15,7 @@ export interface PdfSection {
   title: string;
   subtitle: string;
   dateRangeLabel?: string;
+  comparePartner?: boolean;
 }
 
 export interface PdfHelpers {
@@ -29,6 +30,7 @@ export interface PdfHelpers {
   loginFlagLabel: (flag: string) => string;
   deslocFlagLabel: (flag: string) => string;
   retornoFlagLabel: (flag: string) => string;
+  analyticChartData: (kpi: any) => any;
   osDiaAlertBody: (flag: string, ev: { alertTexts?: Record<string, string> }) => string;
   eficienciaAlertBody: (flag: string, ev: { alertTexts?: Record<string, string> }) => string;
   tmeImpAlertBody: (flag: string, ev: { alertTexts?: Record<string, string> }) => string;
@@ -247,9 +249,9 @@ export class DashboardPdfService {
   /**
    * Gera e baixa o PDF usando pdfmake.
    */
-  downloadPdf(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): void {
+  downloadPdf(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>, reportType: 'operacional' | 'analitico' = 'operacional'): void {
     const effectiveSection = { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) };
-    const docDef = this.buildPdfDocDef(effectiveSection, helpers);
+    const docDef = reportType === 'analitico' ? this.buildAnalyticPdfDocDef(effectiveSection, helpers) : this.buildPdfDocDef(effectiveSection, helpers);
     pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
   }
 
@@ -257,9 +259,9 @@ export class DashboardPdfService {
    * Gera o PDF em memória como File (sem baixar automaticamente).
    * pdfmake 0.3.x: getBlob() é async — retorna Promise<Blob>, não usa callback.
    */
-  async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>): Promise<File> {
+  async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>, reportType: 'operacional' | 'analitico' = 'operacional'): Promise<File> {
     const effectiveSection = { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) };
-    const docDef = this.buildPdfDocDef(effectiveSection, helpers);
+    const docDef = reportType === 'analitico' ? this.buildAnalyticPdfDocDef(effectiveSection, helpers) : this.buildPdfDocDef(effectiveSection, helpers);
     const blob: Blob = await pdfMake.createPdf(docDef).getBlob();
     if (!blob || blob.size === 0) {
       throw new Error('[PdfService] PDF gerado está vazio');
@@ -1354,6 +1356,261 @@ export class DashboardPdfService {
     }
 
     return {
+      pageSize: 'A4',
+      pageMargins: [30, 36, 30, 36] as [number, number, number, number],
+      content,
+      styles: {
+        sectionHeader: { fontSize: 13, bold: true, color: DARK },
+      },
+      defaultStyle: { font: 'Roboto', fontSize: 8, color: DARK },
+    };
+  }
+
+  /**
+   * Constrói a definição de PDF otimizada para o layout Analítico / Diretoria.
+   */
+  buildAnalyticPdfDocDef(section: PdfSection, helpers: PdfHelpers): any {
+    const { report, title, subtitle, dateRangeLabel } = section;
+
+    const fmt = (v: number | undefined | null, dec = 1): string =>
+      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : '–';
+
+    const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const es = report.executiveSummary;
+
+    const RED = '#c0122d';
+    const BLUE = '#2563eb';
+    const GREEN = '#15803d';
+    const GRAY = '#64748b';
+    const DARK = '#1e1a17';
+    const MUTED = '#94a3b8';
+    const BG = '#f8f7f4';
+
+    const cover: any[] = [
+      { text: 'Relatório Analítico de Diretoria', fontSize: 9, bold: true, color: MUTED, characterSpacing: 2, margin: [0, 0, 0, 10] },
+      { text: title, fontSize: 32, bold: true, color: DARK, margin: [0, 0, 0, 6] },
+      subtitle ? { text: subtitle, fontSize: 12, color: GRAY, margin: [0, 0, 0, 6] } : null,
+      { text: `Gerado em ${today}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 2] },
+      dateRangeLabel ? { text: `Período de referência: ${dateRangeLabel}`, fontSize: 9, color: MUTED, margin: [0, 0, 0, 4] } : null,
+      { text: 'Visão Macro - Resumo de KPIs e Tendências', fontSize: 9, color: MUTED, italics: true, margin: [0, 0, 0, 28] },
+    ];
+
+    const content: any[] = [...cover.filter(Boolean)];
+
+    // Executive summary
+    if (es) {
+      content.push(
+        { text: 'Resumo Executivo', style: 'sectionHeader', margin: [0, 0, 0, 10] },
+        {
+          columns: [
+            { stack: [{ text: `${es.totalTeams}`, fontSize: 20, bold: true, color: DARK }, { text: 'Equipes', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            es.periodDays > 0 ? { stack: [{ text: `${es.periodDays}`, fontSize: 20, bold: true, color: DARK }, { text: 'Dias analisados', fontSize: 7, color: MUTED }], alignment: 'center' as const } : {},
+            { stack: [{ text: `${es.kpiAlerts.length}`, fontSize: 20, bold: true, color: RED }, { text: 'KPIs em alerta', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+            { stack: [{ text: `${es.teamsBelowMetaCount}`, fontSize: 20, bold: true, color: RED }, { text: 'Equipes críticas', fontSize: 7, color: MUTED }], alignment: 'center' as const },
+          ],
+          columnGap: 12,
+          margin: [0, 0, 0, 16],
+        },
+      );
+      content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.8, lineColor: '#cbd5e1' }], margin: [0, 0, 0, 16] });
+    }
+
+    // Macro KPIs
+    report.kpis.forEach((kpi) => {
+      const dec = ['OS Dia', 'Eficiência', 'Utilização'].includes(kpi.kpi) ? 1 : 0;
+      const suffix = kpi.kpi === 'Eficiência' || kpi.kpi === 'Utilização' ? '%' : '';
+      const dirUp = kpi.direction === 'higher-is-better';
+      const isAbove = dirUp ? kpi.average >= kpi.metaTarget : kpi.average <= kpi.metaTarget;
+      
+      const kpiBlock: any[] = [
+        { text: kpi.kpi, style: 'sectionHeader', margin: [0, 10, 0, 4] },
+        {
+          columns: [
+            { text: dirUp ? '(+) Maior é melhor' : '(-) Menor é melhor', fontSize: 7.5, bold: true, color: dirUp ? GREEN : RED },
+            { text: `Meta: ${fmt(kpi.metaTarget, dec)}${suffix}   Média Global: ${fmt(kpi.average, dec)}${suffix}`, fontSize: 7.5, color: isAbove ? GREEN : RED, bold: true },
+          ],
+          margin: [0, 0, 0, 10],
+        },
+      ];
+
+      // Trend Line Chart (Mini Sparkline) using SVG approach for PDFMake
+      const cd = helpers.analyticChartData(kpi);
+      if (cd && cd.trendLines && cd.trendLines.length > 0) {
+        const w = 500;
+        const h = 40;
+        const minVal = Math.min(...cd.trendLines.flatMap((tl: any) => tl.points.map((p: any) => p.value)), kpi.metaTarget) * 0.9;
+        const maxVal = Math.max(...cd.trendLines.flatMap((tl: any) => tl.points.map((p: any) => p.value)), kpi.metaTarget) * 1.1;
+        
+        const toX = (di: number) => (cd.days.length > 1 ? (di / (cd.days.length - 1)) * w : w / 2);
+        const toY = (v: number) => h - ((v - minVal) / (maxVal - minVal)) * h;
+        const metaY = toY(kpi.metaTarget);
+
+        const canvasDraw: any[] = [
+          // Meta line
+          { type: 'line', x1: 0, y1: metaY, x2: w, y2: metaY, lineWidth: 1, lineColor: RED, dash: { length: 2, space: 2 } },
+        ];
+
+        // Draw each line
+        const legendItems: any[] = [];
+        cd.trendLines.forEach((tl: any) => {
+           const points = tl.points.map((pt: any) => {
+               const di = cd.days.findIndex((d: any) => d.label === pt.label);
+               return { x: toX(di >= 0 ? di : 0), y: toY(pt.value) };
+           });
+           
+           if (points.length > 0) {
+               canvasDraw.push({
+                   type: 'polyline',
+                   points: points,
+                   lineColor: tl.color,
+                   lineWidth: 2,
+               });
+               points.forEach((p: any) => {
+                   canvasDraw.push({ type: 'ellipse', x: p.x, y: p.y, r1: 2, r2: 2, color: tl.color });
+               });
+           }
+           
+           legendItems.push({
+               canvas: [{ type: 'rect', x: 0, y: 0, w: 6, h: 6, color: tl.color, lineWidth: 0, lineColor: tl.color }],
+               text: ` ${tl.base} ${tl.teamType !== 'All' ? '(' + tl.teamType + ')' : ''}`,
+               fontSize: 6,
+               color: GRAY,
+               margin: [0, 0, 8, 0]
+           });
+        });
+
+        kpiBlock.push({
+            stack: [
+                { text: 'Tendência Diária', fontSize: 7, color: GRAY, margin: [0, 0, 0, 4] },
+                { canvas: canvasDraw, margin: [0, 0, 0, 4] },
+                { columns: legendItems, margin: [0, 0, 0, 10] }
+            ]
+        });
+      } else if (kpi.dailyTrend && kpi.dailyTrend.length > 0) {
+        const trendPts = kpi.dailyTrend;
+        const minVal = Math.min(...trendPts.map(t => t.avgValue), kpi.metaTarget) * 0.9;
+        const maxVal = Math.max(...trendPts.map(t => t.avgValue), kpi.metaTarget) * 1.1;
+        const w = 500;
+        const h = 40;
+        
+        const toX = (i: number) => (trendPts.length > 1 ? (i / (trendPts.length - 1)) * w : w / 2);
+        const toY = (v: number) => h - ((v - minVal) / (maxVal - minVal)) * h;
+
+        const points = trendPts.map((t, i) => ({ x: toX(i), y: toY(t.avgValue) }));
+        const metaY = toY(kpi.metaTarget);
+
+        const canvasDraw: any[] = [
+          // Meta line
+          { type: 'line', x1: 0, y1: metaY, x2: w, y2: metaY, lineWidth: 1, lineColor: RED, dash: { length: 2, space: 2 } },
+        ];
+
+        // Area polygon
+        if (points.length > 1) {
+            canvasDraw.push({
+                type: 'polyline',
+                points: [...points, { x: w, y: h }, { x: 0, y: h }],
+                color: '#e0e7ff',
+                lineWidth: 0,
+            });
+        }
+        
+        // Line
+        canvasDraw.push({
+            type: 'polyline',
+            points: points,
+            lineColor: BLUE,
+            lineWidth: 2,
+        });
+
+        // Points
+        points.forEach(p => {
+           canvasDraw.push({ type: 'ellipse', x: p.x, y: p.y, r1: 2, r2: 2, color: BLUE });
+        });
+
+        kpiBlock.push({
+            stack: [
+                { text: 'Tendência Diária Global', fontSize: 7, color: GRAY, margin: [0, 0, 0, 4] },
+                { canvas: canvasDraw, margin: [0, 0, 0, 10] }
+            ]
+        });
+      }
+
+      // Top 3 / Bottom 3 columns
+      const top3 = kpi.topTeams.slice(0, 3);
+      const opp3 = kpi.opportunityTeams.slice(0, 3);
+
+      const renderTeamList = (teams: any[], isTop: boolean) => {
+        if (teams.length === 0) return [{ text: 'Nenhuma equipe nesta categoria.', fontSize: 7, color: MUTED, italics: true }];
+        return teams.map(t => ({
+          columns: [
+            { text: t.team, fontSize: 7, color: DARK, width: '*' },
+            { text: `${fmt(t.value, dec)}${suffix}`, fontSize: 7, bold: true, color: isTop ? GREEN : RED, alignment: 'right' as const, width: 30 }
+          ],
+          margin: [0, 2, 0, 2]
+        }));
+      };
+
+      kpiBlock.push({
+        columns: [
+            {
+                stack: [
+                    { text: '🏆 Top Melhores', fontSize: 8, bold: true, color: DARK, margin: [0, 0, 0, 4] },
+                    ...renderTeamList(top3, true)
+                ],
+                width: '48%',
+                margin: [0, 0, 10, 0]
+            },
+            {
+                stack: [
+                    { text: '⚠️ Maiores Oportunidades', fontSize: 8, bold: true, color: DARK, margin: [0, 0, 0, 4] },
+                    ...renderTeamList(opp3, false)
+                ],
+                width: '48%'
+            }
+        ],
+        margin: [0, 0, 0, 16]
+      });
+
+      content.push({ stack: kpiBlock, unbreakable: true });
+    });
+
+    content.push({ text: '', pageBreak: 'before' });
+
+    // Ranking Gerencial Table
+    if (report.teamScorecard && report.teamScorecard.length > 0) {
+        content.push({ text: 'Ranking Gerencial', style: 'sectionHeader', margin: [0, 0, 0, 10] });
+
+        const th = (text: string): any => ({ text, bold: true, fontSize: 7, color: GRAY, fillColor: BG, alignment: 'center' as const, margin: [2, 3, 2, 3] });
+        const td = (text: string, opts: any = {}): any => ({ text, fontSize: 7.5, margin: [2, 3, 2, 3], alignment: 'center' as const, ...opts });
+
+        const scoreRows = report.teamScorecard.map((t, index) => [
+            td(`${index + 1}º`),
+            td(t.team, { bold: true, alignment: 'left' as const }),
+            td(`${t.diasTrabalhados ?? '-'}`, { alignment: 'center' as const }),
+            td(fmt(t.score), { bold: true, color: BLUE, alignment: 'center' as const }),
+            td(`${t.kpisBelowMeta}`, { color: t.kpisBelowMeta > 0 ? RED : GREEN, alignment: 'center' as const }),
+            td(t.kpisBelowMeta >= 4 ? 'Crítico' : t.kpisBelowMeta >= 2 ? 'Atenção' : 'Excelente', {
+                bold: true,
+                color: t.kpisBelowMeta >= 4 ? RED : t.kpisBelowMeta >= 2 ? '#d97706' : GREEN,
+                alignment: 'center' as const
+            })
+        ]);
+
+        content.push({
+            table: {
+                headerRows: 1,
+                widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
+                body: [
+                    [th('Rank'), th('Equipe'), th('Dias'), th('Score'), th('KPIs < Meta'), th('Status')],
+                    ...scoreRows
+                ]
+            },
+            layout: 'lightHorizontalLines',
+        });
+    }
+
+    return {
+      info: { title: `${title}`, author: 'Scanner Analytics' },
       pageSize: 'A4',
       pageMargins: [30, 36, 30, 36] as [number, number, number, number],
       content,
