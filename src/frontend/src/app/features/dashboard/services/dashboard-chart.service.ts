@@ -415,7 +415,7 @@ export class DashboardChartService {
       above: boolean;
       displayValue: string;
       polyline: string;
-      points: Array<{ x: number; y: number; dayIndex: number; dayLabel: string; flagged: boolean; displayVal: string }>;
+      points: Array<{ x: number; y: number; cx?: number; cy?: number; dayIndex: number; dayLabel: string; flagged: boolean; displayVal: string }>;
       deviations: Array<{ dateRef: string; flags: string[]; detail: string }>;
     }>;
     days: Array<{ x: number; label: string }>;
@@ -426,7 +426,7 @@ export class DashboardChartService {
     chartRight: number;
     labelBaseY: number;
     viewBox: string;
-    trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> }>;
+    trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; cx?: number; cy?: number; label: string; value: number }>; averageValue: number }>;
     trendArea: string | null;
   } {
     const padLeft = 46, padRight = 52, padTop = 22, padBottom = 44;
@@ -639,6 +639,8 @@ export class DashboardChartService {
         return {
           x: Math.round(toX(di) * 10) / 10,
           y: pointY,
+          cx: undefined as number | undefined,
+          cy: undefined as number | undefined,
           dayIndex: di,
           dayLabel: day,
           flagged,
@@ -661,7 +663,7 @@ export class DashboardChartService {
     });
 
     // ── Build daily trend line (global average per day) ───────────────────────
-    const trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; label: string; value: number }> }> = [];
+    const trendLines: Array<{ base: string; teamType: string; color: string; isPartner: boolean; polyline: string; points: Array<{ x: number; y: number; cx?: number; cy?: number; label: string; value: number }>; averageValue: number }> = [];
     let trendArea: string | null = null;
 
     if (hasDailyTrend) {
@@ -720,6 +722,9 @@ export class DashboardChartService {
             };
           });
 
+          const validPts = pts.filter(p => p.value > 0);
+          const avgValue = validPts.length > 0 ? validPts.reduce((sum, p) => sum + p.value, 0) / validPts.length : 0;
+
           trendLines.push({
             base: tb.base,
             teamType: tb.teamType,
@@ -727,6 +732,7 @@ export class DashboardChartService {
             isPartner,
             polyline: pts.map((p) => `${p.x},${p.y}`).join(' '),
             points: pts,
+            averageValue: Math.round(avgValue * 10) / 10,
           });
         }
       }
@@ -739,6 +745,7 @@ export class DashboardChartService {
           isPartner: false,
           polyline: globalPolyline,
           points: trendPoints,
+          averageValue: kpi.average,
         });
       }
 
@@ -759,6 +766,54 @@ export class DashboardChartService {
       const v = minVal + ((maxVal - minVal) / 4) * i;
       return { y: Math.round(toY(v) * 10) / 10, label: fmt(Math.round(v * 10) / 10) };
     });
+
+    // ── Jittering para pontos sobrepostos ──
+    const jitterOffsets = [
+      { dx: 0, dy: -3 }, { dx: 3, dy: 0 }, { dx: 0, dy: 3 }, { dx: -3, dy: 0 },
+      { dx: 2, dy: -2 }, { dx: 2, dy: 2 }, { dx: -2, dy: 2 }, { dx: -2, dy: -2 }
+    ];
+
+    const dayPointsMap = new Map<string, Array<{ x: number; y: number; cx?: number; cy?: number }>>();
+    for (const tl of trendLines) {
+      for (const pt of tl.points) {
+        pt.cx = pt.x;
+        pt.cy = pt.y;
+        if (!dayPointsMap.has(pt.label)) dayPointsMap.set(pt.label, []);
+        dayPointsMap.get(pt.label)!.push(pt);
+      }
+    }
+    for (const l of lines) {
+      for (const pt of l.points) {
+        pt.cx = pt.x;
+        pt.cy = pt.y;
+        if (!dayPointsMap.has(pt.dayLabel)) dayPointsMap.set(pt.dayLabel, []);
+        dayPointsMap.get(pt.dayLabel)!.push(pt);
+      }
+    }
+
+    for (const pts of dayPointsMap.values()) {
+      const groups: Array<Array<{ x: number; y: number; cx?: number; cy?: number }>> = [];
+      for (const pt of pts) {
+        let added = false;
+        for (const g of groups) {
+          if (Math.abs(g[0].y - pt.y) < 2) {
+            g.push(pt);
+            added = true;
+            break;
+          }
+        }
+        if (!added) groups.push([pt]);
+      }
+      for (const g of groups) {
+        if (g.length > 1) {
+          g.forEach((pt, i) => {
+             const offset = jitterOffsets[i % jitterOffsets.length];
+             pt.cx = pt.x + offset.dx;
+             pt.cy = pt.y + offset.dy;
+          });
+        }
+      }
+    }
 
     return { lines, days, metaY, avgY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}`, trendLines, trendArea };
   }

@@ -1406,21 +1406,32 @@ type SavedFilterState = {
 
                         <!-- Linhas de Tendência por Base -->
                         <ng-container *ngFor="let tl of cd.trendLines">
-                          <polyline [attr.points]="tl.polyline" class="ac-trend-line" [attr.stroke]="tl.color" />
-                          <ng-container *ngFor="let pt of tl.points">
-                            <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="6" fill="transparent" stroke="transparent" class="ac-pt-hit" />
-                            <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="1.5" class="ac-trend-dot" [attr.fill]="tl.color">
-                              <title>{{ tl.base }} ({{ tl.teamType }}) dia {{ pt.label }}: {{ pt.value | number:'1.0-1' }}</title>
-                            </circle>
+                          <ng-container>
+                            <polyline [attr.points]="tl.polyline" class="ac-trend-line" [attr.stroke]="tl.color"
+                                      [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
+                                      [style.transition]="'opacity 0.2s'" />
+                            <ng-container *ngFor="let pt of tl.points">
+                              <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="6" fill="transparent" stroke="transparent" class="ac-pt-hit" />
+                              <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="2.5" class="ac-trend-dot" [attr.fill]="tl.color"
+                                      [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
+                                      [style.transition]="'opacity 0.2s'">
+                                <title>{{ tl.base }} ({{ tl.teamType }}) dia {{ pt.label }}: {{ pt.value | number:'1.0-1' }}</title>
+                              </circle>
+                            </ng-container>
                           </ng-container>
                         </ng-container>
 
                         <text *ngIf="!cd.trendArea" [attr.x]="(cd.padLeft + cd.chartRight) / 2" [attr.y]="(cd.metaY + cd.avgY) / 2" text-anchor="middle" class="ac-no-data-text" fill="#94a3b8" font-size="12px">Sem dados de tendência diária disponíveis</text>
                       </svg>
                       <div class="ac-trend-legend" *ngIf="cd.trendLines.length > 0">
-                        <div class="ac-legend-item" *ngFor="let tl of cd.trendLines">
-                          <span class="ac-legend-color" [style.background]="tl.color"></span>
-                          <span class="ac-legend-label">{{ tl.base }} {{ tl.teamType !== 'All' ? '(' + tl.teamType + ')' : '' }}</span>
+                        <div class="ac-legend-item" *ngFor="let tl of cd.trendLines"
+                             [class.ac-legend-item--hidden]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType)"
+                             (click)="toggleTrendLine(tl.base, tl.teamType)"
+                             style="cursor: pointer; transition: opacity 0.2s;">
+                          <span class="ac-legend-color" [style.background]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? '#ccc' : tl.color"></span>
+                          <span class="ac-legend-label" [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? '0.5' : '1'">
+                            {{ tl.base }} {{ tl.teamType !== 'All' ? '(' + tl.teamType + ')' : '' }} - <b>{{ tl.averageValue | number:'1.0-1' }}</b>
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1432,11 +1443,11 @@ type SavedFilterState = {
                           <span class="ac-macro-card-title">🏆 Top Melhores</span>
                         </div>
                         <div class="ac-macro-list">
-                          <div class="ac-macro-item" *ngFor="let t of kpi.topTeams | slice:0:3">
+                          <div class="ac-macro-item" *ngFor="let t of getFilteredDestaques(kpi, cd).top | slice:0:3">
                             <span class="ac-macro-team">{{ t.team }}</span>
                             <span class="ac-macro-val ac-macro-val--good">{{ t.value | number:'1.0-1' }}</span>
                           </div>
-                          <div class="ac-macro-empty" *ngIf="kpi.topTeams.length === 0">Nenhuma equipe acima da meta.</div>
+                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).top.length === 0">Nenhuma equipe acima da meta.</div>
                         </div>
                       </div>
 
@@ -1445,11 +1456,11 @@ type SavedFilterState = {
                           <span class="ac-macro-card-title">⚠️ Maiores Oportunidades</span>
                         </div>
                         <div class="ac-macro-list">
-                          <div class="ac-macro-item" *ngFor="let t of kpi.opportunityTeams | slice:0:3">
+                          <div class="ac-macro-item" *ngFor="let t of getFilteredDestaques(kpi, cd).bottom | slice:0:3">
                             <span class="ac-macro-team">{{ t.team }}</span>
                             <span class="ac-macro-val ac-macro-val--bad">{{ t.value | number:'1.0-1' }}</span>
                           </div>
-                          <div class="ac-macro-empty" *ngIf="kpi.opportunityTeams.length === 0">Nenhuma equipe abaixo da meta.</div>
+                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).bottom.length === 0">Nenhuma equipe abaixo da meta.</div>
                         </div>
                       </div>
                     </div>
@@ -4859,6 +4870,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly generatingReport = computed(() => this.progressMessage().toLowerCase().startsWith('gerando relat'));
   protected readonly errorMessage = signal('');
   protected readonly filterDrawerOpen = signal(false);
+  protected readonly selectedTrendLine = signal<string | null>(null);
+
+  toggleTrendLine(base: string, teamType: string) {
+    const id = `${base}|${teamType}`;
+    if (this.selectedTrendLine() === id) {
+      this.selectedTrendLine.set(null);
+    } else {
+      this.selectedTrendLine.set(id);
+    }
+  }
   protected readonly exportModalOpen = signal(false);
   protected readonly exportModalStep = signal<'mode' | 'bases'>('mode');
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
@@ -5826,6 +5847,71 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected getDayDeviationTotal(dayFlags: Array<{ totalMin: number }>): number {
     return this.chartService.getDayDeviationTotal(dayFlags);
+  }
+
+  public parseTeamBase(teamName: string): { base: string; teamType: 'propria' | 'parceira' | null } | null {
+    const config = this.basesConfig;
+    if (!config) return null;
+    const upper = teamName.toUpperCase();
+    for (const polo of config.polos) {
+      if (polo.matchType === 'direct_prefix') {
+        for (const base of polo.bases) {
+          if (base.propria?.some((p: string) => upper.startsWith(p.toUpperCase()))) return { base: base.name, teamType: 'propria' };
+          if (base.parceira?.some((p: string) => upper.startsWith(p.toUpperCase()))) return { base: base.name, teamType: 'parceira' };
+        }
+      } else if (polo.matchType === 'infix_type_with_base_prefix') {
+        for (const base of polo.bases) {
+          if (base.prefixes?.some((p: string) => upper.startsWith(p.toUpperCase()))) {
+            let tType: 'propria' | 'parceira' | null = null;
+            if (polo.typeIdentifiers?.propria.some((inf: string) => upper.includes(inf.toUpperCase()))) tType = 'propria';
+            else if (polo.typeIdentifiers?.parceira.some((inf: string) => upper.includes(inf.toUpperCase()))) tType = 'parceira';
+            return { base: base.name, teamType: tType };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[] } {
+    if (!cd || !cd.trendLines || cd.trendLines.length === 0) {
+      return { top: kpi.topTeams, bottom: kpi.opportunityTeams };
+    }
+
+    const selected = this.selectedTrendLine();
+    if (!selected) {
+      // If nothing is selected, show default global Destaques
+      return { top: kpi.topTeams, bottom: kpi.opportunityTeams };
+    }
+
+    const activeCombos = new Set<string>();
+    for (const tl of cd.trendLines) {
+      if (`${tl.base}|${tl.teamType}` === selected) {
+         const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
+         activeCombos.add(`${tl.base}|${normType}`);
+      }
+    }
+
+    const filteredScores = (kpi.scores || []).filter((s: any) => {
+       const info = this.parseTeamBase(s.team);
+       if (!info) return false;
+       if (activeCombos.has(`${info.base}|All`)) return true;
+       if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
+       if (activeCombos.has(`Média Global|All`)) return true;
+       return activeCombos.has(`${info.base}|${info.teamType}`);
+    });
+
+    const direction = kpi.direction || 'higher-is-better';
+    filteredScores.sort((a: any, b: any) => direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue);
+
+    const opportunityPool = filteredScores.filter((s: any) => 
+      direction === 'higher-is-better' ? s.rawValue < kpi.metaTarget : s.rawValue > kpi.metaTarget
+    );
+
+    return {
+      top: filteredScores.slice(0, 3).map((s: any) => ({ team: s.team, value: s.rawValue })),
+      bottom: opportunityPool.slice(-3).reverse().map((s: any) => ({ team: s.team, value: s.rawValue }))
+    };
   }
 
   protected analyticChartData(kpi: GeneratedReport['kpis'][number]) {
