@@ -815,6 +815,11 @@ export class DashboardChartService {
       }
     }
 
+    // Recompute polyline to pass through the center of jittered points
+    for (const tl of trendLines) {
+      tl.polyline = tl.points.map((p) => `${p.cx ?? p.x},${p.cy ?? p.y}`).join(' ');
+    }
+
     return { lines, days, metaY, avgY, yTicks, padLeft, chartRight, labelBaseY, viewBox: `0 0 ${svgW} ${svgH}`, trendLines, trendArea };
   }
 }
