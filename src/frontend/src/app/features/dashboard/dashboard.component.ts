@@ -94,7 +94,9 @@ type SavedFilterState = {
   filters: Record<FilterKey, string[]>;
   dayRange: { min: number; max: number };
   reportType: ReportTypeValue;
-  reportFilters?: Record<ReportFilterKey, string[]>;
+  analiticoFilters?: Record<ReportFilterKey, string[]>;
+  operacionalFilters?: Record<ReportFilterKey, string[]>;
+  reportFilters?: Record<ReportFilterKey, string[]>; // fallback
   savedAt?: string;
 };
 
@@ -1406,18 +1408,22 @@ type SavedFilterState = {
 
                         <!-- Linhas de Tendência por Base -->
                         <ng-container *ngFor="let tl of cd.trendLines">
-                          <ng-container>
-                            <polyline [attr.points]="tl.polyline" class="ac-trend-line" [attr.stroke]="tl.color"
-                                      [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
-                                      [style.transition]="'opacity 0.2s'" />
-                            <ng-container *ngFor="let pt of tl.points">
-                              <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="6" fill="transparent" stroke="transparent" class="ac-pt-hit" />
-                              <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="2.5" class="ac-trend-dot" [attr.fill]="tl.color"
-                                      [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
-                                      [style.transition]="'opacity 0.2s'">
-                                <title>{{ tl.base }} ({{ tl.teamType }}) dia {{ pt.label }}: {{ pt.value | number:'1.0-1' }}</title>
-                              </circle>
-                            </ng-container>
+                          <polyline class="ac-trend-line" [attr.points]="tl.polyline" fill="none" [attr.stroke]="tl.color" stroke-width="2.5"
+                                [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
+                                [style.transition]="'opacity 0.2s'"
+                                style="cursor:pointer"
+                                (click)="toggleKpiDay(kpi.kpi, null, tl.base, tl.teamType)" />
+                          <ng-container *ngFor="let pt of tl.points">
+                            <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="6" fill="transparent" stroke="transparent" class="ac-pt-hit"
+                                    style="cursor:pointer"
+                                    (click)="toggleKpiDay(kpi.kpi, pt.label, tl.base, tl.teamType)" />
+                            <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="2.5" class="ac-trend-dot" [attr.fill]="tl.color"
+                                    [style.opacity]="selectedTrendLine() && selectedTrendLine() !== (tl.base + '|' + tl.teamType) ? 0.1 : 1"
+                                    [style.stroke]="selectedDayPerKpi()[kpi.kpi] === pt.label ? 'var(--text)' : 'none'"
+                                    [style.stroke-width]="selectedDayPerKpi()[kpi.kpi] === pt.label ? '2px' : '0'"
+                                    [style.transition]="'all 0.2s'">
+                              <title>{{ tl.base }} ({{ tl.teamType }}) dia {{ pt.label }}: {{ pt.value | number:'1.0-1' }}</title>
+                            </circle>
                           </ng-container>
                         </ng-container>
 
@@ -1440,27 +1446,47 @@ type SavedFilterState = {
                     <div class="ac-macro-highlights">
                       <div class="ac-macro-card">
                         <div class="ac-macro-card-head">
-                          <span class="ac-macro-card-title">🏆 Top Melhores</span>
+                          <span class="ac-macro-card-title">🏆 Top Melhores {{ getFilteredDestaques(kpi, cd).selectedDay ? '(' + getFilteredDestaques(kpi, cd).selectedDay + ')' : '' }}</span>
                         </div>
                         <div class="ac-macro-list">
-                          <div class="ac-macro-item" *ngFor="let t of getFilteredDestaques(kpi, cd).top | slice:0:3">
-                            <span class="ac-macro-team">{{ t.team }}</span>
-                            <span class="ac-macro-val ac-macro-val--good">{{ t.value | number:'1.0-1' }}</span>
+                          <div class="ac-macro-item-wrap" *ngFor="let t of getFilteredDestaques(kpi, cd).top | slice:0:3">
+                            <div class="ac-macro-item" style="cursor:pointer" (click)="toggleTeamDetails(t.team, kpi)">
+                              <span class="ac-macro-team">{{ t.team }}</span>
+                              <span class="ac-macro-val ac-macro-val--good">{{ t.value | number:'1.0-1' }}</span>
+                            </div>
+                            <div class="ac-macro-item-details" *ngIf="expandedTeamDetails()?.team === t.team && expandedTeamDetails()?.kpi === kpi.kpi">
+                              <p class="ac-macro-details-hint">Clique na data para abrir o Operacional</p>
+                              <div class="team-details-day-item" *ngFor="let item of getTeamDailyDetails(expandedTeamDetails())" (click)="redirectFromExpandedToOperacional(item.date)">
+                                <span class="team-details-day-label">{{ item.date }}</span>
+                                <span class="team-details-day-val">{{ item.value | number:'1.0-1' }}</span>
+                              </div>
+                              <div class="ac-macro-empty" *ngIf="getTeamDailyDetails(expandedTeamDetails()).length === 0">Sem dados diários.</div>
+                            </div>
                           </div>
-                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).top.length === 0">Nenhuma equipe acima da meta.</div>
+                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).top.length === 0">Nenhuma equipe encontrada.</div>
                         </div>
                       </div>
 
                       <div class="ac-macro-card">
                         <div class="ac-macro-card-head">
-                          <span class="ac-macro-card-title">⚠️ Maiores Oportunidades</span>
+                          <span class="ac-macro-card-title">⚠️ Maiores Oportunidades {{ getFilteredDestaques(kpi, cd).selectedDay ? '(' + getFilteredDestaques(kpi, cd).selectedDay + ')' : '' }}</span>
                         </div>
                         <div class="ac-macro-list">
-                          <div class="ac-macro-item" *ngFor="let t of getFilteredDestaques(kpi, cd).bottom | slice:0:3">
-                            <span class="ac-macro-team">{{ t.team }}</span>
-                            <span class="ac-macro-val ac-macro-val--bad">{{ t.value | number:'1.0-1' }}</span>
+                          <div class="ac-macro-item-wrap" *ngFor="let t of getFilteredDestaques(kpi, cd).bottom | slice:0:3">
+                            <div class="ac-macro-item" style="cursor:pointer" (click)="toggleTeamDetails(t.team, kpi)">
+                              <span class="ac-macro-team">{{ t.team }}</span>
+                              <span class="ac-macro-val ac-macro-val--bad">{{ t.value | number:'1.0-1' }}</span>
+                            </div>
+                            <div class="ac-macro-item-details" *ngIf="expandedTeamDetails()?.team === t.team && expandedTeamDetails()?.kpi === kpi.kpi">
+                              <p class="ac-macro-details-hint">Clique na data para abrir o Operacional</p>
+                              <div class="team-details-day-item" *ngFor="let item of getTeamDailyDetails(expandedTeamDetails())" (click)="redirectFromExpandedToOperacional(item.date)">
+                                <span class="team-details-day-label">{{ item.date }}</span>
+                                <span class="team-details-day-val">{{ item.value | number:'1.0-1' }}</span>
+                              </div>
+                              <div class="ac-macro-empty" *ngIf="getTeamDailyDetails(expandedTeamDetails()).length === 0">Sem dados diários.</div>
+                            </div>
                           </div>
-                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).bottom.length === 0">Nenhuma equipe abaixo da meta.</div>
+                          <div class="ac-macro-empty" *ngIf="getFilteredDestaques(kpi, cd).bottom.length === 0">Nenhuma equipe encontrada.</div>
                         </div>
                       </div>
                     </div>
@@ -2863,6 +2889,74 @@ type SavedFilterState = {
         color: #b91c1c;
       }
 
+      .report-loading-title {
+        color: var(--text);
+        font-weight: 500;
+        font-size: 14px;
+        margin-top: 12px;
+      }
+
+      .ac-macro-item-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .ac-macro-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+
+      .ac-macro-item-details {
+        padding: 6px 10px 10px 10px;
+        background: var(--surface);
+        border-top: 1px dashed var(--border);
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .ac-macro-details-hint {
+        font-size: 10px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+
+      .team-details-day-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 8px;
+        margin-bottom: 4px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 11px;
+      }
+
+      .team-details-day-item:hover {
+        border-color: var(--primary);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      }
+
+      .team-details-day-label {
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .team-details-day-val {
+        font-weight: 600;
+        color: var(--accent);
+      }
+
       .exec-top-issues {
         display: flex;
         flex-wrap: wrap;
@@ -4210,16 +4304,7 @@ type SavedFilterState = {
         gap: 6px;
       }
 
-      .ac-macro-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: var(--bg);
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 11px;
-        border: 1px solid var(--border);
-      }
+
 
       .ac-macro-team {
         font-weight: 600;
@@ -4898,7 +4983,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly exportError = signal('');
   /** Arquivos prontos aguardando gesto do usuário para navigator.share. */
   protected readonly pendingShareFiles = signal<File[] | null>(null);
-  /** Qual modo tem arquivos prontos para compartilhar (para saber qual botão realçar). */
+  protected readonly selectedDayPerKpi = signal<Record<string, string | null>>({});
+  protected readonly expandedTeamDetails = signal<{ team: string; kpi: string; perTeamDailyData?: any } | null>(null);
+  protected readonly kpiStates = signal<Record<string, { expanded: boolean }>>({});
   protected readonly pendingShareMode = signal<'current' | 'proprias' | 'parceiras' | null>(null);
   /** Modo cujo botão Compartilhar está carregando no momento. */
   protected readonly shareModeLoading = signal<'current' | 'proprias' | 'parceiras' | null>(null);
@@ -4913,7 +5000,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
   protected readonly reportType = signal<ReportTypeValue>('operacional');
   protected readonly selectFilters = signal<SelectFilterState[]>([]);
-  protected readonly reportFilterStates = signal<ReportSelectFilterState[]>([]);
+  protected readonly analiticoFilters = signal<ReportSelectFilterState[]>([]);
+  protected readonly operacionalFilters = signal<ReportSelectFilterState[]>([]);
+  protected readonly reportFilterStates = computed(() => this.reportType() === 'analitico' ? this.analiticoFilters() : this.operacionalFilters());
+
+  protected setReportFilterStates(newState: ReportSelectFilterState[], mode?: ReportTypeValue): void {
+    const targetMode = mode ?? this.reportType();
+    if (targetMode === 'analitico') {
+      this.analiticoFilters.set(newState);
+    } else {
+      this.operacionalFilters.set(newState);
+    }
+  }
   protected readonly openDropdownKey = signal<string | null>(null);
   protected readonly dropdownSearch = signal('');
   protected readonly dayRange = signal({ min: 1, max: 31 });
@@ -5143,14 +5241,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       this.reportBaseOptions = options;
       this.reportBasePrefixMap = prefixMap;
       
-      const currentFilters = this.reportFilterStates();
-      const baseFilter = currentFilters.find(f => f.key === 'reportBase');
-      if (baseFilter) {
-        baseFilter.options = this.reportType() === 'analitico'
-          ? this.withAllOption(['Média Global', ...options])
-          : this.withAllOption(options);
-      }
-      this.reportFilterStates.set(this.cascadeReportFilters(currentFilters));
+      const updateFilters = (filters: ReportSelectFilterState[], mode: ReportTypeValue) => {
+        const baseFilter = filters.find(f => f.key === 'reportBase');
+        if (baseFilter) {
+          baseFilter.options = mode === 'analitico'
+            ? this.withAllOption(['Média Global', ...options])
+            : this.withAllOption(options);
+        }
+        return this.cascadeReportFilters(filters, mode);
+      };
+
+      this.analiticoFilters.set(updateFilters(this.analiticoFilters(), 'analitico'));
+      this.operacionalFilters.set(updateFilters(this.operacionalFilters(), 'operacional'));
     });
 
     const saved = this.loadFromStorage();
@@ -5160,15 +5262,34 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.selectFilters.set(builtFilters);
 
     // Restore report filters (Base, Tipo Equipe, Equipe) from storage
-    const baseReportFilters = this.buildReportFilterStates();
-    if (saved?.reportFilters) {
-      const restored = baseReportFilters.map((f) => {
+    const baseAnaliticoFilters = this.buildReportFilterStates('analitico');
+    const baseOperacionalFilters = this.buildReportFilterStates('operacional');
+
+    if (saved?.analiticoFilters && saved?.operacionalFilters) {
+      const restoredA = baseAnaliticoFilters.map((f) => {
+        const savedVal = saved.analiticoFilters![f.key];
+        return savedVal ? { ...f, value: savedVal } : f;
+      });
+      const restoredO = baseOperacionalFilters.map((f) => {
+        const savedVal = saved.operacionalFilters![f.key];
+        return savedVal ? { ...f, value: savedVal } : f;
+      });
+      this.analiticoFilters.set(this.cascadeReportFilters(restoredA, 'analitico'));
+      this.operacionalFilters.set(this.cascadeReportFilters(restoredO, 'operacional'));
+    } else if (saved?.reportFilters) {
+      const restoredA = baseAnaliticoFilters.map((f) => {
         const savedVal = saved.reportFilters![f.key];
         return savedVal ? { ...f, value: savedVal } : f;
       });
-      this.reportFilterStates.set(this.cascadeReportFilters(restored));
+      const restoredO = baseOperacionalFilters.map((f) => {
+        const savedVal = saved.reportFilters![f.key];
+        return savedVal ? { ...f, value: savedVal } : f;
+      });
+      this.analiticoFilters.set(this.cascadeReportFilters(restoredA, 'analitico'));
+      this.operacionalFilters.set(this.cascadeReportFilters(restoredO, 'operacional'));
     } else {
-      this.reportFilterStates.set(baseReportFilters);
+      this.analiticoFilters.set(baseAnaliticoFilters);
+      this.operacionalFilters.set(baseOperacionalFilters);
     }
 
     if (saved) {
@@ -5654,7 +5775,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     
     // Update report filters to reflect changes in available options for 'analitico' mode
     // and re-evaluate valid combinations via cascadeReportFilters
-    this.reportFilterStates.set(this.cascadeReportFilters(this.reportFilterStates()));
+    this.setReportFilterStates(this.cascadeReportFilters(this.reportFilterStates(), this.reportType()), this.reportType());
 
     this.saveToStorage();
     // Re-observe newly rendered anim-el elements after Angular renders the switched mode.
@@ -5885,33 +6006,113 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return null;
   }
 
-  protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[] } {
+  protected toggleKpiDay(kpiId: string, day: string | null, base?: string, teamType?: string): void {
+    const current = { ...this.selectedDayPerKpi() };
+    if (day === null) {
+       current[kpiId] = null;
+       if (base && teamType) {
+         if (this.selectedTrendLine() !== `${base}|${teamType}`) {
+           this.selectedTrendLine.set(`${base}|${teamType}`);
+         } else {
+           this.selectedTrendLine.set(null);
+         }
+       }
+    } else {
+       if (current[kpiId] === day && this.selectedTrendLine() === `${base}|${teamType}`) {
+         current[kpiId] = null;
+         this.selectedTrendLine.set(null);
+       } else {
+         current[kpiId] = day;
+         if (base && teamType) {
+           this.selectedTrendLine.set(`${base}|${teamType}`);
+         }
+       }
+    }
+    this.selectedDayPerKpi.set(current);
+  }
+
+  protected redirectFromExpandedToOperacional(dateLabel: string): void {
+    const data = this.expandedTeamDetails();
+    if (!data) return;
+
+    this.expandedTeamDetails.set(null);
+
+    const fullDate = this.availableDates.find(d => d.startsWith(dateLabel)) || dateLabel;
+
+    const currentOpFilters = this.operacionalFilters();
+    const updatedOpFilters = currentOpFilters.map(filter => {
+       if (filter.key === 'reportDataRef') return { ...filter, value: [fullDate] };
+       if (filter.key === 'reportEquipe') return { ...filter, value: [data.team] };
+       return filter;
+    });
+
+    this.operacionalFilters.set(this.cascadeReportFilters(updatedOpFilters, 'operacional'));
+    this.updateReportType('operacional');
+    this.scheduleInstantReportRefresh();
+
+    setTimeout(() => {
+       const kpiEl = document.getElementById(`kpi-${data.kpi}`);
+       if (kpiEl) kpiEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+  }
+
+  protected toggleTeamDetails(team: string, kpi: any): void {
+    const current = this.expandedTeamDetails();
+    if (current && current.team === team && current.kpi === kpi.kpi) {
+       this.expandedTeamDetails.set(null);
+    } else {
+       this.expandedTeamDetails.set({ team, kpi: kpi.kpi, perTeamDailyData: kpi.perTeamDailyData });
+    }
+  }
+
+  protected getTeamDailyDetails(data: any): Array<{ date: string; value: number }> {
+    if (!data || !data.perTeamDailyData) return [];
+    const teamData = data.perTeamDailyData.find((t: any) => t.team === data.team);
+    if (!teamData || !teamData.dailyPoints) return [];
+    return teamData.dailyPoints.filter((p: any) => p.value !== undefined).map((p: any) => ({ date: p.date, value: p.value }));
+  }
+
+  protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[]; selectedDay: string | null } {
+    const selectedDay = this.selectedDayPerKpi()[kpi.kpi] || null;
+
     if (!cd || !cd.trendLines || cd.trendLines.length === 0) {
-      return { top: kpi.topTeams, bottom: kpi.opportunityTeams };
+      return { top: kpi.topTeams, bottom: kpi.opportunityTeams, selectedDay };
     }
 
     const selected = this.selectedTrendLine();
-    if (!selected) {
-      // If nothing is selected, show default global Destaques
-      return { top: kpi.topTeams, bottom: kpi.opportunityTeams };
-    }
 
     const activeCombos = new Set<string>();
-    for (const tl of cd.trendLines) {
-      if (`${tl.base}|${tl.teamType}` === selected) {
-         const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
-         activeCombos.add(`${tl.base}|${normType}`);
+    if (selected) {
+      for (const tl of cd.trendLines) {
+        if (`${tl.base}|${tl.teamType}` === selected) {
+           const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
+           activeCombos.add(`${tl.base}|${normType}`);
+        }
       }
     }
 
-    const filteredScores = (kpi.scores || []).filter((s: any) => {
-       const info = this.parseTeamBase(s.team);
+    const filterTeamByCombo = (teamName: string) => {
+       if (!selected) return true;
+       const info = this.parseTeamBase(teamName);
        if (!info) return false;
        if (activeCombos.has(`${info.base}|All`)) return true;
        if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
        if (activeCombos.has(`Média Global|All`)) return true;
        return activeCombos.has(`${info.base}|${info.teamType}`);
-    });
+    };
+
+    let filteredScores: any[] = [];
+    if (selectedDay && kpi.perTeamDailyData) {
+       for (const t of kpi.perTeamDailyData) {
+          if (!filterTeamByCombo(t.team)) continue;
+          const pt = t.dailyPoints.find((p: any) => p.date === selectedDay);
+          if (pt && pt.value !== undefined) {
+             filteredScores.push({ team: t.team, rawValue: pt.value });
+          }
+       }
+    } else {
+       filteredScores = (kpi.scores || []).filter((s: any) => filterTeamByCombo(s.team));
+    }
 
     const direction = kpi.direction || 'higher-is-better';
     filteredScores.sort((a: any, b: any) => direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue);
@@ -5922,7 +6123,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     return {
       top: filteredScores.slice(0, 3).map((s: any) => ({ team: s.team, value: s.rawValue })),
-      bottom: opportunityPool.slice(-3).reverse().map((s: any) => ({ team: s.team, value: s.rawValue }))
+      bottom: opportunityPool.slice(-3).reverse().map((s: any) => ({ team: s.team, value: s.rawValue })),
+      selectedDay
     };
   }
 
@@ -6272,7 +6474,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         : [...current, option];
       return { ...filter, value: next.length > 0 ? next : [ALL_OPTION] };
     });
-    this.reportFilterStates.set(this.cascadeReportFilters(updated));
+    this.setReportFilterStates(this.cascadeReportFilters(updated, this.reportType()), this.reportType());
     this.scheduleInstantReportRefresh();
   }
 
@@ -6721,7 +6923,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     ];
   }
 
-  private buildReportFilterStates(): ReportSelectFilterState[] {
+  private buildReportFilterStates(mode: ReportTypeValue): ReportSelectFilterState[] {
     return [
       {
         key: 'reportDataRef',
@@ -6734,7 +6936,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         key: 'reportBase',
         title: 'Base (Relatório)',
         value: [ALL_OPTION],
-        options: this.reportType() === 'analitico' 
+        options: mode === 'analitico' 
            ? this.withAllOption(['Média Global', ...this.reportBaseOptions]) 
            : this.withAllOption(this.reportBaseOptions),
         enabled: true,
@@ -6800,7 +7002,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     };
   }
 
-  private cascadeReportFilters(filters: ReportSelectFilterState[]): ReportSelectFilterState[] {
+  private cascadeReportFilters(filters: ReportSelectFilterState[], mode: ReportTypeValue): ReportSelectFilterState[] {
     const dataF = filters.find((f) => f.key === 'reportDataRef');
     const baseF = filters.find((f) => f.key === 'reportBase');
     const tipoF = filters.find((f) => f.key === 'reportTipoEquipe');
@@ -6903,7 +7105,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         };
       }
       if (f.key === 'reportBase') {
-        if (this.reportType() === 'analitico') {
+        if (mode === 'analitico') {
           if (!filteredBases.includes('Média Global')) {
              filteredBases.unshift('Média Global');
           }
@@ -6916,7 +7118,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         };
       }
       if (f.key === 'reportTipoEquipe') {
-        if (this.reportType() === 'analitico') {
+        if (mode === 'analitico') {
           if (!filteredTypes.includes('Contrastar')) {
              filteredTypes.unshift('Contrastar');
           }
@@ -6938,7 +7140,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         this.availableTeams = result.teams;
         this.updateAvailableBasesForExport();
         const current = this.reportFilterStates();
-        this.reportFilterStates.set(this.cascadeReportFilters(current));
+        this.setReportFilterStates(this.cascadeReportFilters(this.reportFilterStates(), this.reportType()), this.reportType());
       },
     });
   }
@@ -7014,15 +7216,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.availableDates = report.availableDates || [];
     this.reportData.set(report);
 
-    const currentFilters = this.reportFilterStates();
-    const dataFilter = currentFilters.find(f => f.key === 'reportDataRef');
-    if (dataFilter) {
-      dataFilter.options = this.withAllOption(this.availableDates);
-      // clean up selected dates if they are no longer available
-      dataFilter.value = dataFilter.value.filter(v => v === ALL_OPTION || this.availableDates.includes(v));
-      if (dataFilter.value.length === 0) dataFilter.value = [ALL_OPTION];
-    }
-    this.reportFilterStates.set(this.cascadeReportFilters(currentFilters));
+    const updateFilters = (filters: ReportSelectFilterState[], mode: ReportTypeValue) => {
+      const updated = filters.map(f => {
+        if (f.key === 'reportDataRef') {
+          const validOptions = this.withAllOption(this.availableDates);
+          let validValues = f.value.filter(v => v === ALL_OPTION || this.availableDates.includes(v));
+          if (validValues.length === 0) validValues = [ALL_OPTION];
+          return { ...f, options: validOptions, value: validValues };
+        }
+        return f;
+      });
+      return this.cascadeReportFilters(updated, mode);
+    };
+
+    this.analiticoFilters.set(updateFilters(this.analiticoFilters(), 'analitico'));
+    this.operacionalFilters.set(updateFilters(this.operacionalFilters(), 'operacional'));
   }
   private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
@@ -7229,20 +7437,26 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     for (const f of this.selectFilters()) {
       filters[f.key] = f.value;
     }
-    const reportFilters = {} as Record<ReportFilterKey, string[]>;
-    for (const f of this.reportFilterStates()) {
-      reportFilters[f.key] = f.value;
+    const analiticoFiltersMap = {} as Record<ReportFilterKey, string[]>;
+    for (const f of this.analiticoFilters()) {
+      analiticoFiltersMap[f.key] = f.value;
     }
+    const operacionalFiltersMap = {} as Record<ReportFilterKey, string[]>;
+    for (const f of this.operacionalFilters()) {
+      operacionalFiltersMap[f.key] = f.value;
+    }
+
     const state: SavedFilterState = {
       filters,
       dayRange: this.resolvedDayRange(),
       reportType: this.reportType(),
-      reportFilters,
+      analiticoFilters: analiticoFiltersMap,
+      operacionalFilters: operacionalFiltersMap,
       savedAt: new Date().toISOString().slice(0, 10),
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch { /* quota exceeded – silent */ }
+    } catch { /* quota exceeded - silent */ }
   }
 
   private loadFromStorage(): SavedFilterState | null {
