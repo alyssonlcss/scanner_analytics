@@ -5003,6 +5003,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly analiticoFilters = signal<ReportSelectFilterState[]>([]);
   protected readonly operacionalFilters = signal<ReportSelectFilterState[]>([]);
   protected readonly reportFilterStates = computed(() => this.reportType() === 'analitico' ? this.analiticoFilters() : this.operacionalFilters());
+  protected readonly pendingScrollToKpi = signal<string | null>(null);
 
   protected setReportFilterStates(newState: ReportSelectFilterState[], mode?: ReportTypeValue): void {
     const targetMode = mode ?? this.reportType();
@@ -5348,6 +5349,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     setTimeout(() => {
       document.querySelectorAll('.anim-el').forEach((el) => this.scrollObserver?.observe(el));
     }, 60);
+  }
+
+  private executePendingScroll(): void {
+    const kpi = this.pendingScrollToKpi();
+    if (kpi) {
+      setTimeout(() => {
+        const kpiEl = document.getElementById(`kpi-${kpi}`);
+        if (kpiEl) {
+          kpiEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          this.pendingScrollToKpi.set(null);
+        }
+      }, 150);
+    }
   }
 
   protected barWidthPct(value: number, kpiName: string, kpi?: { chartConfig?: { worst: number; best: number; direction: 'h' | 'l' } }): number {
@@ -6048,12 +6062,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.operacionalFilters.set(this.cascadeReportFilters(updatedOpFilters, 'operacional'));
     this.updateReportType('operacional');
+    this.pendingScrollToKpi.set(data.kpi);
     this.scheduleInstantReportRefresh();
-
-    setTimeout(() => {
-       const kpiEl = document.getElementById(`kpi-${data.kpi}`);
-       if (kpiEl) kpiEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 300);
   }
 
   protected toggleTeamDetails(team: string, kpi: any): void {
@@ -6802,6 +6812,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               this.loading.set(false);
               this.progressMessage.set('');
               this.setupAnimations();
+              this.executePendingScroll();
               this.fetchAndUpdateTeams();
               // Após o fluxo completo (download-data → generate → teams), apaga todos
               // os PDFs antigos de uma vez. Os próximos exports serão do relatório atualizado.
@@ -6859,6 +6870,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         this.loading.set(false);
         this.progressMessage.set('');
         this.setupAnimations();
+        this.executePendingScroll();
         this.fetchAndUpdateTeams();
       },
       error: () => {
@@ -7203,6 +7215,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           this.updateReportDataAndDates(result.generatedReport);
           this.errorMessage.set('');
           this.setupAnimations();
+          this.executePendingScroll();
         },
         error: (error) => {
           const message = error?.error?.message ?? 'Falha ao atualizar relatório';
