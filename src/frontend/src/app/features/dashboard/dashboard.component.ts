@@ -34,7 +34,7 @@ import { SpotfireFilter } from '../../models/spotfire-catalog.model';
 
 type FilterKey = 'ano' | 'mes' | 'atuacaoHd' | 'base';
 type ReportTypeValue = 'operacional' | 'analitico';
-type ReportFilterKey = 'reportBase' | 'reportTipoEquipe' | 'reportEquipe';
+type ReportFilterKey = 'reportBase' | 'reportTipoEquipe' | 'reportEquipe' | 'reportDataRef';
 
 type SelectFilterState = {
   key: FilterKey;
@@ -132,8 +132,8 @@ type SavedFilterState = {
                           [class.rf-dropdown-option-active]="reportType() === option.value"
                           type="button"
                           (click)="$event.stopPropagation(); updateReportType(option.value)">
-                    <span class="rf-opt-check" *ngIf="reportType() === option.value">
-                      <svg viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span class="rf-opt-check">
+                      <svg *ngIf="reportType() === option.value" viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </span>
                     {{ option.label }}
                   </button>
@@ -152,8 +152,8 @@ type SavedFilterState = {
                   <button *ngFor="let option of filteredDropdownOptions(filter)"
                           class="rf-dropdown-option" [class.rf-dropdown-option-active]="isReportOptionSelected(filter, option)"
                           type="button" (click)="selectDropdownOption(filter.key, option, $event)">
-                    <span class="rf-opt-check" *ngIf="isReportOptionSelected(filter, option)">
-                      <svg viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span class="rf-opt-check">
+                      <svg *ngIf="isReportOptionSelected(filter, option)" viewBox="0 0 12 10" aria-hidden="true"><path d="M1 5.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </span>
                     {{ option }}
                   </button>
@@ -1711,8 +1711,19 @@ type SavedFilterState = {
         display: inline-flex;
         width: 14px;
         height: 14px;
-        color: var(--accent);
+        color: transparent;
         flex-shrink: 0;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px;
+        transition: all 0.2s;
+      }
+      .rf-dropdown-option-active .rf-opt-check {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
       }
       .rf-opt-check svg {
         width: 100%;
@@ -4896,6 +4907,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected availableParceirasBases: string[] = [];
   protected reportBasePrefixMap: Record<string, { own: string; partner: string }> = {};
   protected basesConfig: BasesConfig | null = null;
+  protected availableDates: string[] = [];
   protected readonly reportBarHidden = signal(true);
   protected readonly reportData = signal<GeneratedReport | null>(null);
   protected readonly reportTitle = signal(DEFAULT_REPORT_TITLE);
@@ -6292,12 +6304,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected selectDropdownOption(key: ReportFilterKey, option: string, event: Event): void {
     event.stopPropagation();
-    const isCtrl = (event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey;
-    this.toggleReportFilterOption(key, option, isCtrl);
-    if (!isCtrl) {
-      this.openDropdownKey.set(null);
-      this.dropdownSearch.set('');
-    }
+    // Always toggle option like a checkbox
+    this.toggleReportFilterOption(key, option, true);
   }
 
   protected beginOptionSelection(key: FilterKey, value: string, event: MouseEvent): void {
@@ -6588,7 +6596,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           }).subscribe({
             next: (result) => {
               this.hasLoadedDownloadData = true;
-              this.reportData.set(result.generatedReport);
+              this.updateReportDataAndDates(result.generatedReport);
               this.loading.set(false);
               this.progressMessage.set('');
               this.setupAnimations();
@@ -6645,7 +6653,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }).subscribe({
       next: (result) => {
         this.hasLoadedDownloadData = true;
-        this.reportData.set(result.generatedReport);
+        this.updateReportDataAndDates(result.generatedReport);
         this.loading.set(false);
         this.progressMessage.set('');
         this.setupAnimations();
@@ -6716,6 +6724,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private buildReportFilterStates(): ReportSelectFilterState[] {
     return [
       {
+        key: 'reportDataRef',
+        title: 'Data',
+        value: [ALL_OPTION],
+        options: this.withAllOption(this.availableDates),
+        enabled: true,
+      },
+      {
         key: 'reportBase',
         title: 'Base (Relatório)',
         value: [ALL_OPTION],
@@ -6748,10 +6763,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     teamTypes?: Array<'propria' | 'parceira'>;
     teams?: string[];
     includeExtraTags: boolean;
+    dates?: string[];
   } {
     const baseFilter = this.reportFilterStates().find((filter) => filter.key === 'reportBase');
     const teamTypeFilter = this.reportFilterStates().find((filter) => filter.key === 'reportTipoEquipe');
     const equipeFilter = this.reportFilterStates().find((filter) => filter.key === 'reportEquipe');
+    const dateFilter = this.reportFilterStates().find((filter) => filter.key === 'reportDataRef');
 
     const normalize = (filter: ReportSelectFilterState | undefined): string[] => {
       if (!filter || filter.value.includes(ALL_OPTION)) {
@@ -6772,20 +6789,24 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const selectedBases = normalize(baseFilter);
     const selectedTeams = normalize(equipeFilter);
+    const selectedDates = normalize(dateFilter);
 
     return {
       bases: selectedBases.length > 0 ? selectedBases : undefined,
       teamTypes: selectedTypes.length > 0 ? selectedTypes : undefined,
       teams: selectedTeams.length > 0 ? selectedTeams : undefined,
       includeExtraTags: true,
+      dates: selectedDates.length > 0 ? selectedDates : undefined,
     };
   }
 
   private cascadeReportFilters(filters: ReportSelectFilterState[]): ReportSelectFilterState[] {
+    const dataF = filters.find((f) => f.key === 'reportDataRef');
     const baseF = filters.find((f) => f.key === 'reportBase');
     const tipoF = filters.find((f) => f.key === 'reportTipoEquipe');
     const equipeF = filters.find((f) => f.key === 'reportEquipe');
 
+    const selectedDates = dataF && !dataF.value.includes(ALL_OPTION) ? dataF.value : [];
     const selectedBases = baseF && !baseF.value.includes(ALL_OPTION) ? baseF.value : [];
     const selectedTipos = tipoF && !tipoF.value.includes(ALL_OPTION) ? tipoF.value : [];
     const selectedEquipes = equipeF && !equipeF.value.includes(ALL_OPTION) ? equipeF.value : [];
@@ -6977,7 +6998,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         reportFilters: this.buildReportFiltersPayload(),
       }).subscribe({
         next: (result) => {
-          this.reportData.set(result.generatedReport);
+          this.updateReportDataAndDates(result.generatedReport);
           this.errorMessage.set('');
           this.setupAnimations();
         },
@@ -6989,6 +7010,20 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }, 300);
   }
 
+  private updateReportDataAndDates(report: GeneratedReport) {
+    this.availableDates = report.availableDates || [];
+    this.reportData.set(report);
+
+    const currentFilters = this.reportFilterStates();
+    const dataFilter = currentFilters.find(f => f.key === 'reportDataRef');
+    if (dataFilter) {
+      dataFilter.options = this.withAllOption(this.availableDates);
+      // clean up selected dates if they are no longer available
+      dataFilter.value = dataFilter.value.filter(v => v === ALL_OPTION || this.availableDates.includes(v));
+      if (dataFilter.value.length === 0) dataFilter.value = [ALL_OPTION];
+    }
+    this.reportFilterStates.set(this.cascadeReportFilters(currentFilters));
+  }
   private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
     const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
     const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);

@@ -70,6 +70,28 @@ export class PostDownloadReportService {
     const ranking = rankingFile ? await this.readCsv(rankingFile.filePath) : [];
     const desvios = deviationsFile ? await this.readCsv(deviationsFile.filePath) : [];
 
+    const availableDatesSet = new Set<string>();
+    if (deslocamentos.length > 0) {
+      const accessor = createAccessor(deslocamentos[0]);
+      const dateCol = accessor.resolve(['Data Referência', 'Data Referencia']);
+      if (dateCol) {
+        for (const row of deslocamentos) {
+          const rawDate = (row[dateCol] ?? '').trim();
+          if (rawDate) availableDatesSet.add(rawDate);
+        }
+      }
+    }
+    const availableDates = Array.from(availableDatesSet).sort((a, b) => {
+      const partsA = a.split('/');
+      const partsB = b.split('/');
+      if (partsA.length === 3 && partsB.length === 3) {
+         const dateA = new Date(parseInt(partsA[2]), parseInt(partsA[1]) - 1, parseInt(partsA[0]));
+         const dateB = new Date(parseInt(partsB[2]), parseInt(partsB[1]) - 1, parseInt(partsB[0]));
+         return dateA.getTime() - dateB.getTime();
+      }
+      return a.localeCompare(b);
+    });
+
     const filtered = this.applyTeamFilters(
       { deslocamentos, ranking, desvios },
       params.reportFilters,
@@ -277,6 +299,7 @@ export class PostDownloadReportService {
         },
       },
       dataDateRange,
+      availableDates,
     };
 
     if (!params.skipSave) {
@@ -356,14 +379,22 @@ export class PostDownloadReportService {
     const includeExtra = reportFilters?.includeExtraTags ?? true;
     const teamResolver = this.buildTeamResolver(reportFilters, includeExtra);
     const resolvedTeams = new Map<string, { base: string; teamType: 'propria' | 'parceira' }>();
+    const allowedDates = reportFilters?.dates?.length ? new Set(reportFilters.dates) : null;
 
     const filterRows = (rows: CsvRow[]): CsvRow[] => {
       if (rows.length === 0) return rows;
       const accessor = createAccessor(rows[0]);
       const teamColumn = accessor.resolve(['Equipe', 'Team', 'Equipe Nome']);
+      const dateColumn = accessor.resolve(['Data Referência', 'Data Referencia']);
       if (!teamColumn) return rows;
 
       return rows.filter((row) => {
+        if (allowedDates && dateColumn) {
+          const rowDate = (row[dateColumn] ?? '').trim();
+          if (rowDate && !allowedDates.has(rowDate)) {
+             return false;
+          }
+        }
         const teamRaw = String(row[teamColumn] ?? '');
         const teamUpper = teamRaw.toUpperCase().trim();
         const resolution = teamResolver(teamUpper);

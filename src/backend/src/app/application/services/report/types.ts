@@ -19,6 +19,7 @@ export interface ReportFilterInput {
   teamTypes?: TeamType[];
   teams?: string[];
   includeExtraTags?: boolean;
+  dates?: string[];
 }
 
 export interface TeamMetricSummary {
@@ -136,6 +137,7 @@ export interface GeneratedReport {
   };
   /** Actual date range found in the Data Referência column of the downloaded file (DD/MM/YYYY). */
   dataDateRange?: { min: string; max: string } | null;
+  availableDates: string[];
 }
 
 export interface TempSemOsRow {

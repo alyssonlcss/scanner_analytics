@@ -63,6 +63,7 @@ const reportGenerationSchema = z.object({
     teamTypes: z.array(z.enum(['propria', 'parceira'])).optional(),
     teams: z.array(z.string().trim().min(1)).optional(),
     includeExtraTags: z.boolean().optional(),
+    dates: z.array(z.string().trim().min(1)).optional(),
   }).optional(),
 });
 

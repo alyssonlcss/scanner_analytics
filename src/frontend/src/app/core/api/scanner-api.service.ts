@@ -529,6 +529,7 @@ export interface GeneratedReport {
   };
   /** Actual date range found in the Data Referência column of the downloaded file (DD/MM/YYYY). */
   dataDateRange?: { min: string; max: string } | null;
+  availableDates: string[];
 }
 
 export interface ScannerReportGenerateResult {
@@ -679,6 +680,7 @@ export class ScannerApiService {
       teamTypes?: Array<'propria' | 'parceira'>;
       teams?: string[];
       includeExtraTags?: boolean;
+      dates?: string[];
     };
   }): Observable<ScannerReportGenerateResult> {
     return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/generate`, payload);
@@ -690,6 +692,7 @@ export class ScannerApiService {
       bases: string[];
       teamTypes: Array<'propria' | 'parceira'>;
       teams?: string[];
+      dates?: string[];
     };
   }): Observable<ScannerReportGenerateResult> {
     return this.http.post<ScannerReportGenerateResult>(`${this.baseUrl}/scanner/reports/export-data`, payload);
