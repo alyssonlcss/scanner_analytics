@@ -5438,7 +5438,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const filters = this.buildReportFiltersPayload();
       const result = await firstValueFrom(
         this.api.exportData({
-          reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams },
+          reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams, dates: filters.dates },
         })
       );
       const hasTeams = filters.teams && filters.teams.length > 0;
@@ -5455,9 +5455,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
       const et = mode as 'proprias' | 'parceiras';
       const basesToExport = et === 'proprias' ? this.availablePropriasBases : this.availableParceirasBases;
+      const currentFilters = this.buildReportFiltersPayload();
       const results = await firstValueFrom(
         forkJoin(basesToExport.map(base =>
-          this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
+          this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType], dates: currentFilters.dates } })
         ))
       );
       const sections = results.map((r, i) => ({
@@ -5486,7 +5487,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const filters = this.buildReportFiltersPayload();
       this.exportLoading.set(true);
       this.exportError.set('');
-      this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams } }).subscribe({
+      this.api.exportData({ reportFilters: { bases: filters.bases ?? [], teamTypes: filters.teamTypes ?? [], teams: filters.teams, dates: filters.dates } }).subscribe({
         next: async (result) => {
           const hasTeams = filters.teams && filters.teams.length > 0;
           const subtitle = hasTeams
@@ -5542,8 +5543,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportLoading.set(true);
     this.exportError.set('');
 
+    const currentFilters = this.buildReportFiltersPayload();
     const requests = basesToExport.map((base) =>
-      this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType] } })
+      this.api.exportData({ reportFilters: { bases: [base], teamTypes: [teamType], dates: currentFilters.dates } })
     );
 
     forkJoin(requests).subscribe({
