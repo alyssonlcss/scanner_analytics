@@ -5538,7 +5538,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   return;
                 }
               }
-              kpisImpactados.push(`${k.label}: ${k.fmt(val)}`);
+              kpisImpactados.push(`*${k.label}:* *${k.fmt(val)}*`);
             }
           }
         });
@@ -5589,16 +5589,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         let desviosText = '';
         const infos = [];
         if (countPrep > 0 && maxPrep > 15) {
-          infos.push(`Partida Média: ${Math.round(sumPrep / countPrep)}m (Max: ${Math.round(maxPrep)}m)`);
+          infos.push(`*Partida Média:* *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
         }
         if (countSemOs > 0 && maxSemOs > 15) {
-          infos.push(`Sem Ordem de Serviço Média: ${Math.round(sumSemOs / countSemOs)}m (Max: ${Math.round(maxSemOs)}m)`);
+          infos.push(`*Sem Ordem de Serviço Média:* *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
         }
 
         if (infos.length > 0) desviosText += infos.join(' | ');
 
         if (!teveIntervalo4a6) {
-          desviosText += (desviosText ? ' | ' : '') + 'Intervalo NÃO declarado (ou fora de 4h-6h)';
+          desviosText += (desviosText ? ' | ' : '') + '*Intervalo NÃO declarado* (ou fora de 4h-6h)';
         }
 
         let linha = `• ${team.team}: `;
