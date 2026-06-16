@@ -4946,15 +4946,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly api = inject(ScannerApiService);
   private readonly zone = inject(NgZone);
   private readonly pdfService = inject(DashboardPdfService);
-    private readonly chartService = inject(DashboardChartService);
+  private readonly chartService = inject(DashboardChartService);
   private readonly sanitizer = inject(DomSanitizer);
   protected readonly allOption = ALL_OPTION;
 
-  @ViewChild('sliderFill')    private sliderFillRef?: ElementRef<HTMLDivElement>;
+  @ViewChild('sliderFill') private sliderFillRef?: ElementRef<HTMLDivElement>;
   @ViewChild('sliderThumbMin') private sliderThumbMinRef?: ElementRef<HTMLInputElement>;
   @ViewChild('sliderThumbMax') private sliderThumbMaxRef?: ElementRef<HTMLInputElement>;
-  @ViewChild('minNumInput')   private minNumInputRef?: ElementRef<HTMLInputElement>;
-  @ViewChild('maxNumInput')   private maxNumInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChild('minNumInput') private minNumInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChild('maxNumInput') private maxNumInputRef?: ElementRef<HTMLInputElement>;
 
   protected readonly loading = signal(false);
   protected readonly progressMessage = signal('');
@@ -4983,6 +4983,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly exportError = signal('');
   /** Arquivos prontos aguardando gesto do usuário para navigator.share. */
   protected readonly pendingShareFiles = signal<File[] | null>(null);
+  protected readonly pendingShareText = signal<string | null>(null);
   protected readonly selectedDayPerKpi = signal<Record<string, string | null>>({});
   protected readonly expandedTeamDetails = signal<{ team: string; kpi: string; perTeamDailyData?: any } | null>(null);
   protected readonly kpiStates = signal<Record<string, { expanded: boolean }>>({});
@@ -5060,7 +5061,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
     };
     const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
-    const yearFilter  = this.periodFilters().find((f) => f.key === 'ano');
+    const yearFilter = this.periodFilters().find((f) => f.key === 'ano');
     const activeMonths = (monthFilter?.value ?? [])
       .filter((m) => m !== ALL_OPTION)
       .map((m) => ({ abbr: m, num: monthAbbrevToNum[m] ?? '??' }))
@@ -5070,9 +5071,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const range = this.resolvedDayRange();
     const pad = (n: number) => String(n).padStart(2, '0');
     const firstYear = activeYears[0] ?? String(new Date().getFullYear());
-    const lastYear  = activeYears[activeYears.length - 1] ?? firstYear;
+    const lastYear = activeYears[activeYears.length - 1] ?? firstYear;
     const startFull = `${pad(range.min)}/${activeMonths[0].num}/${firstYear}`;
-    const endFull   = `${pad(range.max)}/${activeMonths[activeMonths.length - 1].num}/${lastYear}`;
+    const endFull = `${pad(range.max)}/${activeMonths[activeMonths.length - 1].num}/${lastYear}`;
     return startFull === endFull ? startFull : `${startFull} a ${endFull}`;
   });
 
@@ -5227,21 +5228,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         for (const base of polo.bases) {
           options.push(base.name);
           if (polo.matchType === 'direct_prefix') {
-             prefixMap[base.name] = {
-               own: base.propria?.[0] || '',
-               partner: base.parceira?.[0] || ''
-             };
+            prefixMap[base.name] = {
+              own: base.propria?.[0] || '',
+              partner: base.parceira?.[0] || ''
+            };
           } else if (polo.matchType === 'infix_type_with_base_prefix') {
-             prefixMap[base.name] = {
-               own: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.propria[0] || ''),
-               partner: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.parceira[0] || '')
-             };
+            prefixMap[base.name] = {
+              own: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.propria[0] || ''),
+              partner: (base.prefixes?.[0] || '') + (polo.typeIdentifiers?.parceira[0] || '')
+            };
           }
         }
       }
       this.reportBaseOptions = options;
       this.reportBasePrefixMap = prefixMap;
-      
+
       const updateFilters = (filters: ReportSelectFilterState[], mode: ReportTypeValue) => {
         const baseFilter = filters.find(f => f.key === 'reportBase');
         if (baseFilter) {
@@ -5387,6 +5388,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportLoading.set(false);
     this.shareModeLoading.set(null);
     this.pendingShareFiles.set(null);
+    this.pendingShareText.set(null);
     this.pendingShareMode.set(null);
     this.exportModalOpen.set(true);
   }
@@ -5395,6 +5397,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportModalOpen.set(false);
     this.shareModeLoading.set(null);
     this.pendingShareFiles.set(null);
+    this.pendingShareText.set(null);
     this.pendingShareMode.set(null);
   }
 
@@ -5405,8 +5408,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected async triggerPendingShare(): Promise<void> {
     const files = this.pendingShareFiles();
     if (!files) return;
-    await this.tryShare(files);
+    const text = this.pendingShareText() ?? undefined;
+    await this.tryShare(files, text);
     this.pendingShareFiles.set(null);
+    this.pendingShareText.set(null);
     this.pendingShareMode.set(null);
     this.exportModalOpen.set(false);
   }
@@ -5421,9 +5426,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.shareModeLoading.set(mode);
     this.exportError.set('');
     try {
-      const files = await this.fetchAndBuildFiles(mode);
+      const { files, sections } = await this.fetchAndBuildFiles(mode);
+      const text = this.buildShareText(sections);
       files.forEach(f => this.downloadFileFromMemory(f));
-      await this.tryShare(files);
+      await this.tryShare(files, text);
       this.exportModalOpen.set(false);
     } catch {
       this.exportError.set('Falha ao gerar o PDF. Tente novamente.');
@@ -5433,7 +5439,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   /** Busca dados no backend e gera File[] de PDF para o modo pedido. */
-  private async fetchAndBuildFiles(mode: 'current' | 'proprias' | 'parceiras'): Promise<File[]> {
+  private async fetchAndBuildFiles(mode: 'current' | 'proprias' | 'parceiras'): Promise<{ files: File[]; sections: { report: GeneratedReport; title: string }[] }> {
     if (mode === 'current') {
       const filters = this.buildReportFiltersPayload();
       const result = await firstValueFrom(
@@ -5445,11 +5451,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const subtitle = hasTeams
         ? filters.teams!.join(', ')
         : [
-            filters.bases?.join(', ') || 'Todas as Bases',
-            filters.teamTypes?.map(t => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
-          ].join(' · ');
+          filters.bases?.join(', ') || 'Todas as Bases',
+          filters.teamTypes?.map(t => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
+        ].join(' · ');
       const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
-      return [await this.buildPdfFileForShare(section, 'atual')];
+      const files = [await this.buildPdfFileForShare(section, 'atual')];
+      return { files, sections: [section] };
     } else {
       const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
       const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
@@ -5466,8 +5473,150 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         title: basesToExport[i],
         subtitle: typeLabel,
       }));
-      return Promise.all(sections.map(s => this.buildPdfFileForShare(s, et)));
+      const files = await Promise.all(sections.map(s => this.buildPdfFileForShare(s, et)));
+      return { files, sections };
     }
+  }
+
+  private buildShareText(sections: { report: GeneratedReport; title: string }[]): string {
+    const periodStr = this.periodRangeLabel();
+    const periodInfo = periodStr ? `*Período analisado: ${periodStr}*\n` : '';
+    let text = `Bom dia/Boa tarde.\n${periodInfo}Segue o destaque dos principais pontos de atenção e desvios operacionais das equipes. Para a análise completa de cada técnico e seus respectivos gargalos, consulte o relatório da sua base em anexo.\n\n`;
+    let hasAttentionTeams = false;
+
+    for (const s of sections) {
+      const scorecard = s.report.teamScorecard ?? [];
+      const actionPlanMap = new Map((s.report.specialAnalysis?.actionPlan ?? []).map(ap => [ap.team, ap]));
+
+      const attentionTeams = scorecard.filter(team => {
+        const utilizacao = team.kpis?.utilizacao ?? 100;
+        return team.kpisBelowMeta >= 4 || utilizacao < 50;
+      });
+
+      if (attentionTeams.length === 0) continue;
+
+      attentionTeams.sort((a, b) => {
+        const utilA = (a.kpis?.utilizacao ?? 100) < 50 ? 1 : 0;
+        const utilB = (b.kpis?.utilizacao ?? 100) < 50 ? 1 : 0;
+        if (utilA !== utilB) return utilB - utilA;
+        return (b.kpisBelowMeta || 0) - (a.kpisBelowMeta || 0);
+      });
+
+      hasAttentionTeams = true;
+      text += `📍 Base ${s.title}:\n`;
+      text += `⚠️ Equipes que merecem atenção:\n`;
+
+      const topTeams = attentionTeams.slice(0, 3);
+      for (const team of topTeams) {
+        const util = team.kpis?.utilizacao ?? 100;
+        const actionPlan = actionPlanMap.get(team.team);
+
+        const kpisMap: Array<{ key: keyof TeamKpiScorecard['kpis'], statusKey: keyof TeamKpiScorecard['kpiStatus'], label: string, fmt: (v: any) => string }> = [
+          { key: 'osDia', statusKey: 'osDia', label: 'OS Dia', fmt: v => v?.toFixed(1) },
+          { key: 'eficiencia', statusKey: 'eficiencia', label: 'Eficiência', fmt: v => `${v?.toFixed(1)}%` },
+          { key: 'utilizacao', statusKey: 'utilizacao', label: 'Utilização', fmt: v => `${v?.toFixed(1)}%` },
+          { key: 'tmeImp', statusKey: 'tmeImp', label: 'TME IMP', fmt: v => `${v?.toFixed(0)}m` },
+          { key: 'primeiroLogin', statusKey: 'primeiroLogin', label: '1º Login', fmt: v => `${v?.toFixed(0)}m` },
+          { key: 'primeiroDesloc', statusKey: 'primeiroDesloc', label: '1º Desloc. da Base', fmt: v => `${v?.toFixed(0)}m` },
+          { key: 'retornoBase', statusKey: 'retornoBase', label: 'Retorno Base', fmt: v => `${v?.toFixed(0)}m` },
+        ];
+
+        let kpisImpactados: string[] = [];
+        kpisMap.forEach(k => {
+          if (team.kpiStatus[k.statusKey] === 'below') {
+            const val = team.kpis[k.key];
+            if (val !== undefined) {
+              if (k.key === 'primeiroLogin' && val <= 8) return;
+              if (k.key === 'retornoBase' && val < 90) return;
+              if (k.key === 'primeiroDesloc' && val <= 25) return;
+              if (k.key === 'osDia' && val > 2) return;
+              if (k.key === 'eficiencia') {
+                if (val >= 80) return;
+                const efiKpi = s.report.kpis.find(x => x.kpi === 'Eficiência');
+                const efiAnalysis = efiKpi?.evidenceAnalysis?.find(a => a.team === team.team);
+                if (efiAnalysis && (!efiAnalysis.flaggedOrders || efiAnalysis.flaggedOrders.length === 0) && efiAnalysis.tempoPadraoVazioOrders?.length > 0) {
+                  return;
+                }
+              }
+              kpisImpactados.push(`${k.label}: ${k.fmt(val)}`);
+            }
+          }
+        });
+
+        const utilAnalysis = s.report.specialAnalysis?.utilizacaoAnalysis?.find(a => a.team === team.team);
+        const osDiaAnalysis = s.report.specialAnalysis?.osDiaAnalysis?.find(a => a.team === team.team);
+
+        const allOrders = [...(utilAnalysis?.flaggedOrders || []), ...(utilAnalysis?.extraFlaggedOrders || [])];
+        const flaggedOrders = utilAnalysis?.flaggedOrders || osDiaAnalysis?.flaggedOrders || [];
+
+        let sumPrep = 0, countPrep = 0, maxPrep = 0;
+        let sumSemOs = 0, countSemOs = 0, maxSemOs = 0;
+        let teveIntervalo4a6 = false;
+
+        for (const order of allOrders) {
+          if (order.inicio_calendario && order.inicio_intervalo && order.inicio_intervalo.length > 10) {
+            const parseDt = (dtStr: string) => {
+              if (!dtStr) return 0;
+              const [date, time] = dtStr.split(' ');
+              if (!time) return 0;
+              const [d, m, y] = date.split('/');
+              const [h, min, sec] = time.split(':');
+              const year = y.length === 2 ? 2000 + Number(y) : Number(y);
+              return new Date(year, Number(m) - 1, Number(d), Number(h), Number(min), Number(sec || 0)).getTime();
+            };
+            const start = parseDt(order.inicio_calendario);
+            const inter = parseDt(order.inicio_intervalo);
+            if (start > 0 && inter > 0 && inter > start) {
+              const diffH = (inter - start) / (1000 * 60 * 60);
+              if (diffH >= 4 && diffH <= 6) teveIntervalo4a6 = true;
+            }
+          }
+        }
+
+        for (const order of flaggedOrders) {
+          if (order.flags?.includes('temp_prep_alto') && order.temp_prep_os_min) {
+            sumPrep += order.temp_prep_os_min;
+            countPrep++;
+            if (order.temp_prep_os_min > maxPrep) maxPrep = order.temp_prep_os_min;
+          }
+          if (order.flags?.includes('sem_os_alto') && order.sem_os_total_min) {
+            sumSemOs += order.sem_os_total_min;
+            countSemOs++;
+            if (order.sem_os_total_min > maxSemOs) maxSemOs = order.sem_os_total_min;
+          }
+        }
+
+        let desviosText = '';
+        const infos = [];
+        if (countPrep > 0 && maxPrep > 15) {
+          infos.push(`Partida Média: ${Math.round(sumPrep / countPrep)}m (Max: ${Math.round(maxPrep)}m)`);
+        }
+        if (countSemOs > 0 && maxSemOs > 15) {
+          infos.push(`Sem Ordem de Serviço Média: ${Math.round(sumSemOs / countSemOs)}m (Max: ${Math.round(maxSemOs)}m)`);
+        }
+
+        if (infos.length > 0) desviosText += infos.join(' | ');
+
+        if (!teveIntervalo4a6) {
+          desviosText += (desviosText ? ' | ' : '') + 'Intervalo NÃO declarado (ou fora de 4h-6h)';
+        }
+
+        let linha = `• ${team.team}: `;
+        if (kpisImpactados.length > 0) linha += `KPIs Impactados (${kpisImpactados.join(', ')})`;
+        linha += `\n    ↳ Desvios: ${desviosText}\n`;
+
+        text += linha;
+      }
+      text += '\n';
+    }
+
+    if (!hasAttentionTeams) {
+      return 'Bom dia/Boa tarde.\nSegue o destaque dos principais pontos de atenção e desvios operacionais das equipes. Para a análise completa de cada técnico e seus respectivos gargalos, consultem os PDFs em anexo.';
+    }
+
+    text += `*Obs: O tempo ocioso listado não é necessariamente de responsabilidade integral da equipe, sendo muitas vezes um reflexo do comportamento da operação como um todo (disponibilidade de ordens, priorização, atrasos em despachos, etc), sendo necessária uma investigação de cada supervisor.*`;
+
+    return text.trim();
   }
 
   /**
@@ -5493,9 +5642,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           const subtitle = hasTeams
             ? filters.teams!.join(', ')
             : [
-                filters.bases?.join(', ') || 'Todas as Bases',
-                filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
-              ].join(' · ');
+              filters.bases?.join(', ') || 'Todas as Bases',
+              filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
+            ].join(' · ');
           const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
           if (!shareAfter) {
             this.downloadPdfDirect(section, 'atual');
@@ -5507,13 +5656,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             try {
               const file = await this.buildPdfFileForShare(section, 'atual');
               this.downloadFileFromMemory(file);
-              const shared = await this.tryShare([file]);
+              const text = this.buildShareText([section]);
+              const shared = await this.tryShare([file], text);
               this.zone.run(() => {
                 this.exportLoading.set(false);
                 if (shared) {
                   this.exportModalOpen.set(false);
                 } else {
                   this.pendingShareFiles.set([file]);
+                  this.pendingShareText.set(text);
                   this.pendingShareMode.set('current');
                 }
               });
@@ -5537,7 +5688,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
     const typeLabel = mode === 'proprias' ? 'Equipes Próprias' : 'Equipes Parceiras';
     const et = exportType as 'proprias' | 'parceiras';
-    
+
     const basesToExport = et === 'proprias' ? this.availablePropriasBases : this.availableParceirasBases;
 
     this.exportLoading.set(true);
@@ -5565,13 +5716,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           try {
             const files = await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et)));
             files.forEach((f) => this.downloadFileFromMemory(f));
-            const shared = await this.tryShare(files);
+            const text = this.buildShareText(sections);
+            const shared = await this.tryShare(files, text);
             this.zone.run(() => {
               this.exportLoading.set(false);
               if (shared) {
                 this.exportModalOpen.set(false);
               } else {
                 this.pendingShareFiles.set(files);
+                this.pendingShareText.set(text);
                 this.pendingShareMode.set(mode as 'proprias' | 'parceiras');
               }
             });
@@ -5608,14 +5761,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    * Tenta abrir o Windows Share UI com os arquivos gerados.
    * Retorna true se navigator.share foi invocado com sucesso, false caso contrário.
    */
-  private async tryShare(files: File[]): Promise<boolean> {
+  private async tryShare(files: File[], text?: string): Promise<boolean> {
     if (!navigator.share) return false;
     if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
       console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type})`));
       return false;
     }
     try {
-      await navigator.share({ files });
+      await navigator.share({
+        title: 'Relatórios de Campo',
+        text: text || 'Segue em anexo o(s) relatório(s) analítico(s).',
+        files,
+      });
       return true;
     } catch (e: any) {
       if (e?.name !== 'AbortError') console.warn('[Share] falhou:', e);
@@ -5677,7 +5834,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       jul: '07', ago: '08', set: '09', out: '10', nov: '11', dez: '12',
     };
     const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
-    const yearFilter  = this.periodFilters().find((f) => f.key === 'ano');
+    const yearFilter = this.periodFilters().find((f) => f.key === 'ano');
     const activeMonths = (monthFilter?.value ?? [])
       .filter((m) => m !== ALL_OPTION)
       .map((m) => ({ abbr: m, num: monthAbbrevToNum[m] ?? '??' }))
@@ -5695,24 +5852,24 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       dateRangeLabel = dataRange.min === dataRange.max ? dataRange.min : `${dataRange.min} a ${dataRange.max}`;
       const parsePart = (s: string, i: number) => s.split('/')[i] ?? '';
       const startSuffix = `${parsePart(dataRange.min, 0)}-${parsePart(dataRange.min, 1)}`;
-      const endSuffix   = `${parsePart(dataRange.max, 0)}-${parsePart(dataRange.max, 1)}`;
+      const endSuffix = `${parsePart(dataRange.max, 0)}-${parsePart(dataRange.max, 1)}`;
       dateSuffix = ` ${startSuffix === endSuffix ? startSuffix : `${startSuffix} ao ${endSuffix}`}`;
     } else if (activeMonths.length > 0 && activeYears.length > 0) {
       const firstMonth = activeMonths[0].num;
-      const lastMonth  = activeMonths[activeMonths.length - 1].num;
-      const firstYear  = activeYears[0] ?? String(new Date().getFullYear());
-      const lastYear   = activeYears[activeYears.length - 1] ?? firstYear;
-      const startDate  = `${pad(range.min)}-${firstMonth}`;
-      const endDate    = `${pad(range.max)}-${lastMonth}`;
+      const lastMonth = activeMonths[activeMonths.length - 1].num;
+      const firstYear = activeYears[0] ?? String(new Date().getFullYear());
+      const lastYear = activeYears[activeYears.length - 1] ?? firstYear;
+      const startDate = `${pad(range.min)}-${firstMonth}`;
+      const endDate = `${pad(range.max)}-${lastMonth}`;
       dateSuffix = ` ${startDate === endDate ? startDate : `${startDate} ao ${endDate}`}`;
-      const startFull  = `${pad(range.min)}/${firstMonth}/${firstYear}`;
-      const endFull    = `${pad(range.max)}/${lastMonth}/${lastYear}`;
-      dateRangeLabel   = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
+      const startFull = `${pad(range.min)}/${firstMonth}/${firstYear}`;
+      const endFull = `${pad(range.max)}/${lastMonth}/${lastYear}`;
+      dateRangeLabel = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
     }
 
     const typePrefix = exportType === 'atual' ? 'Atual_'
       : exportType === 'proprias' ? 'Proprias_'
-      : 'Parceiras_';
+        : 'Parceiras_';
 
     // Remove termos redundantes: o prefixo já indica o tipo.
     // atual: título "Relatório Atual" é redundante → usar só o subtítulo (bases/equipes filtradas)
@@ -5788,7 +5945,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     this.reportType.set(value as ReportTypeValue);
-    
+
     // Update report filters to reflect changes in available options for 'analitico' mode
     // and re-evaluate valid combinations via cascadeReportFilters
     this.setReportFilterStates(this.cascadeReportFilters(this.reportFilterStates(), this.reportType()), this.reportType());
@@ -6025,24 +6182,24 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected toggleKpiDay(kpiId: string, day: string | null, base?: string, teamType?: string): void {
     const current = { ...this.selectedDayPerKpi() };
     if (day === null) {
-       current[kpiId] = null;
-       if (base && teamType) {
-         if (this.selectedTrendLine() !== `${base}|${teamType}`) {
-           this.selectedTrendLine.set(`${base}|${teamType}`);
-         } else {
-           this.selectedTrendLine.set(null);
-         }
-       }
+      current[kpiId] = null;
+      if (base && teamType) {
+        if (this.selectedTrendLine() !== `${base}|${teamType}`) {
+          this.selectedTrendLine.set(`${base}|${teamType}`);
+        } else {
+          this.selectedTrendLine.set(null);
+        }
+      }
     } else {
-       if (current[kpiId] === day && this.selectedTrendLine() === `${base}|${teamType}`) {
-         current[kpiId] = null;
-         this.selectedTrendLine.set(null);
-       } else {
-         current[kpiId] = day;
-         if (base && teamType) {
-           this.selectedTrendLine.set(`${base}|${teamType}`);
-         }
-       }
+      if (current[kpiId] === day && this.selectedTrendLine() === `${base}|${teamType}`) {
+        current[kpiId] = null;
+        this.selectedTrendLine.set(null);
+      } else {
+        current[kpiId] = day;
+        if (base && teamType) {
+          this.selectedTrendLine.set(`${base}|${teamType}`);
+        }
+      }
     }
     this.selectedDayPerKpi.set(current);
   }
@@ -6057,9 +6214,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const currentOpFilters = this.operacionalFilters();
     const updatedOpFilters = currentOpFilters.map(filter => {
-       if (filter.key === 'reportDataRef') return { ...filter, value: [fullDate] };
-       if (filter.key === 'reportEquipe') return { ...filter, value: [data.team] };
-       return filter;
+      if (filter.key === 'reportDataRef') return { ...filter, value: [fullDate] };
+      if (filter.key === 'reportEquipe') return { ...filter, value: [data.team] };
+      return filter;
     });
 
     this.operacionalFilters.set(this.cascadeReportFilters(updatedOpFilters, 'operacional'));
@@ -6071,9 +6228,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected toggleTeamDetails(team: string, kpi: any): void {
     const current = this.expandedTeamDetails();
     if (current && current.team === team && current.kpi === kpi.kpi) {
-       this.expandedTeamDetails.set(null);
+      this.expandedTeamDetails.set(null);
     } else {
-       this.expandedTeamDetails.set({ team, kpi: kpi.kpi, perTeamDailyData: kpi.perTeamDailyData });
+      this.expandedTeamDetails.set({ team, kpi: kpi.kpi, perTeamDailyData: kpi.perTeamDailyData });
     }
   }
 
@@ -6100,39 +6257,39 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (selected) {
         for (const tl of cd.trendLines) {
           if (`${tl.base}|${tl.teamType}` === selected) {
-             const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
-             activeCombos.add(`${tl.base}|${normType}`);
+            const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
+            activeCombos.add(`${tl.base}|${normType}`);
           }
         }
       }
 
       const filterTeamByCombo = (teamName: string) => {
-         if (!selected) return true;
-         const info = this.parseTeamBase(teamName);
-         if (!info) return false;
-         if (activeCombos.has(`${info.base}|All`)) return true;
-         if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
-         if (activeCombos.has(`Média Global|All`)) return true;
-         return activeCombos.has(`${info.base}|${info.teamType}`);
+        if (!selected) return true;
+        const info = this.parseTeamBase(teamName);
+        if (!info) return false;
+        if (activeCombos.has(`${info.base}|All`)) return true;
+        if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
+        if (activeCombos.has(`Média Global|All`)) return true;
+        return activeCombos.has(`${info.base}|${info.teamType}`);
       };
 
       let filteredScores: any[] = [];
       if (selectedDay && kpi.perTeamDailyData) {
-         for (const t of kpi.perTeamDailyData) {
-            if (!filterTeamByCombo(t.team)) continue;
-            const pt = t.dailyPoints.find((p: any) => p.date === selectedDay || p.date.startsWith(selectedDay + '/') || selectedDay.startsWith(p.date + '/'));
-            if (pt && pt.value !== undefined) {
-               filteredScores.push({ team: t.team, rawValue: pt.value });
-            }
-         }
+        for (const t of kpi.perTeamDailyData) {
+          if (!filterTeamByCombo(t.team)) continue;
+          const pt = t.dailyPoints.find((p: any) => p.date === selectedDay || p.date.startsWith(selectedDay + '/') || selectedDay.startsWith(p.date + '/'));
+          if (pt && pt.value !== undefined) {
+            filteredScores.push({ team: t.team, rawValue: pt.value });
+          }
+        }
       } else {
-         filteredScores = (kpi.scores || []).filter((s: any) => filterTeamByCombo(s.team));
+        filteredScores = (kpi.scores || []).filter((s: any) => filterTeamByCombo(s.team));
       }
 
       const direction = kpi.direction || 'higher-is-better';
       filteredScores.sort((a: any, b: any) => direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue);
 
-      const opportunityPool = filteredScores.filter((s: any) => 
+      const opportunityPool = filteredScores.filter((s: any) =>
         direction === 'higher-is-better' ? s.rawValue < kpi.metaTarget : s.rawValue > kpi.metaTarget
       );
 
@@ -6172,7 +6329,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         } else if (kpi.kpi === 'Retorno Base' && report.specialAnalysis.retornoBaseAnalysis) {
           validBottomTeams = new Set(this.filterRetornoEvidence(report.specialAnalysis.retornoBaseAnalysis).map((a: any) => a.team));
         }
-        
+
         rawBottom = rawBottom.filter(t => validBottomTeams.has(t.team));
       }
     }
@@ -6405,13 +6562,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return details.filter((d: any) => d.type !== 'fim_jornada');
   }
 
-  protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
+  protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string;[key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
     const text = this.semOsDetailText(d, nrOrdemDespachoAnterior);
     const sep = text.indexOf(': ');
     return sep > -1 ? text.slice(0, sep) : text;
   }
 
-  protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string; [key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
+  protected semOsDetailBody(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string;[key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {
     // Always recompute fresh to ensure % stats are shown (ignore pre-computed d.body)
     const text = this.semOsDetailText(d, nrOrdemDespachoAnterior);
     const sep = text.indexOf(': ');
@@ -6726,15 +6883,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     // Update fill div
     const fill = this.sliderFillRef?.nativeElement;
     if (fill) {
-      const left  = this.fillLeft();
+      const left = this.fillLeft();
       const width = this.fillWidth();
-      fill.style.left  = left + '%';
+      fill.style.left = left + '%';
       fill.style.width = width + '%';
     }
     // Update slider thumb positions so they reflect signal value immediately
     const total = this.sliderTotal();
-    const sMin  = this.sliderMin();
-    const sMax  = this.sliderMax();
+    const sMin = this.sliderMin();
+    const sMax = this.sliderMax();
     if (this.sliderThumbMinRef?.nativeElement) this.sliderThumbMinRef.nativeElement.value = String(sMin);
     if (this.sliderThumbMaxRef?.nativeElement) this.sliderThumbMaxRef.nativeElement.value = String(sMax);
     // Update number inputs (single-month) with normalised resolved values
@@ -6995,9 +7152,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         key: 'reportBase',
         title: 'Base (Relatório)',
         value: [ALL_OPTION],
-        options: mode === 'analitico' 
-           ? this.withAllOption(['Média Global', ...this.reportBaseOptions]) 
-           : this.withAllOption(this.reportBaseOptions),
+        options: mode === 'analitico'
+          ? this.withAllOption(['Média Global', ...this.reportBaseOptions])
+          : this.withAllOption(this.reportBaseOptions),
         enabled: true,
       },
       {
@@ -7005,8 +7162,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         title: 'Tipo de Equipe (Relatório)',
         value: [ALL_OPTION],
         options: this.reportType() === 'analitico'
-           ? this.withAllOption(['Contrastar', ...REPORT_TEAM_TYPE_OPTIONS])
-           : this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
+          ? this.withAllOption(['Contrastar', ...REPORT_TEAM_TYPE_OPTIONS])
+          : this.withAllOption(REPORT_TEAM_TYPE_OPTIONS),
         enabled: true,
       },
       {
@@ -7079,7 +7236,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!config) return filters; // Not loaded yet
 
     const activeBases = selectedBases.length > 0 ? selectedBases : this.reportBaseOptions;
-    
+
     const teamMetadata = new Map<string, { base: string, type: string }>();
 
     for (const team of this.availableTeams) {
@@ -7166,7 +7323,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (f.key === 'reportBase') {
         if (mode === 'analitico') {
           if (!filteredBases.includes('Média Global')) {
-             filteredBases.unshift('Média Global');
+            filteredBases.unshift('Média Global');
           }
         }
         const validBases = selectedBases.filter((b) => filteredBases.includes(b));
@@ -7179,7 +7336,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (f.key === 'reportTipoEquipe') {
         if (mode === 'analitico') {
           if (!filteredTypes.includes('Contrastar')) {
-             filteredTypes.unshift('Contrastar');
+            filteredTypes.unshift('Contrastar');
           }
         }
         const validTipos = selectedTipos.filter((t) => filteredTypes.includes(t));
