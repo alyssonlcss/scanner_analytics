@@ -321,6 +321,18 @@ type SavedFilterState = {
                 </div>
                 <div class="export-error-row" *ngIf="exportError()">{{ exportError() }}</div>
 
+                <div style="margin-top: 10px; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                  <label style="position: relative; display: inline-block; width: 36px; height: 20px; margin: 0; cursor: pointer;">
+                    <input type="checkbox" style="opacity: 0; width: 0; height: 0; position: absolute;" id="attentionToggle" [checked]="includeAttentionMessage()" (change)="includeAttentionMessage.set(!includeAttentionMessage())" />
+                    <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; transition: .3s; border-radius: 20px;"
+                          [style.background-color]="includeAttentionMessage() ? '#007bff' : '#ccc'">
+                      <span style="position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%;"
+                            [style.transform]="includeAttentionMessage() ? 'translateX(16px)' : 'translateX(0)'"></span>
+                    </span>
+                  </label>
+                  <label for="attentionToggle" style="font-weight: 500; font-size: 14px; cursor: pointer; user-select: none;">enviar com mensagem de atenção</label>
+                </div>
+
                 <div class="export-modal-options" [class.export-modal-options--disabled]="exportLoading()">
 
                   <div class="export-option-row">
@@ -4981,6 +4993,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly exportModeType = signal<'proprias' | 'parceiras'>('proprias');
   protected readonly exportLoading = signal(false);
   protected readonly exportError = signal('');
+  protected readonly includeAttentionMessage = signal(true);
   /** Arquivos prontos aguardando gesto do usuário para navigator.share. */
   protected readonly pendingShareFiles = signal<File[] | null>(null);
   protected readonly pendingShareText = signal<string | null>(null);
@@ -5408,7 +5421,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected async triggerPendingShare(): Promise<void> {
     const files = this.pendingShareFiles();
     if (!files) return;
-    const text = this.pendingShareText() ?? undefined;
+    const text = this.pendingShareText() ?? '';
     await this.tryShare(files, text);
     this.pendingShareFiles.set(null);
     this.pendingShareText.set(null);
@@ -5427,7 +5440,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.exportError.set('');
     try {
       const { files, sections } = await this.fetchAndBuildFiles(mode);
-      const text = this.buildShareText(sections);
+      const text = this.includeAttentionMessage() ? this.buildShareText(sections) : '';
       files.forEach(f => this.downloadFileFromMemory(f));
       await this.tryShare(files, text);
       this.exportModalOpen.set(false);
@@ -5538,7 +5551,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   return;
                 }
               }
-              kpisImpactados.push(`*${k.label}:* *${k.fmt(val)}*`);
+              kpisImpactados.push(`_${k.label}:_ *${k.fmt(val)}*`);
             }
           }
         });
@@ -5589,10 +5602,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         let desviosText = '';
         const infos = [];
         if (countPrep > 0 && maxPrep > 15) {
-          infos.push(`*Partida Média:* *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
+          infos.push(`_Partida Média:_ *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
         }
         if (countSemOs > 0 && maxSemOs > 15) {
-          infos.push(`*Sem Ordem de Serviço Média:* *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
+          infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
         }
 
         if (infos.length > 0) desviosText += infos.join(' | ');
@@ -5656,7 +5669,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             try {
               const file = await this.buildPdfFileForShare(section, 'atual');
               this.downloadFileFromMemory(file);
-              const text = this.buildShareText([section]);
+              const text = this.includeAttentionMessage() ? this.buildShareText([section]) : '';
               const shared = await this.tryShare([file], text);
               this.zone.run(() => {
                 this.exportLoading.set(false);
@@ -5716,7 +5729,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           try {
             const files = await Promise.all(sections.map((s) => this.buildPdfFileForShare(s, et)));
             files.forEach((f) => this.downloadFileFromMemory(f));
-            const text = this.buildShareText(sections);
+            const text = this.includeAttentionMessage() ? this.buildShareText(sections) : '';
             const shared = await this.tryShare(files, text);
             this.zone.run(() => {
               this.exportLoading.set(false);
@@ -5761,7 +5774,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    * Tenta abrir o Windows Share UI com os arquivos gerados.
    * Retorna true se navigator.share foi invocado com sucesso, false caso contrário.
    */
-  private async tryShare(files: File[], text?: string): Promise<boolean> {
+  private async tryShare(files: File[], text?: string | null): Promise<boolean> {
     if (!navigator.share) return false;
     if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
       console.warn('[Share] canShare({ files }) retornou false:', files.map(f => `${f.name} (${f.type})`));
@@ -5770,7 +5783,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     try {
       await navigator.share({
         title: 'Relatórios de Campo',
-        text: text || 'Segue em anexo o(s) relatório(s) analítico(s).',
+        text: text ?? 'Segue em anexo o(s) relatório(s) analítico(s).',
         files,
       });
       return true;
