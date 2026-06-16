@@ -1446,7 +1446,7 @@ type SavedFilterState = {
                     <div class="ac-macro-highlights">
                       <div class="ac-macro-card">
                         <div class="ac-macro-card-head">
-                          <span class="ac-macro-card-title">🏆 Top Melhores {{ getFilteredDestaques(kpi, cd).selectedDay ? '(' + getFilteredDestaques(kpi, cd).selectedDay + ')' : '' }}</span>
+                          <span class="ac-macro-card-title">🏆 Top Melhores {{ getFilteredDestaques(kpi, cd).selectedDay ? '(Dia ' + getFilteredDestaques(kpi, cd).selectedDay + (getFilteredDestaques(kpi, cd).selectedDayAvg !== null ? ' - Média: ' + (getFilteredDestaques(kpi, cd).selectedDayAvg | number:'1.0-1') : '') + ')' : '' }}</span>
                         </div>
                         <div class="ac-macro-list">
                           <div class="ac-macro-item-wrap" *ngFor="let t of getFilteredDestaques(kpi, cd).top | slice:0:3">
@@ -1469,7 +1469,7 @@ type SavedFilterState = {
 
                       <div class="ac-macro-card">
                         <div class="ac-macro-card-head">
-                          <span class="ac-macro-card-title">⚠️ Maiores Oportunidades {{ getFilteredDestaques(kpi, cd).selectedDay ? '(' + getFilteredDestaques(kpi, cd).selectedDay + ')' : '' }}</span>
+                          <span class="ac-macro-card-title">⚠️ Maiores Oportunidades {{ getFilteredDestaques(kpi, cd).selectedDay ? '(Dia ' + getFilteredDestaques(kpi, cd).selectedDay + (getFilteredDestaques(kpi, cd).selectedDayAvg !== null ? ' - Média: ' + (getFilteredDestaques(kpi, cd).selectedDayAvg | number:'1.0-1') : '') + ')' : '' }}</span>
                         </div>
                         <div class="ac-macro-list">
                           <div class="ac-macro-item-wrap" *ngFor="let t of getFilteredDestaques(kpi, cd).bottom | slice:0:3">
@@ -6082,59 +6082,104 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     return teamData.dailyPoints.filter((p: any) => p.value !== undefined).map((p: any) => ({ date: p.date, value: p.value }));
   }
 
-  protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[]; selectedDay: string | null } {
+  protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[]; selectedDay: string | null; selectedDayAvg?: number | null } {
     const selectedDay = this.selectedDayPerKpi()[kpi.kpi] || null;
 
+    let rawTop: any[] = [];
+    let rawBottom: any[] = [];
+    let selectedDayAvg: number | null = null;
+
     if (!cd || !cd.trendLines || cd.trendLines.length === 0) {
-      return { top: kpi.topTeams, bottom: kpi.opportunityTeams, selectedDay };
+      rawTop = [...(kpi.topTeams || [])];
+      rawBottom = [...(kpi.opportunityTeams || [])];
+    } else {
+      const selected = this.selectedTrendLine();
+      const activeCombos = new Set<string>();
+      if (selected) {
+        for (const tl of cd.trendLines) {
+          if (`${tl.base}|${tl.teamType}` === selected) {
+             const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
+             activeCombos.add(`${tl.base}|${normType}`);
+          }
+        }
+      }
+
+      const filterTeamByCombo = (teamName: string) => {
+         if (!selected) return true;
+         const info = this.parseTeamBase(teamName);
+         if (!info) return false;
+         if (activeCombos.has(`${info.base}|All`)) return true;
+         if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
+         if (activeCombos.has(`Média Global|All`)) return true;
+         return activeCombos.has(`${info.base}|${info.teamType}`);
+      };
+
+      let filteredScores: any[] = [];
+      if (selectedDay && kpi.perTeamDailyData) {
+         for (const t of kpi.perTeamDailyData) {
+            if (!filterTeamByCombo(t.team)) continue;
+            const pt = t.dailyPoints.find((p: any) => p.date === selectedDay || p.date.startsWith(selectedDay + '/') || selectedDay.startsWith(p.date + '/'));
+            if (pt && pt.value !== undefined) {
+               filteredScores.push({ team: t.team, rawValue: pt.value });
+            }
+         }
+      } else {
+         filteredScores = (kpi.scores || []).filter((s: any) => filterTeamByCombo(s.team));
+      }
+
+      const direction = kpi.direction || 'higher-is-better';
+      filteredScores.sort((a: any, b: any) => direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue);
+
+      const opportunityPool = filteredScores.filter((s: any) => 
+        direction === 'higher-is-better' ? s.rawValue < kpi.metaTarget : s.rawValue > kpi.metaTarget
+      );
+
+      if (selectedDay) {
+        const trendLine = cd.trendLines.find((tl: any) => selected ? `${tl.base}|${tl.teamType}` === selected : tl.base === 'Global');
+        if (trendLine) {
+          const pt = trendLine.points.find((p: any) => p.label === selectedDay);
+          if (pt) selectedDayAvg = pt.value;
+        }
+      }
+
+      rawTop = filteredScores.slice(0, 3).map((s: any) => ({ team: s.team, value: s.rawValue }));
+      rawBottom = opportunityPool.slice(-3).reverse().map((s: any) => ({ team: s.team, value: s.rawValue }));
     }
 
-    const selected = this.selectedTrendLine();
-
-    const activeCombos = new Set<string>();
-    if (selected) {
-      for (const tl of cd.trendLines) {
-        if (`${tl.base}|${tl.teamType}` === selected) {
-           const normType = tl.teamType.toLowerCase() === 'própria' ? 'propria' : (tl.teamType.toLowerCase() === 'parceira' ? 'parceira' : tl.teamType);
-           activeCombos.add(`${tl.base}|${normType}`);
+    // Apply Evidence Coherence Filtering
+    const report = this.reportData();
+    if (report && report.specialAnalysis) {
+      if (kpi.kpi === 'Eficiência' && kpi.evidenceAnalysis) {
+        const filteredEvi = this.sortedEficienciaAnalysis(kpi.evidenceAnalysis);
+        const validTopTeams = new Set(filteredEvi.filter(a => a.analysisType === 'top_performer').map(a => a.team));
+        const validBottomTeams = new Set(filteredEvi.filter(a => a.analysisType === 'underperformer').map(a => a.team));
+        rawTop = rawTop.filter(t => validTopTeams.has(t.team));
+        rawBottom = rawBottom.filter(t => validBottomTeams.has(t.team));
+      } else if (['OS Dia', 'Utilização', 'TME IMP', '1º Login', '1º Desloc.', 'Retorno Base'].includes(kpi.kpi)) {
+        let validBottomTeams = new Set<string>();
+        if (kpi.kpi === 'OS Dia' && report.specialAnalysis.osDiaAnalysis) {
+          validBottomTeams = new Set(this.filterOsDiaEvidence(report.specialAnalysis.osDiaAnalysis as any).map((a: any) => a.team));
+        } else if (kpi.kpi === 'Utilização' && report.specialAnalysis.utilizacaoAnalysis) {
+          validBottomTeams = new Set(report.specialAnalysis.utilizacaoAnalysis.filter((a: any) => a.flaggedOrders && a.flaggedOrders.length > 0).map((a: any) => a.team));
+        } else if (kpi.kpi === 'TME IMP' && report.specialAnalysis.tmeImpAnalysis) {
+          validBottomTeams = new Set(this.filterTmeImpEvidence(report.specialAnalysis.tmeImpAnalysis).map((a: any) => a.team));
+        } else if (kpi.kpi === '1º Login' && report.specialAnalysis.primeiroLoginAnalysis) {
+          validBottomTeams = new Set(this.filterLoginEvidence(report.specialAnalysis.primeiroLoginAnalysis).map((a: any) => a.team));
+        } else if (kpi.kpi === '1º Desloc.' && report.specialAnalysis.primeiroDeslocAnalysis) {
+          validBottomTeams = new Set(this.filterDeslocEvidence(report.specialAnalysis.primeiroDeslocAnalysis).map((a: any) => a.team));
+        } else if (kpi.kpi === 'Retorno Base' && report.specialAnalysis.retornoBaseAnalysis) {
+          validBottomTeams = new Set(this.filterRetornoEvidence(report.specialAnalysis.retornoBaseAnalysis).map((a: any) => a.team));
         }
+        
+        rawBottom = rawBottom.filter(t => validBottomTeams.has(t.team));
       }
     }
 
-    const filterTeamByCombo = (teamName: string) => {
-       if (!selected) return true;
-       const info = this.parseTeamBase(teamName);
-       if (!info) return false;
-       if (activeCombos.has(`${info.base}|All`)) return true;
-       if (activeCombos.has(`Média Global|${info.teamType}`)) return true;
-       if (activeCombos.has(`Média Global|All`)) return true;
-       return activeCombos.has(`${info.base}|${info.teamType}`);
-    };
-
-    let filteredScores: any[] = [];
-    if (selectedDay && kpi.perTeamDailyData) {
-       for (const t of kpi.perTeamDailyData) {
-          if (!filterTeamByCombo(t.team)) continue;
-          const pt = t.dailyPoints.find((p: any) => p.date === selectedDay);
-          if (pt && pt.value !== undefined) {
-             filteredScores.push({ team: t.team, rawValue: pt.value });
-          }
-       }
-    } else {
-       filteredScores = (kpi.scores || []).filter((s: any) => filterTeamByCombo(s.team));
-    }
-
-    const direction = kpi.direction || 'higher-is-better';
-    filteredScores.sort((a: any, b: any) => direction === 'higher-is-better' ? b.rawValue - a.rawValue : a.rawValue - b.rawValue);
-
-    const opportunityPool = filteredScores.filter((s: any) => 
-      direction === 'higher-is-better' ? s.rawValue < kpi.metaTarget : s.rawValue > kpi.metaTarget
-    );
-
     return {
-      top: filteredScores.slice(0, 3).map((s: any) => ({ team: s.team, value: s.rawValue })),
-      bottom: opportunityPool.slice(-3).reverse().map((s: any) => ({ team: s.team, value: s.rawValue })),
-      selectedDay
+      top: rawTop,
+      bottom: rawBottom,
+      selectedDay,
+      selectedDayAvg
     };
   }
 

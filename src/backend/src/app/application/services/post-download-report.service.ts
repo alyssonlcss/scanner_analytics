@@ -11,9 +11,10 @@ import type {
   DownloadedFileRef, ReportFilterInput, GeneratedReport,
   TeamMetricSummary, TempSemOsRow,
 } from './report/types.js';
-import { createAccessor, normalizeToken, buildDelimiterCandidates } from './report/csv-utils.js';
+import { createAccessor, normalizeToken, buildDelimiterCandidates, scoreKpi } from './report/csv-utils.js';
+import { KPI_THRESHOLDS } from './report/constants.js';
 import {
-  buildKpiInsights, buildKpiDailyTrend, buildPerTeamDailyValue,
+  buildKpiInsightsFromDesloc, buildKpiDailyTrend, buildPerTeamDailyValue,
   buildPerTeamDailyRatio, buildPerTeamDailyCount, buildPerTeamDailyTmeImp,
 } from './report/builders/kpi-insights.builder.js';
 import { calculateTempPrepSemOs, buildTeamMetrics } from './report/builders/team-stats.builder.js';
@@ -97,7 +98,7 @@ export class PostDownloadReportService {
       params.reportFilters,
     );
 
-    const kpis = buildKpiInsights(filtered.ranking);
+    const kpis = buildKpiInsightsFromDesloc(filtered.deslocamentos);
 
     // Attach per-day trend (computed from desloc rows) to each KPI insight
     for (const kpi of kpis) {
@@ -150,7 +151,23 @@ export class PostDownloadReportService {
     const teamMetrics = buildTeamMetrics(tempSemOs);
     const deviationInsights = buildDeviationInsights(filtered.desvios);
     const crossedInsights = buildCrossedInsights(teamMetrics, kpis, deviationInsights.teamBreakdown);
-    const osDiaAnalysis = analyzeOsDia(filtered.deslocamentos, filtered.ranking, kpis);
+    
+    let osDiaAnalysis = analyzeOsDia(filtered.deslocamentos, filtered.ranking, kpis);
+
+    if (osDiaKpi && osDiaAnalysis.length > 0) {
+      const sortedAnalysis = [...osDiaAnalysis].sort((a, b) => {
+        if (a.osDiaValue !== b.osDiaValue) {
+          return a.osDiaValue - b.osDiaValue;
+        }
+        return (b.idleAvgMin || 0) - (a.idleAvgMin || 0);
+      });
+
+      osDiaAnalysis = sortedAnalysis.slice(0, 3);
+      osDiaKpi.opportunityTeams = osDiaAnalysis.map((a) => ({
+        team: a.team,
+        value: a.osDiaValue,
+      }));
+    }
 
     // Analyze Eficiencia KPI for evidence of masked efficiency or issues
     const eficienciaAnalysis = analyzeEficiencia(filtered.deslocamentos, filtered.ranking, kpis);
@@ -235,6 +252,8 @@ export class PostDownloadReportService {
       kpis, teamScorecard, osDiaAnalysis, utilizacaoAnalysis, actionPlan, filtered.ranking,
       tmeImpAnalysis, retornoBaseAnalysis,
     );
+
+    // Manual recalculation block removed because buildKpiInsightsFromDesloc now handles granular metrics properly.
 
     // Compute actual date range from Data Referência column in the deslocamentos file
     const dataDateRange = this.computeDataDateRange(filtered.deslocamentos);

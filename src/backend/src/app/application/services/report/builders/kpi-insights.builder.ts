@@ -98,6 +98,196 @@ export function buildKpiInsights(rows: CsvRow[]): KpiInsight[] {
     return insights;
   }
 
+export function buildKpiInsightsFromDesloc(deslocRows: CsvRow[]): KpiInsight[] {
+  if (deslocRows.length === 0) return [];
+
+  const acc = createAccessor(deslocRows[0]);
+  const teamCol = acc.resolve(['Equipe', 'Team', 'Equipe Nome']);
+  const dateCol = acc.resolve(['Data Referência', 'Data Referencia']);
+  const osCol = acc.resolve(['Nr_Ordem', 'Nr Ordem', 'NR_ORDEM', 'Numero OS', 'Número OS']);
+  const tpCol = acc.resolve(['TEMPO_PADRAO_TOTAL_CAL']);
+  const trCol = acc.resolve(['TR_TOTAL_CAL']);
+  const htCol = acc.resolve(['HT total', 'HT Total']);
+  const hdCol = acc.resolve(['HD Total']);
+  const statusCol = acc.resolve(['status', 'Status']);
+  const trOrdemCol = acc.resolve(['TR Ordem', 'TR_Ordem']);
+  const loginCol = acc.resolve(['1º Login Corrigido', '1o Login Corrigido', '1º Login', '1o Login']);
+  const deslocCol = acc.resolve(['1º Desloc', '1o Desloc']);
+  const retornoCol = acc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
+
+  if (!teamCol || !dateCol) return [];
+
+  const teamData = new Map<string, {
+    osSet: Set<string>;
+    dateSet: Set<string>;
+    sumTp: number;
+    sumTr: number;
+    utilMap: Map<string, { ht: number; hd: number }>;
+    sumTme: number;
+    countTme: number;
+    loginMap: Map<string, number>;
+    deslocMap: Map<string, number>;
+    retornoMap: Map<string, number>;
+  }>();
+
+  for (const row of deslocRows) {
+    const team = String(row[teamCol] ?? '').trim();
+    const date = String(row[dateCol] ?? '').trim();
+    if (!team || !date) continue;
+
+    const current = teamData.get(team) ?? {
+      osSet: new Set<string>(),
+      dateSet: new Set<string>(),
+      sumTp: 0,
+      sumTr: 0,
+      utilMap: new Map(),
+      sumTme: 0,
+      countTme: 0,
+      loginMap: new Map(),
+      deslocMap: new Map(),
+      retornoMap: new Map(),
+    };
+
+    current.dateSet.add(date);
+
+    // OS Dia
+    if (osCol) {
+      const os = String(row[osCol] ?? '').trim();
+      if (os) current.osSet.add(os);
+    }
+
+    // Eficiência
+    if (tpCol && trCol) {
+      const tp = parseNumber(String(row[tpCol] ?? ''));
+      const tr = parseNumber(String(row[trCol] ?? ''));
+      if (tp !== null && tr !== null && Number.isFinite(tp) && Number.isFinite(tr)) {
+        current.sumTp += tp;
+        current.sumTr += tr;
+      }
+    }
+
+    // Utilização (first row per date per team)
+    if (htCol && hdCol && !current.utilMap.has(date)) {
+      const ht = parseNumber(String(row[htCol] ?? ''));
+      const hd = parseNumber(String(row[hdCol] ?? ''));
+      if (ht !== null && hd !== null && Number.isFinite(ht) && Number.isFinite(hd)) {
+        current.utilMap.set(date, { ht, hd });
+      }
+    }
+
+    // TME IMP
+    if (statusCol && trOrdemCol) {
+      const status = String(row[statusCol] ?? '').trim();
+      const tr = parseNumber(String(row[trOrdemCol] ?? ''));
+      if (status === 'Improdutivo' && tr !== null && tr > 0) {
+        current.sumTme += tr;
+        current.countTme += 1;
+      }
+    }
+
+    // 1º Login
+    if (loginCol && !current.loginMap.has(date)) {
+      const val = parseNumber(String(row[loginCol] ?? ''));
+      if (val !== null && Number.isFinite(val) && val >= 0) current.loginMap.set(date, val);
+    }
+
+    // 1º Desloc.
+    if (deslocCol && !current.deslocMap.has(date)) {
+      const val = parseNumber(String(row[deslocCol] ?? ''));
+      if (val !== null && Number.isFinite(val) && val >= 0) current.deslocMap.set(date, val);
+    }
+
+    // Retorno Base
+    if (retornoCol && !current.retornoMap.has(date)) {
+      const val = parseNumber(String(row[retornoCol] ?? ''));
+      if (val !== null && Number.isFinite(val) && val >= 0) current.retornoMap.set(date, val);
+    }
+
+    teamData.set(team, current);
+  }
+
+  // Helper to build insight for a specific KPI
+  const buildInsight = (kpiName: string, getVal: (data: any) => number | null): KpiInsight | null => {
+    const values: KpiRankItem[] = [];
+    for (const [team, data] of teamData.entries()) {
+      const val = getVal(data);
+      if (val !== null && Number.isFinite(val)) {
+        values.push({ team, value: val });
+      }
+    }
+
+    if (values.length === 0) return null;
+
+    const direction = KPI_DIRECTIONS[kpiName] ?? 'higher-is-better';
+    const threshold = KPI_THRESHOLDS.find((t) => normalizeToken(t.kpi) === normalizeToken(kpiName));
+    const sorted = [...values].sort((a, b) => direction === 'higher-is-better' ? b.value - a.value : a.value - b.value);
+
+    const scores: KpiTeamScore[] = values.map((item) => ({
+      team: item.team,
+      rawValue: round2(item.value),
+      score: threshold ? round2(scoreKpi(item.value, threshold)) : round2(item.value),
+    })).sort((a, b) => b.score - a.score);
+
+    const average = round2(values.reduce((sum, item) => sum + item.value, 0) / Math.max(values.length, 1));
+
+    const failingTeams = threshold
+      ? sorted.filter((item) =>
+          direction === 'higher-is-better' ? item.value < threshold.meta : item.value > threshold.meta,
+        )
+      : [];
+
+    return {
+      kpi: kpiName,
+      direction,
+      topTeams: sorted.slice(0, 3).map((item) => ({ ...item, value: round2(item.value) })),
+      opportunityTeams: failingTeams.slice(-3).reverse().map((item) => ({ ...item, value: round2(item.value) })),
+      scores,
+      average,
+      metaTarget: threshold?.meta ?? 0,
+      chartConfig: threshold ? {
+        worst: threshold.worst,
+        best: threshold.best,
+        direction: threshold.direction === 'higher-is-better' ? 'h' : 'l',
+        meta: threshold.meta,
+      } : undefined,
+    };
+  };
+
+  const insights: KpiInsight[] = [];
+
+  const addInsight = (insight: KpiInsight | null) => {
+    if (insight) insights.push(insight);
+  };
+
+  addInsight(buildInsight('OS Dia', (data) => data.dateSet.size > 0 ? data.osSet.size / data.dateSet.size : null));
+  addInsight(buildInsight('Eficiência', (data) => data.sumTr > 0 ? (data.sumTp / data.sumTr) * 100 : null));
+  addInsight(buildInsight('Utilização', (data) => {
+    let sumHt = 0, sumHd = 0;
+    for (const { ht, hd } of data.utilMap.values()) {
+      sumHt += ht; sumHd += hd;
+    }
+    return sumHd > 0 ? (sumHt / sumHd) * 100 : null;
+  }));
+  addInsight(buildInsight('TME IMP', (data) => data.countTme > 0 ? data.sumTme / data.countTme : null));
+  addInsight(buildInsight('1º Login', (data) => {
+    let sum = 0;
+    for (const v of data.loginMap.values()) sum += v;
+    return data.loginMap.size > 0 ? sum / data.loginMap.size : null;
+  }));
+  addInsight(buildInsight('1º Desloc.', (data) => {
+    let sum = 0;
+    for (const v of data.deslocMap.values()) sum += v;
+    return data.deslocMap.size > 0 ? sum / data.deslocMap.size : null;
+  }));
+  addInsight(buildInsight('Retorno Base', (data) => {
+    let sum = 0;
+    for (const v of data.retornoMap.values()) sum += v;
+    return data.retornoMap.size > 0 ? sum / data.retornoMap.size : null;
+  }));
+
+  return insights;
+}
+
   /**
    * Computes a per-day global average for a KPI by reading the Tab_Completa-Deslocamentos CSV.
    * Groups rows by date then by team (first row per team-day wins for team-level aggregate columns),
@@ -197,10 +387,8 @@ export function buildKpiDailyTrend(
         return aggregateDailyTrends(inputs, resolvedTeams);
       }
 
-      // Ratio mode: sum(numerator) / sum(denominator) per (date, team), then average across teams per date.
-      // This ensures correctness for row-level columns (e.g. tempo_padrao / TR Ordem) where values
-      // must be accumulated across all orders before dividing.
-      const dateTeamSums = new Map<string, Map<string, { sumNum: number; sumDen: number }>>();
+      // Ratio mode: either average of individual ratios or sum(numerator) / sum(denominator)
+      const dateTeamSums = new Map<string, Map<string, { sumNum: number; sumDen: number; sumRatios: number; countRatios: number }>>();
       for (const row of deslocRows) {
         const date = String(row[dateCol] ?? '').trim();
         const team = String(row[teamCol] ?? '').trim();
@@ -208,10 +396,17 @@ export function buildKpiDailyTrend(
         const num = parseNumber(String(row[valueCol] ?? ''));
         const den = parseNumber(String(row[value2Col] ?? ''));
         if (num === null || den === null || !Number.isFinite(num) || !Number.isFinite(den)) continue;
-        const teamMap = dateTeamSums.get(date) ?? new Map<string, { sumNum: number; sumDen: number }>();
-        const current = teamMap.get(team) ?? { sumNum: 0, sumDen: 0 };
-        current.sumNum += num;
-        current.sumDen += den;
+        const teamMap = dateTeamSums.get(date) ?? new Map<string, { sumNum: number; sumDen: number; sumRatios: number; countRatios: number }>();
+        const current = teamMap.get(team) ?? { sumNum: 0, sumDen: 0, sumRatios: 0, countRatios: 0 };
+        if (config.ratioMode === 'avg_of_ratios') {
+          if (den > 0) {
+            current.sumRatios += (num / den);
+            current.countRatios += 1;
+          }
+        } else {
+          current.sumNum += num;
+          current.sumDen += den;
+        }
         teamMap.set(team, current);
         dateTeamSums.set(date, teamMap);
       }
@@ -221,9 +416,15 @@ export function buildKpiDailyTrend(
 
       for (const fullDate of sortedDates) {
         const teamMap = dateTeamSums.get(fullDate)!;
-        for (const [team, { sumNum, sumDen }] of teamMap.entries()) {
-          if (sumDen > 0 && Number.isFinite(sumNum) && Number.isFinite(sumDen)) {
-            inputs.push({ fullDate, team, value: (sumNum / sumDen) * (config.scale ?? 1) });
+        for (const [team, { sumNum, sumDen, sumRatios, countRatios }] of teamMap.entries()) {
+          if (config.ratioMode === 'avg_of_ratios') {
+            if (countRatios > 0) {
+              inputs.push({ fullDate, team, value: (sumRatios / countRatios) * (config.scale ?? 1) });
+            }
+          } else {
+            if (sumDen > 0 && Number.isFinite(sumNum) && Number.isFinite(sumDen)) {
+              inputs.push({ fullDate, team, value: (sumNum / sumDen) * (config.scale ?? 1) });
+            }
           }
         }
       }
@@ -327,6 +528,7 @@ export function buildPerTeamDailyRatio(
     numCandidates: string[],
     denCandidates: string[],
     scale = 1,
+    mode: 'sum_divided_by_sum' | 'avg_of_ratios' = 'sum_divided_by_sum',
   ): Array<{ team: string; dailyPoints: PerTeamDailyPoint[] }> {
     if (deslocRows.length === 0) return [];
 
@@ -346,8 +548,8 @@ export function buildPerTeamDailyRatio(
       return y * 10000 + m * 100 + d;
     };
 
-    // team → date (dd/mm/yyyy) → { sumNum, sumDen }
-    const teamDateSums = new Map<string, Map<string, { sumNum: number; sumDen: number }>>();
+    // team → date (dd/mm/yyyy) → metrics
+    const teamDateSums = new Map<string, Map<string, { sumNum: number; sumDen: number; sumRatios: number; countRatios: number }>>();
     for (const row of deslocRows) {
       const date = String(row[dateCol] ?? '').trim();
       const team = String(row[teamCol] ?? '').trim();
@@ -355,10 +557,17 @@ export function buildPerTeamDailyRatio(
       const num = parseNumber(String(row[numCol] ?? ''));
       const den = parseNumber(String(row[denCol] ?? ''));
       if (num === null || den === null || !Number.isFinite(num) || !Number.isFinite(den)) continue;
-      const dateMap = teamDateSums.get(team) ?? new Map<string, { sumNum: number; sumDen: number }>();
-      const current = dateMap.get(date) ?? { sumNum: 0, sumDen: 0 };
-      current.sumNum += num;
-      current.sumDen += den;
+      const dateMap = teamDateSums.get(team) ?? new Map<string, { sumNum: number; sumDen: number; sumRatios: number; countRatios: number }>();
+      const current = dateMap.get(date) ?? { sumNum: 0, sumDen: 0, sumRatios: 0, countRatios: 0 };
+      if (mode === 'avg_of_ratios') {
+        if (den > 0) {
+          current.sumRatios += (num / den);
+          current.countRatios += 1;
+        }
+      } else {
+        current.sumNum += num;
+        current.sumDen += den;
+      }
       dateMap.set(date, current);
       teamDateSums.set(team, dateMap);
     }
@@ -369,12 +578,21 @@ export function buildPerTeamDailyRatio(
       const sortedDates = [...dateMap.keys()].sort((a, b) => parseFullDate(a) - parseFullDate(b));
       const dailyPoints: PerTeamDailyPoint[] = [];
       for (const fullDate of sortedDates) {
-        const { sumNum, sumDen } = dateMap.get(fullDate)!;
-        if (sumDen > 0) {
-          dailyPoints.push({
-            date: `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`,
-            value: round2((sumNum / sumDen) * scale),
-          });
+        const { sumNum, sumDen, sumRatios, countRatios } = dateMap.get(fullDate)!;
+        if (mode === 'avg_of_ratios') {
+          if (countRatios > 0) {
+            dailyPoints.push({
+              date: `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`,
+              value: round2((sumRatios / countRatios) * scale),
+            });
+          }
+        } else {
+          if (sumDen > 0) {
+            dailyPoints.push({
+              date: `${fullDate.slice(0, 2)}/${fullDate.slice(3, 5)}`,
+              value: round2((sumNum / sumDen) * scale),
+            });
+          }
         }
       }
       if (dailyPoints.length > 0) result.push({ team, dailyPoints });

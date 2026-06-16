@@ -49,6 +49,8 @@ export const KPI_DESLOC_DAILY_CONFIG: Record<string, {
   countBy?: string[];
   /** When true + aliases2 set, values are fixed per (date, team) — deduplicate to first row before ratio. */
   dedup?: boolean;
+  /** How to aggregate ratio KPIs. Defaults to sum_divided_by_sum. */
+  ratioMode?: 'sum_divided_by_sum' | 'avg_of_ratios';
 }> = {
   'OS Dia':       { aliases: [], countBy: ['Nr_Ordem', 'Nr Ordem', 'NR_ORDEM', 'Numero OS', 'Número OS'] },
   '1º Login':     { aliases: ['1º Login Corrigido', '1o Login Corrigido', '1º Login', '1o Login'] },

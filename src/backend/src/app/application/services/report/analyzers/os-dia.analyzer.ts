@@ -43,9 +43,11 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
     // Fall back to all-below-meta if no KPI insight is available.
     const osDiaInsight = kpis.find((k) => k.kpi === 'OS Dia');
     const underPerforming = new Map<string, number>();
-    if (osDiaInsight && osDiaInsight.opportunityTeams.length > 0) {
-      for (const t of osDiaInsight.opportunityTeams) {
-        underPerforming.set(t.team, t.value);
+    if (osDiaInsight) {
+      for (const t of osDiaInsight.scores) {
+        if (t.rawValue < osDiaInsight.metaTarget) {
+          underPerforming.set(t.team, t.rawValue);
+        }
       }
     } else {
       for (const [team, { sum, count }] of teamOsDiaTotals.entries()) {
