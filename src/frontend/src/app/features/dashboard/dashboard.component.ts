@@ -5964,6 +5964,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.setReportFilterStates(this.cascadeReportFilters(this.reportFilterStates(), this.reportType()), this.reportType());
 
     this.saveToStorage();
+    this.scheduleInstantReportRefresh();
     // Re-observe newly rendered anim-el elements after Angular renders the switched mode.
     setTimeout(() => this.setupAnimations(), 80);
   }
@@ -7446,6 +7447,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private updateReportDataAndDates(report: GeneratedReport) {
     this.availableDates = report.availableDates || [];
     this.reportData.set(report);
+
+    // Clear any interactive UI state to avoid remnants from the previous report
+    this.expandedEvidenceTeams.set({});
+    this.expandedEvidenceDates.set({});
+    this.analyticSelectedTeam.set({});
+    this.analyticSelectedDay.set({});
 
     const updateFilters = (filters: ReportSelectFilterState[], mode: ReportTypeValue) => {
       const updated = filters.map(f => {
