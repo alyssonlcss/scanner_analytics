@@ -6702,6 +6702,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       return { ...filter, value: next.length > 0 ? next : [ALL_OPTION] };
     });
     this.setReportFilterStates(this.cascadeReportFilters(updated, this.reportType()), this.reportType());
+    this.saveToStorage();
     this.scheduleInstantReportRefresh();
   }
 
