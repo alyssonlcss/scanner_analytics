@@ -387,16 +387,21 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         }
       }
 
-      // Accumulate HD Total
+      // Accumulate HD Total (per-jornada value — same for all OS in the group)
       if (hdTotalCol) {
+        let hdVal: number | null = null;
         for (const row of ordered) {
-          const hdVal = parseNumber(String(row[hdTotalCol] ?? ''));
-          if (hdVal !== null && Number.isFinite(hdVal)) {
-            const e = teamHdTotals.get(team) ?? { sum: 0, count: 0 };
-            e.sum += hdVal;
-            e.count += 1;
-            teamHdTotals.set(team, e);
+          const v = parseNumber(String(row[hdTotalCol] ?? ''));
+          if (v !== null && Number.isFinite(v)) {
+            hdVal = v;
+            break;
           }
+        }
+        if (hdVal !== null) {
+          const e = teamHdTotals.get(team) ?? { sum: 0, count: 0 };
+          e.sum += hdVal;
+          e.count += 1;
+          teamHdTotals.set(team, e);
         }
       }
 

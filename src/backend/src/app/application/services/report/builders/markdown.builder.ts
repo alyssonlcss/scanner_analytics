@@ -296,8 +296,9 @@ export function buildMarkdownReport(report: GeneratedReport): string {
           `**Utilização:** ${fmt(analysis.utilizacaoValue)}% | **Meta:** ${analysis.metaTarget}% | **Gap:** ${fmt(analysis.gap)}%`,
         );
         lines.push('');
+        const lbl = analysis.totalJornadas === 1 ? 'total' : 'médio/dia';
         lines.push(
-          `**HD Total (médio):** ${fmt(analysis.hdTotalMin)} min | **TempPrep:** ${fmt(analysis.tempPrepTotalMin)} min | **SemOrdem:** ${fmt(analysis.semOrdemTotalMin)} min`,
+          `**HD Total (${lbl}):** ${fmt(analysis.hdTotalMin)} min | **TempPrep (${lbl}):** ${fmt(analysis.tempPrepTotalMin)} min | **SemOrdem (${lbl}):** ${fmt(analysis.semOrdemTotalMin)} min`,
         );
         lines.push('');
         lines.push(
