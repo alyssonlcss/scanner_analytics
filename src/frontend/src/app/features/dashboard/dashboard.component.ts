@@ -5,6 +5,7 @@ import { TimelineVisualComponent } from '../../shared/components/timeline-visual
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { forkJoin, firstValueFrom } from 'rxjs';
+import html2canvas from 'html2canvas';
 import {
   DataDownloadCallbacks,
   GeneratedReport,
@@ -544,6 +545,11 @@ type SavedFilterState = {
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }} OS/dia</span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">OS/Dia <strong>{{ analysis.osDiaValue }}</strong></span>
@@ -677,6 +683,11 @@ type SavedFilterState = {
                               [class.rpt-osdia-badge--good]="analysis.analysisType === 'top_performer'">
                           {{ analysis.eficienciaValue }}% efic.
                         </span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">Média <strong>{{ analysis.averageEficiencia }}%</strong></span>
@@ -796,6 +807,9 @@ type SavedFilterState = {
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }}%</span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">Utilização <strong>{{ analysis.utilizacaoValue }}%</strong></span>
@@ -927,6 +941,11 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">TME IMP <strong>{{ analysis.tmeImpValue | number:'1.1-1' }} min</strong></span>
@@ -1042,6 +1061,11 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">1º Login <strong>{{ analysis.primeiroLoginValue | number:'1.1-1' }} min</strong></span>
@@ -1117,6 +1141,11 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">1º Desloc. <strong>{{ analysis.primeiroDeslocValue | number:'1.1-1' }} min</strong></span>
@@ -1200,6 +1229,11 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                        </button>
                       </div>
                       <div class="rpt-osdia-card-meta">
                         <span class="rpt-osdia-chip">Retorno Base <strong>{{ analysis.retornoBaseValue | number:'1.1-1' }} min</strong></span>
@@ -3610,6 +3644,24 @@ type SavedFilterState = {
         align-items: center;
         gap: 10px;
         flex-wrap: wrap;
+      }
+
+      .export-png-btn {
+        margin-left: auto;
+        background: transparent;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        padding: 4px 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+      .export-png-btn:hover {
+        background: rgba(255,255,255,0.1);
+        color: var(--text);
       }
 
       .rpt-osdia-team {
@@ -6046,6 +6098,66 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected toggleDateExpanded(kpiKey: string, team: string, dateRef: string): void {
     const key = `${kpiKey}|${team}|${dateRef}`;
     this.expandedEvidenceDates.update((cur) => ({ ...cur, [key]: !cur[key] }));
+  }
+
+  protected async exportTeamCardToPng(event: Event, teamName: string): Promise<void> {
+    event.stopPropagation();
+    try {
+      const button = event.currentTarget as HTMLElement;
+      // The card is the closest container for the team evidence
+      const card = button.closest('.rpt-osdia-card') as HTMLElement;
+      if (!card) return;
+
+      // Temporarily hide the export button itself so it doesn't appear in the PNG
+      const originalDisplay = button.style.display;
+      button.style.display = 'none';
+
+      // Capture the card in high definition
+      const canvas = await html2canvas(card, {
+        backgroundColor: '#111318', // Match dark theme background
+        scale: 4, // High definition
+        useCORS: true,
+        logging: false
+      });
+
+      // Restore button
+      button.style.display = originalDisplay;
+
+      // Convert to blob
+      canvas.toBlob(async (blob: Blob | null) => {
+        if (!blob) {
+          alert('Falha ao gerar imagem.');
+          return;
+        }
+
+        const fileName = `Evidencias_${teamName.replace(/\s+/g, '_')}.png`;
+        const file = new File([blob], fileName, { type: 'image/png' });
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Evidências - ${teamName}`,
+              text: `Evidências da equipe ${teamName} do Scanner Analytics.`
+            });
+          } catch (error: any) {
+            if (error.name !== 'AbortError') {
+              console.error('Error sharing:', error);
+            }
+          }
+        } else {
+          // Fallback if sharing files is not supported (like on some desktop browsers)
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+    } catch (err) {
+      console.error('Erro ao exportar card:', err);
+    }
   }
 
   protected getExtraForDate<T extends { date_ref?: string }>(
