@@ -545,7 +545,7 @@ type SavedFilterState = {
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }} OS/dia</span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -683,7 +683,7 @@ type SavedFilterState = {
                               [class.rpt-osdia-badge--good]="analysis.analysisType === 'top_performer'">
                           {{ analysis.eficienciaValue }}% efic.
                         </span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -807,7 +807,7 @@ type SavedFilterState = {
                       <div class="rpt-osdia-card-head">
                         <span class="rpt-osdia-team">{{ analysis.team }}</span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }}%</span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                         </button>
                       </div>
@@ -941,7 +941,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -1061,7 +1061,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -1141,7 +1141,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -1229,7 +1229,7 @@ type SavedFilterState = {
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">
                           {{ analysis.gap > 0 ? '+' : '' }}{{ analysis.gap | number:'1.1-1' }} min s/meta
                         </span>
-                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Exportar imagem">
+                        <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
                           </svg>
@@ -6112,10 +6112,45 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const originalDisplay = button.style.display;
       button.style.display = 'none';
 
+      // Função para exibir um aviso visual menor próximo ao botão
+      const showToast = (msg: string, isError = false) => {
+        const toast = document.createElement('div');
+        toast.innerText = msg;
+        toast.style.position = 'fixed';
+        
+        // Posição próxima ao botão
+        const rect = button.getBoundingClientRect();
+        toast.style.top = `${Math.max(10, rect.top - 36)}px`;
+        toast.style.left = `${Math.max(10, rect.left - 130)}px`;
+        
+        toast.style.backgroundColor = isError ? '#ef4444' : '#10b981'; // Vermelho ou Verde
+        toast.style.color = '#fff';
+        toast.style.padding = '6px 12px';
+        toast.style.borderRadius = '4px';
+        toast.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+        toast.style.zIndex = '99999';
+        toast.style.fontFamily = 'system-ui, sans-serif';
+        toast.style.fontSize = '12px';
+        toast.style.fontWeight = '600';
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.2s ease-in-out';
+        
+        document.body.appendChild(toast);
+        
+        // Fade in
+        requestAnimationFrame(() => toast.style.opacity = '1');
+        
+        // Fade out
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          setTimeout(() => toast.remove(), 200);
+        }, 2000); // 2 segundos
+      };
+
       // Capture the card in high definition
       const canvas = await html2canvas(card, {
         backgroundColor: '#111318', // Match dark theme background
-        scale: 4, // High definition
+        scale: 2, // Retina HD - optimal balance of speed and quality
         useCORS: true,
         logging: false
       });
@@ -6126,33 +6161,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       // Convert to blob
       canvas.toBlob(async (blob: Blob | null) => {
         if (!blob) {
-          alert('Falha ao gerar imagem.');
+          showToast('Falha ao gerar', true);
           return;
         }
 
-        const fileName = `Evidencias_${teamName.replace(/\s+/g, '_')}.png`;
-        const file = new File([blob], fileName, { type: 'image/png' });
-
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: `Evidências - ${teamName}`,
-              text: `Evidências da equipe ${teamName} do Scanner Analytics.`
-            });
-          } catch (error: any) {
-            if (error.name !== 'AbortError') {
-              console.error('Error sharing:', error);
-            }
+        // Copia a imagem para a área de transferência
+        try {
+          if (navigator.clipboard && window.ClipboardItem) {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+            showToast('Copiado em HD! (Ctrl+V)');
+          } else {
+            showToast('Navegador não suporta', true);
           }
-        } else {
-          // Fallback if sharing files is not supported (like on some desktop browsers)
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          a.click();
-          URL.revokeObjectURL(url);
+        } catch (e) {
+          console.warn('Falha ao copiar para a área de transferência:', e);
+          showToast('Erro ao copiar', true);
         }
       }, 'image/png');
     } catch (err) {
