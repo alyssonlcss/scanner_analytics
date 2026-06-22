@@ -6570,7 +6570,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           const text = item.textContent ?? '';
           const t = (title || text).replace(/\s+/g, ' ').trim();
           if (t === '...') {
-            isLoading = true;
+            const rect = item.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              isLoading = true;
+            }
             continue;
           }
           if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) continue;
