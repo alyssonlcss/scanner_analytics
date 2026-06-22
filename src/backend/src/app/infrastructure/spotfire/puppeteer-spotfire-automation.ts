@@ -6630,6 +6630,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         // RULE: never click again if item is already selected (toggle danger).
         // On each failure: inspect visible dates → compute exact correction →
         //   scroll UP or +1 DOWN → retry. Never reset to top.
+        let loadingWaits = 0;
         for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
           // Pre-check before every attempt (including attempt 0 — belt and braces).
           const preStatus = await verifySelected(dateValue);
@@ -6646,12 +6647,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
             // Inspect which dates are currently visible to know exactly where we are.
             const visibleState = await getVisibleDatesState();
-            if (visibleState.isLoading) {
+            if (visibleState.isLoading && loadingWaits < 15) {
               this.logAlways(`[data-referencia] "..." detectado! Filtro está carregando. Aguardando...`);
               await new Promise((r) => setTimeout(r, 1000));
+              loadingWaits++;
               attempt--; // Do not burn a retry while loading
               if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
               continue;
+            }
+            if (visibleState.isLoading) {
+              this.logAlways(`[data-referencia] "..." persistindo tempo demais. Prosseguindo assim mesmo.`);
             }
 
             const visible = visibleState.dates;

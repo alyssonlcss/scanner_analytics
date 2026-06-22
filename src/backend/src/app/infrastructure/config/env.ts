@@ -97,6 +97,7 @@ export type BasesConfig = {
   polos: Array<{
     name: string;
     matchType: 'direct_prefix' | 'infix_type_with_base_prefix';
+    ignoreTeamTags?: string[];
     typeIdentifiers?: { propria: string[]; parceira: string[] };
     bases: Array<{
       name: string;

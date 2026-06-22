@@ -455,6 +455,12 @@ export class PostDownloadReportService {
     return (teamName: string) => {
       if (teamName.length === 0) return { isMatch: false, base: null, teamType: null };
 
+      for (const polo of config.polos) {
+        if (polo.ignoreTeamTags?.some((tag: string) => teamName.includes(tag.toUpperCase()))) {
+          return { isMatch: false, base: null, teamType: null };
+        }
+      }
+
       let matchedBase: string | null = null;
       let matchedType: 'propria' | 'parceira' | null = null;
 

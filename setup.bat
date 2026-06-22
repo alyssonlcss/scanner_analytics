@@ -6,23 +6,27 @@ echo ===================================================
 echo.
 
 echo [1/3] Instalando dependencias do Backend...
-cd src\backend
-call npm install
+cd /d "%~dp0src\backend"
+if not exist "node_modules\" (
+    call npm install
+) else (
+    echo Dependencias do Backend ja estao instaladas. Ignorando npm install...
+)
 
 echo.
 echo [2/3] Instalando dependencias do Frontend...
-cd ..\frontend
-call npm install
+cd /d "%~dp0src\frontend"
+if not exist "node_modules\" (
+    call npm install
+) else (
+    echo Dependencias do Frontend ja estao instaladas. Ignorando npm install...
+)
 
 echo.
 echo [3/3] Iniciando os servidores...
-echo O Backend sera iniciado em uma nova janela.
-cd ..\backend
-start "Scanner Analytics - Backend" cmd /c "npm run dev"
-
-echo O Frontend sera iniciado em uma nova janela.
-cd ..\frontend
-start "Scanner Analytics - Frontend" cmd /c "npm start"
+echo Os servidores serao iniciados no Windows Terminal nesta mesma janela.
+cd /d "%~dp0"
+wt -w 0 new-tab --title "Backend" -d "%~dp0src\backend" cmd /k "npm run dev" ; new-tab --title "Frontend" -d "%~dp0src\frontend" cmd /k "npm start"
 
 echo.
 echo ===================================================

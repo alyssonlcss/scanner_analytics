@@ -3,6 +3,7 @@
   "polos": [
     {
       "name": "Norte",
+      "ignoreTeamTags": ["-AP-"],
       "matchType": "direct_prefix",
       "bases": [
         {
@@ -29,6 +30,7 @@
     },
     {
       "name": "Centro-Norte",
+      "ignoreTeamTags": ["-AP-"],
       "matchType": "infix_type_with_base_prefix",
       "typeIdentifiers": {
         "propria": ["-EN-"],
@@ -55,6 +57,7 @@
     },
     {
       "name": "Atlântico",
+      "ignoreTeamTags": ["-AP-"],
       "matchType": "direct_prefix",
       "bases": [
         {
