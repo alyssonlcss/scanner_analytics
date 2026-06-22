@@ -6549,29 +6549,35 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     };
 
     // Get the date labels currently visible in the filter list (title="DD/MM/YYYY" items).
-    // Returns them in DOM order (top → bottom).
-    const getVisibleDates = (): Promise<string[]> =>
+    // Returns them in DOM order (top → bottom), along with an isLoading flag if '...' is present.
+    const getVisibleDatesState = (): Promise<{ dates: string[], isLoading: boolean }> =>
       page.evaluate((ft: string) => {
         function nc(v: string | null | undefined): string {
           return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         }
         const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
           ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-        if (!panelRoot) return [] as string[];
+        if (!panelRoot) return { dates: [], isLoading: false };
         const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
           const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
           return nc(el?.getAttribute('title') ?? el?.textContent) === nc(ft);
         });
-        if (!filterEl) return [] as string[];
-        const result: string[] = [];
+        if (!filterEl) return { dates: [], isLoading: false };
+        const dates: string[] = [];
+        let isLoading = false;
         for (const item of filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')) {
-          const t = (item.getAttribute('title') ?? '').trim();
-          // Only date-format items (DD/MM/YYYY).
+          const title = item.getAttribute('title') ?? '';
+          const text = item.textContent ?? '';
+          const t = (title || text).replace(/\s+/g, ' ').trim();
+          if (t === '...') {
+            isLoading = true;
+            continue;
+          }
           if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) continue;
           const rect = item.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) result.push(t);
+          if (rect.width > 0 && rect.height > 0) dates.push(t);
         }
-        return result;
+        return { dates, isLoading };
       }, filterTitle);
 
     try {
@@ -6639,7 +6645,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
 
             // Inspect which dates are currently visible to know exactly where we are.
-            const visible = await getVisibleDates();
+            const visibleState = await getVisibleDatesState();
+            if (visibleState.isLoading) {
+              this.logAlways(`[data-referencia] "..." detectado! Filtro está carregando. Aguardando...`);
+              await new Promise((r) => setTimeout(r, 1000));
+              attempt--; // Do not burn a retry while loading
+              if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
+              continue;
+            }
+
+            const visible = visibleState.dates;
             this.logAlways(`[data-referencia] retry ${attempt} — visíveis: [${visible.join(', ')}] — alvo: "${dateValue}"`);
 
             if (visible.length > 0) {
