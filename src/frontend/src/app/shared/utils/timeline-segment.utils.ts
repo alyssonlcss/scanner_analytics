@@ -72,7 +72,8 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     if (ev.nr_ordem_despacho_anterior && ev.hora_despacho_anterior) {
       addPt('hora_despacho_anterior', ev.hora_despacho_anterior, `1º Despacho: ${ev.nr_ordem_despacho_anterior}`);
     }
-    addPt('despachada', despachada, 'Despachada');
+    const despLabel = (ev.nr_ordem_despacho_anterior && ev.nr_ordem) ? `Despachada: ${ev.nr_ordem}` : 'Despachada';
+    addPt('despachada', despachada, despLabel);
   }
   addPt('a_caminho', aCaminho, 'A Caminho');
   addPt('no_local', ev.no_local, 'No Local');

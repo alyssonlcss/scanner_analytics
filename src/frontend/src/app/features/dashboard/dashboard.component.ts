@@ -1164,9 +1164,6 @@ type SavedFilterState = {
                             <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="ev.is_primeira_os_jornada" title="Primeira OS da jornada">1ª OS</span>
                             <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ deslocFlagLabel(f) }}</span>
                           </div>
-                          <p class="osdia-ev-causa" *ngIf="ev.is_primeira_os_jornada">
-                            <span class="rpt-osdia-badge rpt-osdia-badge--first">1ª OS</span>
-                          </p>
                           <app-timeline-visual [ev]="ev"></app-timeline-visual>
                           <ul class="osdia-ev-alerts">
                             <li *ngIf="ev.flags.includes('despacho_tardio')" class="osdia-ev-alert">
