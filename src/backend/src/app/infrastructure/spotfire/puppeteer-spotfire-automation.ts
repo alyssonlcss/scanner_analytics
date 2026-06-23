@@ -6550,20 +6550,21 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     // Get the date labels currently visible in the filter list (title="DD/MM/YYYY" items).
     // Returns them in DOM order (top → bottom), along with an isLoading flag if '...' is present.
-    const getVisibleDatesState = (): Promise<{ dates: string[], isLoading: boolean }> =>
+    const getVisibleDatesState = (): Promise<{ dates: string[], allDatesInDom: string[], isLoading: boolean }> =>
       page.evaluate((ft: string) => {
         function nc(v: string | null | undefined): string {
           return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         }
         const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
           ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-        if (!panelRoot) return { dates: [], isLoading: false };
+        if (!panelRoot) return { dates: [], allDatesInDom: [], isLoading: false };
         const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
           const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
           return nc(el?.getAttribute('title') ?? el?.textContent) === nc(ft);
         });
-        if (!filterEl) return { dates: [], isLoading: false };
+        if (!filterEl) return { dates: [], allDatesInDom: [], isLoading: false };
         const dates: string[] = [];
+        const allDatesInDom: string[] = [];
         let isLoading = false;
         for (const item of filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')) {
           const title = item.getAttribute('title') ?? '';
@@ -6577,10 +6578,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             continue;
           }
           if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) continue;
+          allDatesInDom.push(t);
           const rect = item.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) dates.push(t);
         }
-        return { dates, isLoading };
+        return { dates, allDatesInDom, isLoading };
       }, filterTitle);
 
     try {
@@ -6611,22 +6613,45 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           ctrlHeld = true;
         }
 
-        // ── Step 1: scroll DOWN to target position ─────────────────────────────
-        // fullDateList[i] is at display-pos i+1 ((All) is at 0).
-        // targetScrollPos = listPos-1 → item at 3rd slot of 4-item window.
-        const listPos = listPositions.get(dateValue) ?? index;
-        const targetScrollPos = Math.max(0, listPos - 1);
-        const delta = Math.max(0, targetScrollPos - currentScrollPos);
-
-        if (delta > 0) {
-          if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
-          if (delta > 1) {
-            this.logAlways(`[data-referencia] ↓ +${delta} para "${dateValue}" (pos ${currentScrollPos}→${targetScrollPos})`);
+        // ── Step 1: check if in DOM already, otherwise scroll DOWN ─────────────
+        const isTargetInDom = await page.evaluate((args) => {
+          function nc(v: string | null | undefined): string {
+            return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
           }
-          await this.scrollRightPanelDownN(page, filterTitle, delta, undefined, 40);
-          currentScrollPos = targetScrollPos;
-          if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
-          await new Promise((r) => setTimeout(r, 80)); // settle
+          const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
+            ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
+          if (!panelRoot) return false;
+          const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
+            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
+            return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.title);
+          });
+          if (!filterEl) return false;
+          const safeLabel = args.label.replace(/"/g, '\\"');
+          let target = filterEl.querySelector<HTMLElement>(`[title="${safeLabel}"]`);
+          if (!target) {
+            target = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
+              .find((item) => (item.getAttribute('title') ?? item.textContent ?? '').trim() === args.label) ?? null;
+          }
+          return !!target;
+        }, { title: filterTitle, label: dateValue });
+
+        const listPos = listPositions.get(dateValue) ?? index;
+        if (!isTargetInDom) {
+          const targetScrollPos = Math.max(0, listPos - 1);
+          const delta = Math.max(0, targetScrollPos - currentScrollPos);
+
+          if (delta > 0) {
+            if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
+            if (delta > 1) {
+              this.logAlways(`[data-referencia] ↓ +${delta} para "${dateValue}" (pos ${currentScrollPos}→${targetScrollPos})`);
+            }
+            await this.scrollRightPanelDownN(page, filterTitle, delta, undefined, 40);
+            currentScrollPos = targetScrollPos;
+            if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
+            await new Promise((r) => setTimeout(r, 80)); // settle
+          }
+        } else {
+          this.logAlways(`[data-referencia] "${dateValue}" já está no DOM. Pulando rolagem inicial.`);
         }
 
         // ── Step 2: click + verify — retry with scroll correction on failure ───
@@ -6650,15 +6675,20 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
             // Inspect which dates are currently visible to know exactly where we are.
             const visibleState = await getVisibleDatesState();
-            if (visibleState.isLoading && loadingWaits < 15) {
-              this.logAlways(`[data-referencia] "..." detectado! Filtro está carregando. Aguardando...`);
+            const targetAvailable = visibleState.allDatesInDom.includes(dateValue);
+
+            if (visibleState.isLoading && !targetAvailable && loadingWaits < 15) {
+              this.logAlways(`[data-referencia] "..." detectado! Alvo "${dateValue}" ainda não carregou. Aguardando...`);
               await new Promise((r) => setTimeout(r, 1000));
               loadingWaits++;
               attempt--; // Do not burn a retry while loading
               if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
               continue;
             }
-            if (visibleState.isLoading) {
+            
+            if (visibleState.isLoading && targetAvailable) {
+              this.logAlways(`[data-referencia] "..." detectado, mas alvo "${dateValue}" já está disponível na lista. Ignorando espera.`);
+            } else if (visibleState.isLoading) {
               this.logAlways(`[data-referencia] "..." persistindo tempo demais. Prosseguindo assim mesmo.`);
             }
 
@@ -6695,13 +6725,23 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             await new Promise((r) => setTimeout(r, 80)); // settle after correction
           }
 
+          let clicked = false;
           const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
-          if (!coords) {
+          if (coords) {
+            await page.mouse.click(coords.x, coords.y);
+            clicked = true;
+          } else {
+            const dispatched = await this.clickRightPanelDateItem(page, filterTitle, dateValue, ctrlHeld);
+            if (dispatched) {
+              clicked = true;
+              this.logAlways(`[data-referencia] alvo "${dateValue}" clicado via dispatchEvent (off-screen).`);
+            }
+          }
+
+          if (!clicked) {
             this.logStep('data-referencia', 'WARN', 'could not get item coords', { dateValue, attempt, currentScrollPos });
             continue; // next retry will inspect visible and correct
           }
-
-          await page.mouse.click(coords.x, coords.y);
 
           // Poll up to 1 s — Spotfire updates sfpc-selected asynchronously.
           const status = await pollSelected(dateValue, 1000);
