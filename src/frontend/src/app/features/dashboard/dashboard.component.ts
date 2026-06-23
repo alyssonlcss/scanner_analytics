@@ -5550,9 +5550,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const scorecard = s.report.teamScorecard ?? [];
       const actionPlanMap = new Map((s.report.specialAnalysis?.actionPlan ?? []).map(ap => [ap.team, ap]));
 
+      const osDiaMap = new Map((s.report.specialAnalysis?.osDiaAnalysis ?? []).map(a => [a.team, a]));
+
       const attentionTeams = scorecard.filter(team => {
         const utilizacao = team.kpis?.utilizacao ?? 100;
-        return team.kpisBelowMeta >= 4 || utilizacao < 50;
+        const ociosidade = osDiaMap.get(team.team)?.idleAnalysis?.idlePct ?? 0;
+        return team.kpisBelowMeta >= 4 || utilizacao < 50 || ociosidade >= 15;
       });
 
       if (attentionTeams.length === 0) continue;
@@ -5560,7 +5563,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       attentionTeams.sort((a, b) => {
         const utilA = (a.kpis?.utilizacao ?? 100) < 50 ? 1 : 0;
         const utilB = (b.kpis?.utilizacao ?? 100) < 50 ? 1 : 0;
+        const idleA = (osDiaMap.get(a.team)?.idleAnalysis?.idlePct ?? 0) >= 15 ? 1 : 0;
+        const idleB = (osDiaMap.get(b.team)?.idleAnalysis?.idlePct ?? 0) >= 15 ? 1 : 0;
+
         if (utilA !== utilB) return utilB - utilA;
+        if (idleA !== idleB) return idleB - idleA;
         return (b.kpisBelowMeta || 0) - (a.kpisBelowMeta || 0);
       });
 
@@ -5648,6 +5655,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           }
         }
 
+        const motivos: string[] = [];
+        if (util < 50) motivos.push('Utilização < 50%');
+        if ((osDiaMap.get(team.team)?.idleAnalysis?.idlePct ?? 0) >= 15) motivos.push('Ociosidade ≥ 15%');
+        if (team.kpisBelowMeta >= 4) motivos.push('4+ KPIs abaixo da meta');
+
         let desviosText = '';
         const infos = [];
         if (countPrep > 0 && maxPrep > 15) {
@@ -5663,9 +5675,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           desviosText += (desviosText ? ' | ' : '') + '*Intervalo NÃO declarado* (ou fora de 4h-6h)';
         }
 
-        let linha = `• ${team.team}: `;
-        if (kpisImpactados.length > 0) linha += `KPIs Impactados (${kpisImpactados.join(', ')})`;
-        linha += `\n    ↳ Desvios: ${desviosText}\n`;
+        let linha = `• ${team.team} (Motivo: ${motivos.join(', ')}):\n`;
+        if (kpisImpactados.length > 0) linha += `    ↳ KPIs Impactados: ${kpisImpactados.join(', ')}\n`;
+        if (desviosText) linha += `    ↳ Desvios: ${desviosText}\n`;
 
         text += linha;
       }
