@@ -805,7 +805,7 @@ type SavedFilterState = {
                   <div class="rpt-osdia-grid">
                     <div class="rpt-osdia-card" *ngFor="let analysis of filterOsDiaEvidence(report.specialAnalysis.utilizacaoAnalysis)">
                       <div class="rpt-osdia-card-head">
-                        <span class="rpt-osdia-team">{{ analysis.team }}</span>
+                        <span class="rpt-osdia-team">{{ analysis.team }}<ng-container *ngIf="isTeamInBottomOsDia(analysis.team)"> *</ng-container></span>
                         <span class="rpt-osdia-badge rpt-osdia-badge--gap">Gap {{ analysis.gap | number:'1.1-1' }}%</span>
                         <button class="export-png-btn" (click)="exportTeamCardToPng($event, analysis.team)" title="Copiar imagem">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
@@ -6399,6 +6399,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const teamData = data.perTeamDailyData.find((t: any) => t.team === data.team);
     if (!teamData || !teamData.dailyPoints) return [];
     return teamData.dailyPoints.filter((p: any) => p.value !== undefined).map((p: any) => ({ date: p.date, value: p.value }));
+  }
+
+  protected isTeamInBottomOsDia(teamName: string): boolean {
+    const report = this.reportData();
+    if (!report || !report.kpis) return false;
+    const osDiaKpi = report.kpis.find((k: any) => k.kpi === 'OS Dia');
+    if (!osDiaKpi || !osDiaKpi.opportunityTeams) return false;
+    return osDiaKpi.opportunityTeams.some((t: any) => t.team === teamName);
   }
 
   protected getFilteredDestaques(kpi: any, cd: any): { top: any[]; bottom: any[]; selectedDay: string | null; selectedDayAvg?: number | null } {
