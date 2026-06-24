@@ -5595,18 +5595,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (team.kpiStatus[k.statusKey] === 'below') {
             const val = team.kpis[k.key];
             if (val !== undefined) {
-              if (k.key === 'primeiroLogin' && val <= 8) return;
-              if (k.key === 'retornoBase' && val < 90) return;
-              if (k.key === 'primeiroDesloc' && val <= 25) return;
-              if (k.key === 'osDia' && val > 2) return;
-              if (k.key === 'eficiencia') {
-                if (val >= 80) return;
-                const efiKpi = s.report.kpis.find(x => x.kpi === 'Eficiência');
-                const efiAnalysis = efiKpi?.evidenceAnalysis?.find(a => a.team === team.team);
-                if (efiAnalysis && (!efiAnalysis.flaggedOrders || efiAnalysis.flaggedOrders.length === 0) && efiAnalysis.tempoPadraoVazioOrders?.length > 0) {
-                  return;
-                }
-              }
               kpisImpactados.push(`_${k.label}:_ *${k.fmt(val)}*`);
             }
           }
