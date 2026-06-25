@@ -8,6 +8,7 @@ echo.
 echo [1/3] Instalando dependencias do Backend...
 cd /d "%~dp0src\backend"
 if not exist "node_modules\" (
+    set PUPPETEER_SKIP_DOWNLOAD=true
     call npm install
 ) else (
     echo Dependencias do Backend ja estao instaladas. Ignorando npm install...
