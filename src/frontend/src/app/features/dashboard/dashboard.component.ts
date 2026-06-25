@@ -6146,7 +6146,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
       // Capture the card in high definition
       const canvas = await html2canvas(card, {
-        backgroundColor: '#111318', // Match dark theme background
+        backgroundColor: null, // Captura o fundo real do elemento na tela
         scale: 2, // Retina HD - optimal balance of speed and quality
         useCORS: true,
         logging: false

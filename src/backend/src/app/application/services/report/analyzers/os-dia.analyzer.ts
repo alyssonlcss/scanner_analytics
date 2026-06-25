@@ -530,7 +530,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         ) {
           flags.push('tr_excede_hd');
         }
-        if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin && hdTotalMin > 0 && tlOrdemMin > hdTotalMin * 0.20) {
+        if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin && hdTotalMin > 0 && tlOrdemMin > hdTotalMin * 0.30) {
           flags.push('tl_excede_hd');
         }
 
