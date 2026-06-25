@@ -445,7 +445,9 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           const prevRow = bIdx > 0 ? ordered[bIdx - 1] : null;
           const nr = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
           const desp = despachadaCol ? String(row[despachadaCol] ?? '').trim() : '';
-          const key = nr || desp;
+          const caminho = caminhoCol ? String(row[caminhoCol] ?? '').trim() : '';
+          const liberada = liberadaCol ? String(row[liberadaCol] ?? '').trim() : '';
+          const key = `${nr || desp}|${caminho}|${liberada}`;
           if (!key || seen.has(key)) continue;
           seen.add(key);
           const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
@@ -807,8 +809,12 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
               }
             : null;
 
-          const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
-          if (existingEvidence) {
+          const isLastEvidenceFromLastRow = evidences.length > 0 && 
+            evidences[evidences.length - 1].nr_ordem === lastNrOrdem && 
+            evidences[evidences.length - 1].liberada === liberadaStr;
+
+          if (isLastEvidenceFromLastRow) {
+            const existingEvidence = evidences[evidences.length - 1];
             const details = existingEvidence.sem_os_details ?? [];
             details.push(fimDetail);
             if (fimDeslDetail) details.push(fimDeslDetail);
@@ -905,11 +911,11 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
       const allBasic = teamAllBasicOrders.get(team) ?? [];
-      const flaggedByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const flaggedByKey = new Map(flaggedOrders.map(o => [`${o.nr_ordem || ''}|${o.a_caminho}|${o.liberada}`, o]));
       const seenExtra = new Set<string>();
       const allMerged: OsDiaOrderEvidence[] = [];
       for (const o of allBasic) {
-        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
+        const key = `${o.nr_ordem || ''}|${o.a_caminho}|${o.liberada}`;
         if (!seenExtra.has(key)) { 
           seenExtra.add(key); 
           allMerged.push(flaggedByKey.get(key) ?? o); 
@@ -1004,12 +1010,13 @@ export function mergeEvidenceFlags<T extends {
     despachada: string;
     a_caminho: string;
     flags: string[];
+    liberada?: string;
     sem_os_details?: Array<{ type: string; min: number; [k: string]: unknown }>;
     sem_os_total_min?: number;
   }>(evidences: T[]): T[] {
     const map = new Map<string, T>();
     for (const ev of evidences) {
-      const key = ev.nr_ordem || `${ev.despachada}|${ev.a_caminho}`;
+      const key = `${ev.nr_ordem || ''}|${ev.a_caminho}|${ev.liberada}`;
       const existing = map.get(key);
       if (existing) {
         for (const flag of ev.flags) {
