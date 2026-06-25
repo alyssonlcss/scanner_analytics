@@ -8,13 +8,13 @@
     "check": "tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {
-    "@angular/animations": "^19.2.0",
-    "@angular/common": "^19.2.0",
-    "@angular/compiler": "^19.2.0",
-    "@angular/core": "^19.2.0",
-    "@angular/forms": "^19.2.0",
-    "@angular/platform-browser": "^19.2.0",
-    "@angular/router": "^19.2.0",
+    "@angular/animations": "^20.3.25",
+    "@angular/common": "^20.3.25",
+    "@angular/compiler": "^20.3.25",
+    "@angular/core": "^20.3.25",
+    "@angular/forms": "^20.3.25",
+    "@angular/platform-browser": "^20.3.25",
+    "@angular/router": "^20.3.25",
     "html2canvas": "^1.4.1",
     "pdfmake": "^0.3.7",
     "rxjs": "^7.8.2",
@@ -22,9 +22,9 @@
     "zone.js": "^0.15.0"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^19.2.1",
-    "@angular/cli": "^19.2.1",
-    "@angular/compiler-cli": "^19.2.0",
+    "@angular/build": "^20.3.30",
+    "@angular/cli": "^20.3.30",
+    "@angular/compiler-cli": "^20.3.25",
     "@types/pdfmake": "^0.3.2",
     "typescript": "^5.8.2"
   }
