@@ -876,6 +876,15 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           }
         }
       }
+      
+      const lastRowStr = ordered[ordered.length - 1];
+      const finalNrOrdem = nrOrdemCol ? String(lastRowStr[nrOrdemCol] ?? '').trim() : '';
+      const finalLiberada = liberadaCol ? String(lastRowStr[liberadaCol] ?? '').trim() : '';
+      const lastEv = evidences.find(e => e.nr_ordem === finalNrOrdem && e.liberada === finalLiberada);
+      if (lastEv) {
+        lastEv.is_last_os = true;
+      }
+
       teamEvidences.set(team, evidences);
     }
 

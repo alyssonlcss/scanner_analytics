@@ -315,6 +315,7 @@ export class PostDownloadReportService {
           despacho_tardio:       'Despacho Tardio',
           retorno_alto:          'Retorno Base Alto',
           retorno_muito_alto:    'Retorno Muito Alto',
+          retorno_divergente:    'Divergência de Retorno',
         },
       },
       dataDateRange,

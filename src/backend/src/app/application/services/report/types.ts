@@ -217,6 +217,8 @@ export interface OsDiaOrderEvidence {
   triagem_global_avg_min?: number;
   /** Total idle time: Início Cal. → A Caminho for 1ª OS; prev_liberada → A Caminho for others. */
   ocioso_min?: number;
+  /** True if this is the last OS of the day. */
+  is_last_os?: boolean;
 }
 
 export interface OsDiaTeamAnalysis {
@@ -351,6 +353,8 @@ export interface UtilizacaoOrderEvidence {
   triagem_global_avg_min?: number;
   /** Total idle time: Início Cal. → A Caminho for 1ª OS; prev_liberada → A Caminho for others. */
   ocioso_min?: number;
+  /** True if this is the last OS of the day. */
+  is_last_os?: boolean;
 }
 
 export interface UtilizacaoTeamAnalysis {
@@ -507,7 +511,8 @@ export interface RetornoBaseDayEvidence {
   global_avg_retorno_min: number;
   hora_ultima_ordem: string;
   log_off_corrigido: string;
-  flags: Array<'retorno_alto' | 'retorno_muito_alto'>;
+  flags: Array<'retorno_alto' | 'retorno_muito_alto' | 'retorno_divergente'>;
+  true_retorno_min?: number;
   /** Pre-computed alert text per flag code. */
   alertTexts?: Record<string, string>;
 }

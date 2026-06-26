@@ -594,7 +594,7 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
-                                <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
+                                <span class="rpt-osdia-flag" *ngIf="getOciosoTotal(ev) != null">Ocioso: {{ getOciosoTotal(ev) | number:'1.0-0' }} min</span>
                               </div>
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
                                 <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
@@ -851,7 +851,7 @@ type SavedFilterState = {
                                 <span class="rpt-osdia-badge rpt-osdia-badge--first" *ngIf="!ev.prev_liberada">1ª OS</span>
                                 <span class="rpt-osdia-flag" *ngFor="let f of ev.flags">{{ osDiaFlagLabel(f) }}</span>
                                 <span class="rpt-osdia-flag" *ngIf="entreOsAfterIntervalo(ev)">Entre OS≥10min</span>
-                                <span class="rpt-osdia-flag" *ngIf="ev.ocioso_min != null">Ocioso: {{ ev.ocioso_min | number:'1.0-0' }} min</span>
+                                <span class="rpt-osdia-flag" *ngIf="getOciosoTotal(ev) != null">Ocioso: {{ getOciosoTotal(ev) | number:'1.0-0' }} min</span>
                               </div>
                               <p class="osdia-ev-causa" *ngIf="ev.classe || ev.causa || evDespAfterPrevLib(ev)">
                                 <span *ngIf="ev.classe"><strong>Classe:</strong> {{ ev.classe }}</span>
@@ -1263,6 +1263,9 @@ type SavedFilterState = {
                             </li>
                             <li *ngIf="ev.flags.includes('retorno_alto') && !ev.flags.includes('retorno_muito_alto')" class="osdia-ev-alert">
                               <strong>Retorno acima da meta:</strong> <span [innerHTML]="highlightMin(retornoAlertBody('retorno_alto', ev))"></span>
+                            </li>
+                            <li *ngIf="ev.flags.includes('retorno_divergente')" class="osdia-ev-alert osdia-ev-alert--warn">
+                              <strong>Divergência:</strong> <span [innerHTML]="highlightMin(retornoAlertBody('retorno_divergente', ev))"></span>
                             </li>
                           </ul>
                         </ng-template>
@@ -6576,6 +6579,16 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   protected osDiaFlagLabel(flag: string): string {
     return this.reportData()?.flagMeta?.labels[flag] ?? flag;
+  }
+
+  protected getOciosoTotal(ev: any): number | null {
+    if (ev.is_last_os) {
+      const ocioso = ev.ocioso_min || 0;
+      const semOs = ev.sem_os_total_min || 0;
+      if (ocioso === 0 && semOs === 0 && ev.ocioso_min == null) return null;
+      return ocioso + semOs;
+    }
+    return ev.ocioso_min ?? null;
   }
 
   /** Detecta janela Entre OS após intervalo — delegado ao backend via entreOsAfterIntervalo */

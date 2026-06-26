@@ -402,6 +402,9 @@ export function enrichRetornoEvidence(days: RetornoBaseDayEvidence[], metaTarget
           case 'retorno_alto':
             alertTexts[flag] = `${nfBr(ev.retorno_base_min)} min — acima da meta de ${metaTarget} min (média da equipe: ${nfBr(ev.team_avg_retorno_min)} min, média geral: ${nfBr(ev.global_avg_retorno_min)} min). Esse tempo é descontado no cálculo de Utilização, impactando diretamente na nota da equipe.`;
             break;
+          case 'retorno_divergente':
+            alertTexts[flag] = `Atenção: o tempo real de retorno (após o fim do intervalo) foi de ${nfBr(ev.true_retorno_min ?? 0)} min, mas o sistema apontou ${nfBr(ev.retorno_base_min)} min (desde a última Liberada).`;
+            break;
         }
       }
       return { ...ev, alertTexts };

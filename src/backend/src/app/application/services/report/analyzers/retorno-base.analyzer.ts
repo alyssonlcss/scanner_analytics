@@ -1,6 +1,6 @@
 import type { CsvRow } from '../csv-utils.js';
 import type { RetornoBaseTeamAnalysis, RetornoBaseDayEvidence, KpiInsight } from '../types.js';
-import { createAccessor, parseNumber, normalizeToken, round2 } from '../csv-utils.js';
+import { createAccessor, parseNumber, normalizeToken, round2, parseDateTimeBr, minutesBetween } from '../csv-utils.js';
 import { enrichRetornoEvidence } from './enrich-utils.js';
 import { countDistinctDates } from './os-dia.analyzer.js';
 
@@ -22,6 +22,7 @@ export function analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): Re
     const retornoBaseCol   = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
     const horaUltimaCol    = deslocAcc.resolve(['Hora Ultima Ordem', 'Hora Última Ordem']);
     const logOffCorCol     = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+    const fimIntervaloCol  = deslocAcc.resolve(['Fim Intervalo', 'Fim do Intervalo']);
 
     if (!teamCol) return [];
 
@@ -84,11 +85,29 @@ export function analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): Re
         if (retornoMin > RETORNO_META * 1.5) { flags.push('retorno_muito_alto'); countRetornoMuitoAlto++; }
         else if (retornoMin > RETORNO_META) { flags.push('retorno_alto'); countRetornoAlto++; }
 
+        let trueRetornoMin: number | undefined;
+        if (fimIntervaloCol && logOffCorCol) {
+          const logOffStr = String(row[logOffCorCol] ?? '').trim();
+          const fimIntervaloStr = String(row[fimIntervaloCol] ?? '').trim();
+          const logOffDt = parseDateTimeBr(logOffStr);
+          const fimIntervaloDt = parseDateTimeBr(fimIntervaloStr);
+          if (logOffDt && fimIntervaloDt) {
+            const diff = minutesBetween(logOffDt, fimIntervaloDt);
+            // If the difference is positive and smaller than the CSV "Retorno a base",
+            // it means the interval happened between the last OS and log off.
+            if (diff > 0 && diff < retornoMin) {
+              trueRetornoMin = diff;
+              flags.push('retorno_divergente');
+            }
+          }
+        }
+
         if (flags.length === 0) continue;
 
         flaggedDays.push({
           date_ref: dateCol ? String(row[dateCol] ?? '').trim() : '',
           retorno_base_min: round2(retornoMin),
+          true_retorno_min: trueRetornoMin ? round2(trueRetornoMin) : undefined,
           team_avg_retorno_min: round2(teamAvgRetorno),
           global_avg_retorno_min: round2(globalAvgRetorno),
           hora_ultima_ordem: horaUltimaCol ? String(row[horaUltimaCol] ?? '').trim() : '',
