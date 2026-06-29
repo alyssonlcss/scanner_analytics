@@ -505,9 +505,9 @@ export function buildActionPlans(
           if (retorno.summary.countRetornoMuitoAlto > 0) {
             const worst = retorno.flaggedDays
               .filter((d) => d.flags.includes('retorno_muito_alto'))
-              .sort((a, b) => b.retorno_base_min - a.retorno_base_min)[0];
+              .sort((a, b) => (b.true_retorno_min ?? b.retorno_base_min) - (a.true_retorno_min ?? a.retorno_base_min))[0];
             issues.push(
-              `Retorno Base muito alto: ${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno acima de 1,5× a meta de ${retorno.metaTarget} min — caso crítico ${worst.date_ref} com ${round2(worst.retorno_base_min)} min. Esse tempo é descontado diretamente na Utilização.` +
+              `Retorno Base muito alto: ${retorno.summary.countRetornoMuitoAlto} dia(s) com retorno acima de 1,5× a meta de ${retorno.metaTarget} min — caso crítico ${worst.date_ref} com ${round2(worst.true_retorno_min ?? worst.retorno_base_min)} min. Esse tempo é descontado diretamente na Utilização.` +
               kpiCtx('Retorno Base'),
             );
             recommendations.push(
@@ -526,6 +526,10 @@ export function buildActionPlans(
             recommendations.push(
               `Retorno recorrente acima da meta em ${retorno.diasAcimaMetaCount}/${retorno.totalDays} dias — padrão sistêmico; discutir ajuste de rota de encerramento de turno ou redistribuição das últimas OS do dia.`,
             );
+          }
+          const hasDivergence = retorno.flaggedDays.some((d) => d.flags.includes('retorno_divergente'));
+          if (hasDivergence) {
+             issues.push(`Aviso de Divergência (M300): A equipe tirou intervalo após a última OS, o que não foi isolado pelo sistema. O Scanner recalcula automaticamente considerando o tempo real de retorno.`);
           }
         }
       }

@@ -62,10 +62,33 @@ export function analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): Re
       }
 
       const teamRetornoValues: number[] = [];
-      for (const row of jornadaRows) {
-        const v = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
-        if (v !== null && Number.isFinite(v) && v > 0) teamRetornoValues.push(v);
-      }
+      const rowEvaluations = jornadaRows.map((row) => {
+        const rawRetornoMin = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
+        let trueRetornoMin: number | undefined;
+        let divergenceDetected = false;
+
+        if (rawRetornoMin !== null && Number.isFinite(rawRetornoMin) && rawRetornoMin > 0 && fimIntervaloCol && logOffCorCol) {
+          const logOffStr = String(row[logOffCorCol] ?? '').trim();
+          const fimIntervaloStr = String(row[fimIntervaloCol] ?? '').trim();
+          const logOffDt = parseDateTimeBr(logOffStr);
+          const fimIntervaloDt = parseDateTimeBr(fimIntervaloStr);
+          if (logOffDt && fimIntervaloDt) {
+            const diff = minutesBetween(logOffDt, fimIntervaloDt);
+            if (diff > 0 && diff < rawRetornoMin) {
+              trueRetornoMin = diff;
+              divergenceDetected = true;
+            }
+          }
+        }
+        
+        const effectiveRetorno = trueRetornoMin ?? rawRetornoMin;
+        if (effectiveRetorno !== null && Number.isFinite(effectiveRetorno) && effectiveRetorno > 0) {
+          teamRetornoValues.push(effectiveRetorno);
+        }
+
+        return { row, rawRetornoMin, trueRetornoMin, effectiveRetorno, divergenceDetected };
+      });
+
       const teamAvgRetorno = teamRetornoValues.length > 0
         ? teamRetornoValues.reduce((s, x) => s + x, 0) / teamRetornoValues.length : 0;
 
@@ -75,38 +98,24 @@ export function analyzeRetornoBase(deslocRows: CsvRow[], kpis: KpiInsight[]): Re
       let countRetornoAlto = 0;
       let countRetornoMuitoAlto = 0;
 
-      for (const row of jornadaRows) {
-        const retornoMin = retornoBaseCol ? parseNumber(String(row[retornoBaseCol] ?? '')) : null;
-        if (retornoMin === null || !Number.isFinite(retornoMin) || retornoMin <= 0) continue;
+      for (const evalObj of rowEvaluations) {
+        const { row, rawRetornoMin, trueRetornoMin, effectiveRetorno, divergenceDetected } = evalObj;
+        if (effectiveRetorno === null || !Number.isFinite(effectiveRetorno) || effectiveRetorno <= 0) continue;
 
         const flags: RetornoBaseDayEvidence['flags'] = [];
-        // retorno_muito_alto: > meta * 1.5 (> 60 min)
-        // retorno_alto: > meta (> 40 min)
-        if (retornoMin > RETORNO_META * 1.5) { flags.push('retorno_muito_alto'); countRetornoMuitoAlto++; }
-        else if (retornoMin > RETORNO_META) { flags.push('retorno_alto'); countRetornoAlto++; }
+        
+        if (effectiveRetorno > RETORNO_META * 1.5) { flags.push('retorno_muito_alto'); countRetornoMuitoAlto++; }
+        else if (effectiveRetorno > RETORNO_META) { flags.push('retorno_alto'); countRetornoAlto++; }
 
-        let trueRetornoMin: number | undefined;
-        if (fimIntervaloCol && logOffCorCol) {
-          const logOffStr = String(row[logOffCorCol] ?? '').trim();
-          const fimIntervaloStr = String(row[fimIntervaloCol] ?? '').trim();
-          const logOffDt = parseDateTimeBr(logOffStr);
-          const fimIntervaloDt = parseDateTimeBr(fimIntervaloStr);
-          if (logOffDt && fimIntervaloDt) {
-            const diff = minutesBetween(logOffDt, fimIntervaloDt);
-            // If the difference is positive and smaller than the CSV "Retorno a base",
-            // it means the interval happened between the last OS and log off.
-            if (diff > 0 && diff < retornoMin) {
-              trueRetornoMin = diff;
-              flags.push('retorno_divergente');
-            }
-          }
+        if (divergenceDetected) {
+          flags.push('retorno_divergente');
         }
 
         if (flags.length === 0) continue;
 
         flaggedDays.push({
           date_ref: dateCol ? String(row[dateCol] ?? '').trim() : '',
-          retorno_base_min: round2(retornoMin),
+          retorno_base_min: round2(rawRetornoMin ?? 0),
           true_retorno_min: trueRetornoMin ? round2(trueRetornoMin) : undefined,
           team_avg_retorno_min: round2(teamAvgRetorno),
           global_avg_retorno_min: round2(globalAvgRetorno),

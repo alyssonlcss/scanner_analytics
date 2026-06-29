@@ -1221,6 +1221,7 @@ export class DashboardPdfService {
           analysis.flaggedDays?.forEach((ev: any, evIdx: number, evArr: any[]) => {
             const dayItems: any[] = [];
             dayItems.push(tl('Ultima OS Lib.', ev.hora_ultima_ordem || '\u2014', `Log Off: ${ev.log_off_corrigido || '\u2014'}`));
+            if (ev.flags?.includes('retorno_divergente')) dayItems.push(alertItem(`Divergência detectada: ${helpers.retornoAlertBody('retorno_divergente', ev)}`));
             if (ev.flags?.includes('retorno_muito_alto')) dayItems.push(alertItem(`Retorno muito alto: ${helpers.retornoAlertBody('retorno_muito_alto', ev)}`));
             else if (ev.flags?.includes('retorno_alto')) dayItems.push(alertItem(`Retorno acima da meta: ${helpers.retornoAlertBody('retorno_alto', ev)}`));
             teamItems.push({ stack: [
