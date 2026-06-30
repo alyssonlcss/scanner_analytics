@@ -6582,12 +6582,27 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected getOciosoTotal(ev: any): number | null {
+    const isPrimeiraOs = !ev.prev_liberada;
+
+    if (isPrimeiraOs) {
+      const ocioso = ev.ocioso_min || 0;
+      let intervaloDeslocMin = 0;
+      if (ev.sem_os_details && Array.isArray(ev.sem_os_details)) {
+        intervaloDeslocMin = ev.sem_os_details
+          .filter((d: any) => d.type === 'intervalo_deslocamento')
+          .reduce((acc: number, d: any) => acc + (d.min || 0), 0);
+      }
+      const total = ocioso + intervaloDeslocMin;
+      return total > 0 ? total : null;
+    }
+
     if (ev.is_last_os) {
       const ocioso = ev.ocioso_min || 0;
       const semOs = ev.sem_os_total_min || 0;
       if (ocioso === 0 && semOs === 0 && ev.ocioso_min == null) return null;
       return ocioso + semOs;
     }
+
     return ev.ocioso_min ?? null;
   }
 

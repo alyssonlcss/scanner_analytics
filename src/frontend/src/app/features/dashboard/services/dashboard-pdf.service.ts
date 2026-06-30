@@ -62,6 +62,31 @@ export class DashboardPdfService {
     '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off',
   ]);
 
+  private getOciosoTotal(ev: any): number | null {
+    const isPrimeiraOs = !ev.prev_liberada;
+
+    if (isPrimeiraOs) {
+      const ocioso = ev.ocioso_min || 0;
+      let intervaloDeslocMin = 0;
+      if (ev.sem_os_details && Array.isArray(ev.sem_os_details)) {
+        intervaloDeslocMin = ev.sem_os_details
+          .filter((d: any) => d.type === 'intervalo_deslocamento')
+          .reduce((acc: number, d: any) => acc + (d.min || 0), 0);
+      }
+      const total = ocioso + intervaloDeslocMin;
+      return total > 0 ? total : null;
+    }
+
+    if (ev.is_last_os) {
+      const ocioso = ev.ocioso_min || 0;
+      const semOs = ev.sem_os_total_min || 0;
+      if (ocioso === 0 && semOs === 0 && ev.ocioso_min == null) return null;
+      return ocioso + semOs;
+    }
+
+    return ev.ocioso_min ?? null;
+  }
+
   private buildTimelinePdfBlock(ev: any, hidePartida = false, trimToACaminho = false): any | null {
     const segs = buildTimelineSegments(ev, hidePartida, trimToACaminho);
     if (!segs.length) return null;
@@ -876,8 +901,9 @@ export class DashboardPdfService {
               if (ev.sem_os_details?.find((d: any) => d.type === 'entre_os' && d.interval_discounted && d.min >= 10)) {
                 customFlags.push('Entre OS\u226510min');
               }
-              if (ev.ocioso_min != null) {
-                customFlags.push(`Ocioso: ${Math.round(ev.ocioso_min)} min`);
+              const ociosoTotal = this.getOciosoTotal(ev);
+              if (ociosoTotal != null) {
+                customFlags.push(`Ocioso: ${Math.round(ociosoTotal)} min`);
               }
               const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada, customFlags)];
               if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));
@@ -1036,8 +1062,9 @@ export class DashboardPdfService {
             if (ev.sem_os_details?.find((d: any) => d.type === 'entre_os' && d.interval_discounted && d.min >= 10)) {
               customFlags.push('Entre OS\u226510min');
             }
-            if (ev.ocioso_min != null) {
-              customFlags.push(`Ocioso: ${Math.round(ev.ocioso_min)} min`);
+            const ociosoTotal = this.getOciosoTotal(ev);
+            if (ociosoTotal != null) {
+              customFlags.push(`Ocioso: ${Math.round(ociosoTotal)} min`);
             }
             const orderBlock: any[] = [orderHead(ev.nr_ordem, ev.flags ?? [], (f) => helpers.osDiaFlagLabel(f), ev.date_ref || undefined, !ev.prev_liberada, customFlags)];
             if (orderItems.length > 0) orderBlock.push(indentBlock(orderItems, '#94a3b8', 6));

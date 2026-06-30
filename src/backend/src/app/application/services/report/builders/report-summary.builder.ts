@@ -527,10 +527,6 @@ export function buildActionPlans(
               `Retorno recorrente acima da meta em ${retorno.diasAcimaMetaCount}/${retorno.totalDays} dias — padrão sistêmico; discutir ajuste de rota de encerramento de turno ou redistribuição das últimas OS do dia.`,
             );
           }
-          const hasDivergence = retorno.flaggedDays.some((d) => d.flags.includes('retorno_divergente'));
-          if (hasDivergence) {
-             issues.push(`Aviso de Divergência (M300): A equipe tirou intervalo após a última OS, o que não foi isolado pelo sistema. O Scanner recalcula automaticamente considerando o tempo real de retorno.`);
-          }
         }
       }
 
