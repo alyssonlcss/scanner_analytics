@@ -59,7 +59,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off',
+    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Retorno Vazio',
   ]);
 
   private getOciosoTotal(ev: any): number | null {
@@ -890,11 +890,11 @@ export class DashboardPdfService {
                   { text: `${horaFmt ? ' foi despachada em ' + horaFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
                 ]));
               }
-              if (ev.flags?.includes('antes_log_off_alto')) {
+              if (ev.flags?.includes('retorno_excedente')) {
                 const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
                 if (fjDetail) {
                   const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
-                  orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
+                  orderItems.push(alertWarnItem(`Retorno Excedente: ${fjBody}`));
                 }
               }
               const customFlags: string[] = [];
@@ -1051,11 +1051,11 @@ export class DashboardPdfService {
                 { text: `${obsHoraFmt ? ' foi despachada em ' + obsHoraFmt : ''} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.`, color: DARK },
               ]));
             }
-            if (ev.flags?.includes('antes_log_off_alto')) {
+            if (ev.flags?.includes('retorno_excedente')) {
               const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
               if (fjDetail) {
                 const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
-                orderItems.push(alertWarnItem(`Antes Log Off: ${fjBody}`));
+                orderItems.push(alertWarnItem(`Retorno Excedente: ${fjBody}`));
               }
             }
             const customFlags: string[] = [];

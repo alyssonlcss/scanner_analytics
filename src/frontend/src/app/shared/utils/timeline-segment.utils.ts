@@ -119,8 +119,8 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     'despachada_inicio_intervalo': 'Desl. Intervalo',
     'no_local_inicio_intervalo': 'Desl. Intervalo',
     'fim_intervalo_despachada': 'Entre OS',
-    'liberada_log_off': 'Antes Log Off',
-    'fim_intervalo_log_off': 'Antes Log Off',
+    'liberada_log_off': 'Retorno Vazio',
+    'fim_intervalo_log_off': 'Retorno Vazio',
     'despachada_a_caminho': 'Partida',
     'fim_intervalo_a_caminho': 'Partida',
     'prev_liberada_a_caminho': 'Partida',
@@ -199,19 +199,20 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
         }
         flags.push(fText + '.');
       }
-    } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Antes Log Off'].includes(label) && ev.sem_os_details) {
+    } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Retorno Vazio', 'Retorno a Base'].includes(label) && ev.sem_os_details) {
       const detType: Record<string, string> = {
         '1º Despacho': 'inicio_jornada',
         'Desl. Intervalo': 'intervalo_deslocamento',
-        'Antes Log Off': 'fim_jornada',
+        'Retorno Vazio': 'fim_jornada',
+        'Retorno a Base': 'fim_jornada',
         'Entre OS': 'entre_ordens',
       };
       const md = ev.sem_os_details?.find((s: any) => {
         if (s.type !== detType[label]) return false;
-        if (label === '1º Despacho' || label === 'Antes Log Off') return s.to === p2.raw;
+        if (label === '1º Despacho' || label === 'Retorno Vazio' || label === 'Retorno a Base') return s.to === p2.raw;
         return s.from === p1.raw && s.to === p2.raw;
       });
-      if ((label === '1º Despacho' || label === 'Antes Log Off') && md) durationMin = Math.max(md.min, 1);
+      if ((label === '1º Despacho' || label === 'Retorno Vazio' || label === 'Retorno a Base') && md) durationMin = Math.max(md.min, 1);
       if (md) {
         if (detType[label] === 'fim_jornada') {
           if ((md as any).retorno_base_discounted != null) {
@@ -219,10 +220,13 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
             // Case C: row present + excess — show excess as subtitle beside the total duration
             const excessM: number | undefined = (md as any).excess_min;
             if (excessM != null) {
-              subtitle = `Antes Log Off: ${Math.round(excessM)}min`;
+              subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
               flags.push('acima_media');
             }
           } else if ((md as any).excess_min != null) {
+            // Case B: row empty + excess - show excess as subtitle
+            const excessM = (md as any).excess_min;
+            subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
             flags.push('acima_media');
           }
         } else {

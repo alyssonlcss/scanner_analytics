@@ -300,7 +300,7 @@ export class PostDownloadReportService {
           triagem_alto:           'Desp. Prioritário ≥10min',
           primeiro_desloc_alto:   '1º Desloc. ≥25min',
           sem_os_alto:           'Sem Ordem ≥ 10min',
-          antes_log_off_alto:    'Antes Log Off',
+          retorno_excedente: 'Retorno Excedente',
           deslocamento_curto:    'Deslocamento Curto',
           tempo_padrao_vazio:    'Tempo Padrão Vazio',
           tr_muito_baixo:        'Tempo de Reparo Baixo',

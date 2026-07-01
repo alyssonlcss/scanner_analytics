@@ -629,9 +629,8 @@ type SavedFilterState = {
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
-                                <li *ngIf="ev.flags.includes('antes_log_off_alto')" class="osdia-ev-alert osdia-ev-alert--warn">
-                                  <strong>Antes Log Off:</strong> <span [innerHTML]="highlightMin(antesLogOffAltoText(ev))"></span>
-                                </li>
+                                
+                                
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
@@ -883,9 +882,8 @@ type SavedFilterState = {
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
-                                <li *ngIf="ev.flags.includes('antes_log_off_alto')" class="osdia-ev-alert osdia-ev-alert--warn">
-                                  <strong>Antes Log Off:</strong> <span [innerHTML]="highlightMin(antesLogOffAltoText(ev))"></span>
-                                </li>
+                                
+                                
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                                   <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                                 </li>
@@ -1181,7 +1179,8 @@ type SavedFilterState = {
                             <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
                               <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                             </li>
-                            <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
+                            
+                                <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
                               <strong>Despacho anterior da 1ªOS:</strong> a OS <strong>{{ ev.nr_ordem_despacho_anterior }}</strong> foi despachada em {{ formatDespachoHora(ev.hora_despacho_anterior) }} antes do deslocamento da 1ª OS desta equipe, provavelmente por motivo de prioridade, dessa forma o despacho da 1ªOS pode ficar elevado.
                             </li>
                           </ul>
@@ -6582,28 +6581,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected getOciosoTotal(ev: any): number | null {
-    const isPrimeiraOs = !ev.prev_liberada;
-
-    if (isPrimeiraOs) {
-      const ocioso = ev.ocioso_min || 0;
-      let intervaloDeslocMin = 0;
-      if (ev.sem_os_details && Array.isArray(ev.sem_os_details)) {
-        intervaloDeslocMin = ev.sem_os_details
-          .filter((d: any) => d.type === 'intervalo_deslocamento')
-          .reduce((acc: number, d: any) => acc + (d.min || 0), 0);
-      }
-      const total = ocioso + intervaloDeslocMin;
+    if (!ev.prev_liberada) {
+      const total = (ev.ocioso_min || 0) + (ev.sem_os_total_min || 0);
+      return total > 0 ? total : null;
+    } else {
+      const tempPrep = ev.temp_prep_os_min ?? 0;
+      const total = tempPrep + (ev.sem_os_total_min || 0);
       return total > 0 ? total : null;
     }
-
-    if (ev.is_last_os) {
-      const ocioso = ev.ocioso_min || 0;
-      const semOs = ev.sem_os_total_min || 0;
-      if (ocioso === 0 && semOs === 0 && ev.ocioso_min == null) return null;
-      return ocioso + semOs;
-    }
-
-    return ev.ocioso_min ?? null;
   }
 
   /** Detecta janela Entre OS após intervalo — delegado ao backend via entreOsAfterIntervalo */
@@ -6693,24 +6678,15 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctAbove(mEO)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
       case 'fim_jornada': {
-        const fromLabelFJ = (d as any).from_label ?? 'última Liberada';
-        const excessFJ: number | undefined = (d as any).excess_min;
-        const globalAvgFJ: number | undefined = (d as any).global_avg_min;
-        if (d.retorno_base_discounted != null) {
-          if (excessFJ != null) {
-            // Case C: row present + excess — label is "Antes Log Off" (the flag), excess is the lead value
-            const globalPartFJ = globalAvgFJ != null ? ` (${this.nf(globalAvgFJ)} min)` : '';
-            return `Antes Log Off: ${this.nf(excessFJ)} min acima da média geral de Retorno a base${globalPartFJ} — Retorno a base: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
+          const fromLabelFJ = d.from_label ?? 'Última Liberada';
+          const excessFJ = (d as any).excess_min;
+          
+          if (excessFJ != null && excessFJ > 0) {
+             return `Retorno Excedente: ${this.nf(excessFJ)} min acima do limite permitido de 70 min de retorno à base — Retorno a base totalizou ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '?'}) e Log Off (${d.to ?? '?'}).`;
           }
-          // Case B: row present, no excess — neutral info
-          return `Retorno a base: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
+          return `Retorno a base: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '?'}) e Log Off (${d.to ?? '?'}).`;
         }
-        const excessTextFJ = excessFJ != null
-          ? ` — ${this.nf(excessFJ)} min acima da média geral de Retorno a base${globalAvgFJ != null ? ' (' + this.nf(globalAvgFJ) + ' min)' : ''}`
-          : '';
-        return `Antes Log Off: ${this.nf(d.min)} min entre ${fromLabelFJ} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${excessTextFJ}.`;
-      }
-      case 'intervalo_deslocamento': {
+        case 'intervalo_deslocamento': {
         const mID = Math.round(d.min);
         const fromLabel = d.from_label ?? 'Lib. Anterior';
         return `Desl. Intervalo: ${mID} min entre ${fromLabel} (${d.from ?? '—'}) e Início Intervalo (${d.to ?? '—'}) — ${pctAbove(mID)}% acima do limite (${SEM_OS_LIMIT} min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
@@ -6742,8 +6718,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    * pois são uma etapa de deslocamento, não uma flag de ociosidade. */
   protected alertSemOsDetails(details: any[] | undefined): any[] {
     if (!details) return [];
-    // fim_jornada is always its own separate 'antes_log_off_alto' flag, never shown under sem_os_alto
-    return details.filter((d: any) => d.type !== 'fim_jornada');
+    return details.filter((d: any) => d.type !== 'fim_jornada' || d.excess_min != null);
   }
 
   protected semOsDetailLabel(d: { type: string; min: number; from?: string; to?: string; label?: string; body?: string;[key: string]: unknown }, nrOrdemDespachoAnterior?: string): string {

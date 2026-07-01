@@ -327,7 +327,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       let semOsFimFromLabel: string | undefined;
       let semOsFimRetornoBaseRowVal = 0;          // row-level retorno base (display only)
       let semOsFimRetornoBaseUsedRow = false;
-      let semOsFimAboveThreshold = false;
+      const retornoExcedenteThreshold = false;
+       // Dummy, we will redefine below
       let semOsFimHasIntervalInWindow = false;
       if (logOffCorrigidoCol2 && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
@@ -369,19 +370,19 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             // Flag if total gap exceeds global avg by ≥15 min (Antes Log Off — separate flag, not ociosidade)
             if (retornoBaseAvg > 0 && (directGapMin - retornoBaseAvg) >= 15) {
               semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
-              semOsFimAboveThreshold = true;
+              /* Removed */
             }
           } else if (retornoBaseAvg > 0) {
             // Row empty: flag if ≥15 min above global avg (Antes Log Off — separate flag, not ociosidade)
             if ((directGapMin - retornoBaseAvg) >= 15) {
               semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
-              semOsFimAboveThreshold = true;
+              /* Removed */
             }
           } else {
             // No retorno base data: fall back to SEM_OS_THRESHOLD_MIN (Antes Log Off — separate flag)
             if (directGapMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
               semOsFimJornadaMin = round2(directGapMin);
-              semOsFimAboveThreshold = true;
+              /* Removed */
             }
           }
         }
@@ -783,18 +784,18 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
         const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() || undefined : undefined;
         const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
         if (logOffStr) {
+          const retornoExcedenteThreshold = Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 70;
           const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
-          const semOsAbove = fimDeslAbove; // fim_jornada is a separate flag, not part of ociosidade
+          const semOsAbove = fimDeslAbove || retornoExcedenteThreshold;
           const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
             type: 'fim_jornada',
             min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
             from: semOsFimFrom ?? liberadaStr,
             to:   logOffStr,
             from_label: semOsFimFromLabel,
-            retorno_base_discounted: semOsFimRetornoBaseRowVal > 0 ? semOsFimRetornoBaseRowVal : undefined,
+            retorno_base_discounted: semOsFimRetornoBaseUsedRow ? round2(semOsFimRetornoBaseRowVal) : undefined,
             retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
-            excess_min: semOsFimAboveThreshold && Number.isFinite(semOsFimJornadaMin) && retornoBaseAvg > 0 ? round2(semOsFimJornadaMin) : undefined,
-            global_avg_min: semOsFimAboveThreshold && retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
+            excess_min: retornoExcedenteThreshold ? round2(semOsFimDirectGapMin - 70) : undefined,
           };
           const fimInicioIntervalo = semOsFimHasIntervalInWindow && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
           const fimFimIntervalo    = semOsFimHasIntervalInWindow && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
@@ -814,28 +815,28 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
             evidences[evidences.length - 1].liberada === liberadaStr;
 
           if (isLastEvidenceFromLastRow) {
-            const existingEvidence = evidences[evidences.length - 1];
-            const details = existingEvidence.sem_os_details ?? [];
-            details.push(fimDetail);
-            if (fimDeslDetail) details.push(fimDeslDetail);
-            existingEvidence.sem_os_details = details;
-            if (semOsAbove) {
-              // Only Desl. Intervalo counts toward ociosidade total
-              const semOsOnlyDetails = details.filter((d) => d.type !== 'fim_jornada');
-              existingEvidence.sem_os_total_min = round2(semOsOnlyDetails.reduce((s, d) => s + d.min, 0));
-              if (!existingEvidence.flags.includes('sem_os_alto')) {
-                existingEvidence.flags.push('sem_os_alto');
+              const existingEvidence = evidences[evidences.length - 1];
+              const details = existingEvidence.sem_os_details ?? [];
+              details.push(fimDetail);
+              if (fimDeslDetail) details.push(fimDeslDetail);
+              existingEvidence.sem_os_details = details;
+              if (semOsAbove) {
+                existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => {
+                  if (d.type === 'fim_jornada') {
+                    return s + (d.excess_min ?? 0);
+                  }
+                  return s + d.min;
+                }, 0));
+                if (!existingEvidence.flags.includes('sem_os_alto')) {
+                  existingEvidence.flags.push('sem_os_alto');
+                }
               }
-            }
-            if (semOsFimAboveThreshold && !existingEvidence.flags.includes('antes_log_off_alto')) {
-              existingEvidence.flags.push('antes_log_off_alto');
-            }
-            // Show interval chip when interval is in the fim window
+              // Show interval chip when interval is in the fim window
             if (semOsFimHasIntervalInWindow && !existingEvidence.inicio_intervalo) {
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
-          } else if (semOsAbove || semOsFimAboveThreshold) {
+          } else if (semOsAbove || retornoExcedenteThreshold) {
             // Last order had no flags — create evidence entry with full info
             const i = ordered.length - 1;
             const row = lastRow;
@@ -878,12 +879,17 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 trOrdemMin > tempoPadraoRaw
               ) ? true : undefined,
               sem_os_details:    allFimDetails,
-              sem_os_total_min:  semOsAbove ? round2(allFimDetails.filter((d) => d.type !== 'fim_jornada').reduce((s, d) => s + d.min, 0)) : undefined,
+              sem_os_total_min:  semOsAbove ? round2(allFimDetails.reduce((s, d) => {
+                    if (d.type === 'fim_jornada') {
+                      return s + (d.excess_min ?? 0);
+                    }
+                    return s + d.min;
+                  }, 0)) : undefined,
               ocioso_min:        ocisoValues[i],
               temp_prep_os_min:  tempPrepValues[i],
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
-                ...(semOsFimAboveThreshold ? ['antes_log_off_alto' as const] : []),
+                
               ],
             });
           } else {
@@ -933,8 +939,8 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
       // Ordenação estritamente decrescente pelo tempo total ocioso
       allMerged.sort((a, b) => {
-        const fjA = a.flags?.includes('antes_log_off_alto') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
-        const fjB = b.flags?.includes('antes_log_off_alto') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const fjA = a.flags?.includes('retorno_excedente') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const fjB = b.flags?.includes('retorno_excedente') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
         const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0) + fjA;
         const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0) + fjB;
         return idleB - idleA;

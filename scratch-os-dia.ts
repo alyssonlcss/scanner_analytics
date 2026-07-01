@@ -1,108 +1,126 @@
+// Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
+// Software proprietário e confidencial. Uso não autorizado é proibido.
 import type { CsvRow } from '../csv-utils.js';
-import type { UtilizacaoTeamAnalysis, UtilizacaoOrderEvidence, KpiInsight } from '../types.js';
-import { createAccessor, parseNumber, normalizeToken, round2, parseDateTimeBr, minutesBetween } from '../csv-utils.js';
+import type { OsDiaTeamAnalysis, OsDiaOrderEvidence, UtilizacaoOrderEvidence, KpiInsight } from '../types.js';
+import { createAccessor, parseNumber, normalizeToken, parseDateTimeBr, minutesBetween, applyIntervalDiscount, round2, safeSum } from '../csv-utils.js';
+import { nfBr, semOsDetailText, enrichOsDiaEvidence } from './enrich-utils.js';
 import { calculateTempPrepValue, calculateSemOsValue } from '../builders/team-stats.builder.js';
-import { enrichUtilizacaoEvidence } from './enrich-utils.js';
+import { KPI_ALIASES } from '../constants.js';
 
-import { countDistinctDates, mergeEvidenceFlags } from './os-dia.analyzer.js';
-export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): UtilizacaoTeamAnalysis[] {
-    if (deslocRows.length === 0) return [];
+export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: KpiInsight[]): OsDiaTeamAnalysis[] {
+    if (deslocRows.length === 0 || rankingRows.length === 0) {
+      return [];
+    }
 
-    const UTIL_META = 85;
-    const IDLE_THRESHOLD_PCT = 15;
+    const OS_DIA_META = 4.4;
     const OS_DIA_PCT_THRESHOLD = 0.20;
-    const TEMP_PREP_THRESHOLD_MIN = 10; // Desp. → A Caminho (all OS)
+    const TEMP_PREP_THRESHOLD_MIN      = 10; // Desp. → A Caminho (all OS)
     const SEM_OS_THRESHOLD_MIN = 10;
     const TOLERANCE_MIN = 5; // invisible grace margin — keeps displayed limits unchanged
 
-    const utilizacaoKpi = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Utilização'));
-    if (!utilizacaoKpi) return [];
+    // 1. Determine under-performing teams from ranking (average OS/Dia < meta)
+    const rankAcc = createAccessor(rankingRows[0]);
+    const rankTeamCol = rankAcc.resolve(['Equipe', 'Team', 'Equipe Nome']);
+    const rankOsDiaCol = rankAcc.resolve(KPI_ALIASES['OS Dia'] ?? []);
 
-    const underPerforming = new Map<string, number>();
-    for (const t of utilizacaoKpi.opportunityTeams) {
-      underPerforming.set(t.team, t.value);
+    if (!rankTeamCol || !rankOsDiaCol) {
+      return [];
     }
-    if (underPerforming.size === 0) return [];
 
-    // Resolve columns (same as analyzeOsDia)
-    const deslocAcc = createAccessor(deslocRows[0]);
-    const teamCol             = deslocAcc.resolve(['Equipe']);
-    const dateCol             = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
-    const caminhoCol          = deslocAcc.resolve(['A_Caminho', 'A Caminho']);
-    const despachadaCol       = deslocAcc.resolve(['Despachada']);
-    const liberadaCol         = deslocAcc.resolve(['Liberada']);
-    const firstDeslocCol      = deslocAcc.resolve(['1º Desloc', '1o Desloc']);
-    const firstDespachoCol    = deslocAcc.resolve(['1º Despacho', '1o Despacho']);
-    const intervaloCol        = deslocAcc.resolve(['Intervalo']);
-    const inicioIntervaloCol  = deslocAcc.resolve(['Inicio Intervalo', 'Início Intervalo']);
-    const fimIntervaloCol     = deslocAcc.resolve(['Fim Intervalo']);
-    const nrOrdemCol          = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
-    const classeCol           = deslocAcc.resolve(['CLASSE', 'Classe']);
-    const causaCol            = deslocAcc.resolve(['CAUSA', 'Causa']);
-    const noLocalCol          = deslocAcc.resolve(['No_Local', 'No Local']);
-    const trOrdemCol          = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
-    const tlOrdemCol          = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
-    const hdTotalCol          = deslocAcc.resolve(['HD Total', 'HD_Total']);
-    const tempoPadraoCol      = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
-    const inicioCalendarioCol = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
-    const logInCorrigidoCol   = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
-    const logOffCorrigidoCol  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
-    const retornoBaseCol      = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
-    const horasExtrasCol      = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
-    // Timestamp of the first dispatch of the day (team-day aggregate)
-    const horaPrimDespachoTsCol = deslocAcc.resolve(['Hora 1º Despacho', 'Hora 1o Despacho']);
-
-    if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) return [];
-
-    // Baseline for sub-flag "Desl. Intervalo": global average without team-level filtering.
-    const globalIntervaloDeslocValues: number[] = [];
-    if (inicioIntervaloCol && fimIntervaloCol) {
-      const allGrouped = new Map<string, CsvRow[]>();
-      for (const row of deslocRows) {
-        const team = String(row[teamCol] ?? '').trim();
-        const date = String(row[dateCol] ?? '').trim();
-        if (!team || !date) continue;
-        const key = `${team}::${date}`;
-        const rows = allGrouped.get(key) ?? [];
-        rows.push(row);
-        allGrouped.set(key, rows);
+    const teamOsDiaTotals = new Map<string, { sum: number; count: number }>();
+    for (const row of rankingRows) {
+      const team = String(row[rankTeamCol] ?? '').trim();
+      const value = parseNumber(String(row[rankOsDiaCol] ?? ''));
+      if (team && value !== null && Number.isFinite(value)) {
+        const entry = teamOsDiaTotals.get(team) ?? { sum: 0, count: 0 };
+        entry.sum += value;
+        entry.count += 1;
+        teamOsDiaTotals.set(team, entry);
       }
+    }
 
-      for (const rows of allGrouped.values()) {
-        const orderedRows = [...rows].sort((a, b) => {
-          const left = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
-          const right = parseDateTimeBr(String(b[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
-          return left - right;
-        });
-
-        for (let i = 1; i < orderedRows.length; i++) {
-          const row = orderedRows[i];
-          const prevRow = orderedRows[i - 1];
-          const prevLiberadaDate = liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
-          const aCaminhoDate = parseDateTimeBr(String(row[caminhoCol] ?? ''));
-          const inicioIntervaloRaw = String(row[inicioIntervaloCol] ?? '').trim();
-          const fimIntervaloRaw = String(row[fimIntervaloCol] ?? '').trim();
-          const inicioIntervaloDate = inicioIntervaloRaw ? parseDateTimeBr(inicioIntervaloRaw) : null;
-          const fimIntervaloDate = fimIntervaloRaw ? parseDateTimeBr(fimIntervaloRaw) : null;
-
-          const hasIntervaloDeslocamento = Boolean(
-            prevLiberadaDate && aCaminhoDate &&
-            inicioIntervaloDate && fimIntervaloDate &&
-            inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
-            fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
-          );
-          if (!hasIntervaloDeslocamento || !inicioIntervaloDate || !prevLiberadaDate) continue;
-
-          const intMin = minutesBetween(inicioIntervaloDate, prevLiberadaDate);
-          if (Number.isFinite(intMin) && intMin > 0) {
-            globalIntervaloDeslocValues.push(intMin);
-          }
+    // Use the same 3 worst teams from the OS Dia KPI ranking opportunityTeams.
+    // Fall back to all-below-meta if no KPI insight is available.
+    const osDiaInsight = kpis.find((k) => k.kpi === 'OS Dia');
+    const underPerforming = new Map<string, number>();
+    if (osDiaInsight) {
+      for (const t of osDiaInsight.scores) {
+        if (t.rawValue < osDiaInsight.metaTarget) {
+          underPerforming.set(t.team, t.rawValue);
+        }
+      }
+    } else {
+      for (const [team, { sum, count }] of teamOsDiaTotals.entries()) {
+        const avg = sum / count;
+        if (avg < OS_DIA_META) {
+          underPerforming.set(team, avg);
         }
       }
     }
-    const globalAvgIntervaloDeslocMin = globalIntervaloDeslocValues.length > 0
-      ? round2(globalIntervaloDeslocValues.reduce((sum, v) => sum + v, 0) / globalIntervaloDeslocValues.length)
-      : 0;
+
+    if (underPerforming.size === 0) {
+      return [];
+    }
+
+    // 2. Resolve deslocamento columns
+    const deslocAcc = createAccessor(deslocRows[0]);
+    const teamCol = deslocAcc.resolve(['Equipe']);
+    const dateCol = deslocAcc.resolve(['Data Referência', 'Data Referencia']);
+    const caminhoCol = deslocAcc.resolve(['A_Caminho', 'A Caminho']);
+    const despachadaCol = deslocAcc.resolve(['Despachada']);
+    const liberadaCol = deslocAcc.resolve(['Liberada']);
+    const firstDeslocCol = deslocAcc.resolve(['1º Desloc', '1o Desloc']);
+    const firstDespachoCol = deslocAcc.resolve(['1º Despacho', '1o Despacho']);
+    const intervaloCol = deslocAcc.resolve(['Intervalo']);
+    const inicioIntervaloCol = deslocAcc.resolve(['Inicio Intervalo', 'Início Intervalo']);
+    const fimIntervaloCol = deslocAcc.resolve(['Fim Intervalo']);
+    const nrOrdemCol = deslocAcc.resolve(['Nr_Ordem', 'Nr Ordem', 'Numero Ordem']);
+    const classeCol = deslocAcc.resolve(['CLASSE', 'Classe']);
+    const causaCol = deslocAcc.resolve(['CAUSA', 'Causa']);
+    const noLocalCol = deslocAcc.resolve(['No_Local', 'No Local']);
+    const trOrdemCol     = deslocAcc.resolve(['TR Ordem', 'TR_Ordem']);
+    const tlOrdemCol     = deslocAcc.resolve(['TL Ordem', 'TL_Ordem']);
+    const hdTotalCol     = deslocAcc.resolve(['HD Total', 'HD_Total']);
+    const tempoPadraoCol      = deslocAcc.resolve(['tempo_padrao', 'Tempo Padrao', 'Tempo_Padrao', 'TempoPadrao']);
+    const inicioCalendarioCol  = deslocAcc.resolve(['Inicio Calendario', 'Início Calendário', 'Inicio Calendário', 'Início Calendario']);
+    const logInCorrigidoCol    = deslocAcc.resolve(['Log In Corrigido', 'LogIn Corrigido', 'Login Corrigido']);
+    const logOffCorrigidoCol2  = deslocAcc.resolve(['Log Off Corrigido', 'LogOff Corrigido']);
+    const retornoBaseCol       = deslocAcc.resolve(['Retorno a base', 'Retorno a Base', 'Retorno Base']);
+    const horasExtrasCol       = deslocAcc.resolve(['Horas Extras', 'Horas extras']);
+    // Timestamp of the first dispatch of the day (team-day aggregate) — different from the duration column firstDespachoCol
+    const horaPrimDespachoTsCol = deslocAcc.resolve(['Hora 1º Despacho', 'Hora 1o Despacho']);
+
+    if (!teamCol || !dateCol || !caminhoCol || !despachadaCol || !liberadaCol) {
+      return [];
+    }
+
+    // 2b. Compute global average TL across ALL rows (used as threshold reference for tl_excede_hd)
+    let globalTlSum = 0;
+    let globalTlCount = 0;
+    if (tlOrdemCol) {
+      for (const row of deslocRows) {
+        const v = parseNumber(String(row[tlOrdemCol] ?? ''));
+        if (v !== null && Number.isFinite(v) && v > 0) {
+          globalTlSum += v;
+          globalTlCount++;
+        }
+      }
+    }
+    const globalAvgTlMin = globalTlCount > 0 ? round2(globalTlSum / globalTlCount) : 0;
+
+    // Global avg TR across ALL rows (used as threshold for flag_temp_reparo_excedido)
+    let globalTrSum = 0;
+    let globalTrCount = 0;
+    if (trOrdemCol) {
+      for (const row of deslocRows) {
+        const v = parseNumber(String(row[trOrdemCol] ?? ''));
+        if (v !== null && Number.isFinite(v) && v > 0) {
+          globalTrSum += v;
+          globalTrCount++;
+        }
+      }
+    }
+    const globalAvgTrMin = globalTrCount > 0 ? round2(globalTrSum / globalTrCount) : 0;
 
     // Global avg of 1º Despacho (inicio_jornada) across all rows
     let globalIJSum = 0, globalIJCount = 0;
@@ -184,23 +202,24 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       ? round2(globalTriagemValues.reduce((s, v) => s + v, 0) / globalTriagemValues.length)
       : 0;
 
-    // Group by team+date, underperforming teams only
-    const grouped = new Map<string, { team: string; date: string; rows: CsvRow[] }>();
+    // 3. Group by team+date, under-performing teams only
+    const grouped = new Map<string, { team: string; rows: CsvRow[] }>();
     for (const row of deslocRows) {
       const team = String(row[teamCol] ?? '').trim();
-      if (!underPerforming.has(team)) continue;
+      if (!underPerforming.has(team)) {
+        continue;
+      }
       const date = String(row[dateCol] ?? '').trim();
-      if (!date) continue;
       const key = `${team}::${date}`;
-      const entry = grouped.get(key) ?? { team, date, rows: [] };
+      const entry = grouped.get(key) ?? { team, rows: [] };
       entry.rows.push(row);
       grouped.set(key, entry);
     }
 
-    // Collect evidence per team (same pattern as analyzeOsDia)
-    const teamEvidences = new Map<string, UtilizacaoOrderEvidence[]>();
-    const teamAllBasicUtil = new Map<string, UtilizacaoOrderEvidence[]>();
-    const teamAllBasicUtilSeen = new Map<string, Set<string>>();
+    // 4. Collect evidence per team and accumulate HD totals
+    const teamEvidences = new Map<string, OsDiaOrderEvidence[]>();
+    const teamAllBasicOrders = new Map<string, OsDiaOrderEvidence[]>();
+    const teamAllBasicSeenForTeam = new Map<string, Set<string>>();
     const teamHdTotals = new Map<string, { sum: number; count: number }>();
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
@@ -208,12 +227,10 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
     const teamDayCount = new Map<string, number>();
     const teamDailyIdles = new Map<string, number[]>();
     const teamHorasExtrasSum = new Map<string, number>();
-    // For jornada-level tracking (jornadasAbaixoMeta count)
-    const teamJornadas = new Map<string, Array<{ htTotalMin: number; hdTotalMin: number }>>();
 
-    for (const { team, date: _date, rows: groupRows } of grouped.values()) {
+    for (const { team, rows: groupRows } of grouped.values()) {
       teamDayCount.set(team, (teamDayCount.get(team) ?? 0) + 1);
-      // Sort by A_Caminho ascending
+      // sort by A_Caminho ascending (same logic as calculateTempPrepSemOs)
       const ordered = [...groupRows].sort((a, b) => {
         const left  = parseDateTimeBr(String(a[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
         const right = parseDateTimeBr(String(b[caminhoCol] ?? ''))?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -264,7 +281,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           inicioIntervalo, fimIntervalo, intervaloMinutes,
           isIntervalAlreadyApplied: isInterACaminho,
         });
-        if (tempPrep.intervalApplied) isInterACaminho = true;
+        if (tempPrep.intervalApplied) {
+          isInterACaminho = true;
+        }
         tempPrepValues.push(tempPrep.value);
         // Ocioso for subsequent OS = A Caminho − prev Liberada, interval excluded
         {
@@ -290,31 +309,34 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           intervaloMinutes: firstIntervalMinutes,
           isIntervalAlreadyApplied: isInterOrdem,
         });
-        if (semOs.intervalApplied) isInterOrdem = true;
+        if (semOs.intervalApplied) {
+          isInterOrdem = true;
+        }
         semOsValues.push(semOs.value);
         semOsIntervalApplied.push(semOs.intervalApplied);
       }
 
-      // SemOrdem: gap from last OS's Liberada (or Fim Intervalo when interval is in this window) to Log Off Corrigido.
-      // The visible segment is: segmentStart → Log Off. If directGap ≤ retorno base → "Retorno a base"; else "Antes Log Off".
+      // SemOrdem: gap from last OS's Liberada (or Fim Intervalo when interval is in the fim window) to Log Off.
+      // Segment type is always 'fim_jornada' / "Antes Log Off" with full directGap as min.
+      // Flag activates when: (row retornoBase present) excess > 5 min; (row empty) directGap > avg * 1.2.
       const retornoBaseAvg = kpis.find((k) => normalizeToken(k.kpi) === normalizeToken('Retorno Base'))?.average ?? 0;
-      let semOsFimJornadaMin = Number.NaN;   // excess above retorno base (for flag threshold)
-      let semOsFimDirectGapMin = Number.NaN; // raw segment duration shown in report
+      let semOsFimJornadaMin = Number.NaN;       // excess above retorno base (shown in flag text)
+      let semOsFimDirectGapMin = Number.NaN;     // total segment duration (shown in report)
+      let semOsFimDeslIntervalMin = Number.NaN;  // Liberada → Início Intervalo (end-of-day interval)
       let semOsFimFrom: string | undefined;
       let semOsFimFromLabel: string | undefined;
-      let semOsFimDeslIntervalMin = Number.NaN;
-      let semOsFimRetornoBaseRowVal = 0;
+      let semOsFimRetornoBaseRowVal = 0;          // row-level retorno base (display only)
       let semOsFimRetornoBaseUsedRow = false;
-      
+      let retornoExcedenteThreshold = false;
       let semOsFimHasIntervalInWindow = false;
-      if (logOffCorrigidoCol && liberadaCol) {
+      if (logOffCorrigidoCol2 && liberadaCol) {
         const lastRow = ordered[ordered.length - 1];
         const lastLiberada = parseDateTimeBr(String(lastRow[liberadaCol] ?? ''));
-        const logOff = parseDateTimeBr(String(lastRow[logOffCorrigidoCol] ?? ''));
+        const logOff = parseDateTimeBr(String(lastRow[logOffCorrigidoCol2] ?? ''));
         if (lastLiberada && logOff && logOff.getTime() > lastLiberada.getTime()) {
           const lastIntStart = inicioIntervaloCol ? parseDateTimeBr(String(lastRow[inicioIntervaloCol] ?? '')) : null;
           const lastIntEnd   = fimIntervaloCol    ? parseDateTimeBr(String(lastRow[fimIntervaloCol]    ?? '')) : null;
-          // Interval is in the fim_jornada window when it falls between last Liberada and Log Off
+          // Interval is in the fim window when it falls entirely between last Liberada and Log Off
           const hasIntervalInFimWindow = Boolean(
             lastIntStart && lastIntEnd &&
             lastIntStart.getTime() >= lastLiberada.getTime() &&
@@ -347,52 +369,18 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             // Flag if total gap exceeds global avg by ≥15 min (Antes Log Off — separate flag, not ociosidade)
             if (retornoBaseAvg > 0 && (directGapMin - retornoBaseAvg) >= 15) {
               semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
-              
-            }
-          } else if (retornoBaseAvg > 0) {
-            // Row empty: flag if ≥15 min above global avg (Antes Log Off — separate flag, not ociosidade)
-            if ((directGapMin - retornoBaseAvg) >= 15) {
-              semOsFimJornadaMin = round2(directGapMin - retornoBaseAvg);
-              
-            }
-          } else {
-            // No retorno base data: fall back to SEM_OS_THRESHOLD_MIN (Antes Log Off — separate flag)
-            if (directGapMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
-              semOsFimJornadaMin = round2(directGapMin);
-              
-            }
+          }
+          if (directGapMin > 70) {
+            retornoExcedenteThreshold = true;
+            semOsFimJornadaMin = round2(directGapMin);
+            const excess = round2(directGapMin - 70);
+            semOsValues.push(excess);
+            const lastIdx = ordered.length - 1;
+            const existing = ocisoValues[lastIdx] ?? 0;
+            ocisoValues[lastIdx] = round2(existing + excess);
           }
         }
       }
-
-      // Jornada-level HT/HD for jornadasAbaixoMeta count
-      let htJornada = 0;
-      for (const row of ordered) {
-        const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
-        const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
-        htJornada += trMin + tlMin;
-      }
-      let hdJornada = 0;
-      if (logInCorrigidoCol && logOffCorrigidoCol) {
-        let logInStr = '';
-        let logOffStr = '';
-        for (const row of ordered) {
-          const c = String(row[logInCorrigidoCol] ?? '').trim();
-          if (c) { logInStr = c; break; }
-        }
-        for (const row of ordered) {
-          const c = String(row[logOffCorrigidoCol] ?? '').trim();
-          if (c) { logOffStr = c; break; }
-        }
-        const logInDate  = parseDateTimeBr(logInStr);
-        const logOffDate = parseDateTimeBr(logOffStr);
-        if (logInDate && logOffDate && logOffDate.getTime() > logInDate.getTime()) {
-          hdJornada = minutesBetween(logOffDate, logInDate);
-        }
-      }
-      const jornadasList = teamJornadas.get(team) ?? [];
-      jornadasList.push({ htTotalMin: round2(htJornada), hdTotalMin: round2(hdJornada) });
-      teamJornadas.set(team, jornadasList);
 
       // Accumulate HD Total (per-jornada value — same for all OS in the group)
       if (hdTotalCol) {
@@ -412,12 +400,16 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         }
       }
 
-      // Accumulate TempPrep and SemOrdem
+      // Accumulate TempPrep and SemOrdem per team
       for (const v of tempPrepValues) {
-        if (Number.isFinite(v) && v > 0) teamTempPrepSum.set(team, (teamTempPrepSum.get(team) ?? 0) + v);
+        if (Number.isFinite(v) && v > 0) {
+          teamTempPrepSum.set(team, (teamTempPrepSum.get(team) ?? 0) + v);
+        }
       }
       for (const v of semOsValues) {
-        if (Number.isFinite(v) && v > 0) teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
+        if (Number.isFinite(v) && v > 0) {
+          teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
+        }
       }
       const dayIdleTotal =
         tempPrepValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0) +
@@ -428,6 +420,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         teamDailyIdles.set(team, arr);
       }
 
+      // Accumulate total order count for this team
       teamTotalOrders.set(team, (teamTotalOrders.get(team) ?? 0) + ordered.length);
 
       // Accumulate Horas Extras (per-jornada value — same for all OS in the group)
@@ -440,19 +433,22 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
       // Collect basic info for ALL orders (for "Ver mais" expansion, includes non-flagged)
       {
-        const basicArr = teamAllBasicUtil.get(team) ?? [];
-        const seen = teamAllBasicUtilSeen.get(team) ?? new Set<string>();
+        const basicArr = teamAllBasicOrders.get(team) ?? [];
+        const seen = teamAllBasicSeenForTeam.get(team) ?? new Set<string>();
         for (let bIdx = 0; bIdx < ordered.length; bIdx++) {
           const row = ordered[bIdx];
           const prevRow = bIdx > 0 ? ordered[bIdx - 1] : null;
           const nr = nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim() : '';
           const desp = despachadaCol ? String(row[despachadaCol] ?? '').trim() : '';
-          const key = nr || desp;
+          const caminho = caminhoCol ? String(row[caminhoCol] ?? '').trim() : '';
+          const liberada = liberadaCol ? String(row[liberadaCol] ?? '').trim() : '';
+          const key = `${nr || desp}|${caminho}|${liberada}`;
           if (!key || seen.has(key)) continue;
           seen.add(key);
           const trMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
           const tlMin = tlOrdemCol ? (parseNumber(String(row[tlOrdemCol] ?? '')) ?? 0) : 0;
           const hdMin = hdTotalCol ? (parseNumber(String(row[hdTotalCol] ?? '')) ?? 0) : 0;
+          // Interval window check: only show interval in the card where it belongs
           const basicInicioIntervaloRaw = inicioIntervaloCol ? String(row[inicioIntervaloCol] ?? '').trim() : '';
           const basicFimIntervaloRaw    = fimIntervaloCol    ? String(row[fimIntervaloCol]    ?? '').trim() : '';
           const basicInicioIntervaloDate = basicInicioIntervaloRaw ? parseDateTimeBr(basicInicioIntervaloRaw) : null;
@@ -465,8 +461,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             (basicPrevLiberadaDate === null || basicInicioIntervaloDate.getTime() >= basicPrevLiberadaDate.getTime()),
           );
           let basicFimJornadaJanela = false;
-          if (bIdx === ordered.length - 1 && logOffCorrigidoCol && basicLiberadaAtualDate) {
-            const logOff = parseDateTimeBr(String(row[logOffCorrigidoCol] ?? ''));
+          if (bIdx === ordered.length - 1 && logOffCorrigidoCol2 && basicLiberadaAtualDate) {
+            const logOff = parseDateTimeBr(String(row[logOffCorrigidoCol2] ?? ''));
             if (logOff && logOff.getTime() > basicLiberadaAtualDate.getTime()) {
               if (basicInicioIntervaloDate && basicInicioIntervaloDate.getTime() >= basicLiberadaAtualDate.getTime() && basicInicioIntervaloDate.getTime() <= logOff.getTime()) {
                 basicFimJornadaJanela = true;
@@ -476,8 +472,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           const keepInterval = basicIntervaloNaJanela || basicFimJornadaJanela;
 
           basicArr.push({
-            nr_ordem: nr,
+            source: 'Scanner 4.4 - CE M300',
             date_ref: dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
+            nr_ordem: nr,
             classe: classeCol ? String(row[classeCol] ?? '').trim() : '',
             causa: causaCol ? String(row[causaCol] ?? '').trim() : '',
             prev_liberada: prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined,
@@ -486,32 +483,33 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             no_local: noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
             liberada: liberadaCol ? String(row[liberadaCol] ?? '').trim() : '',
             inicio_intervalo: keepInterval ? basicInicioIntervaloRaw : '',
-            fim_intervalo: keepInterval ? basicFimIntervaloRaw : '',
+            fim_intervalo:    keepInterval ? basicFimIntervaloRaw    : '',
             inicio_calendario: bIdx === 0 && inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
-            log_in: bIdx === 0 && logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
             tr_ordem_min: round2(trMin),
             tl_ordem_min: round2(tlMin),
             hd_total_min: round2(hdMin),
             hd_pct_tr: hdMin > 0 ? round2((trMin / hdMin) * 100) : 0,
             hd_pct_tl: hdMin > 0 ? round2((tlMin / hdMin) * 100) : 0,
+            global_avg_tl_min: globalAvgTlMin,
+            global_avg_tr_min: globalAvgTrMin,
             tempo_padrao_min: tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) ?? undefined : undefined,
             ocioso_min: ocisoValues[bIdx],
             flags: [],
           });
         }
-        teamAllBasicUtil.set(team, basicArr);
-        teamAllBasicUtilSeen.set(team, seen);
+        teamAllBasicOrders.set(team, basicArr);
+        teamAllBasicSeenForTeam.set(team, seen);
       }
 
-      // Build per-order evidence (exact same logic as analyzeOsDia)
+      // Build evidence for flagged orders
       const evidences = teamEvidences.get(team) ?? [];
       for (let i = 0; i < ordered.length; i++) {
         const row     = ordered[i];
         const prevRow = i > 0 ? ordered[i - 1] : null;
 
-        const trOrdemMin    = trOrdemCol     ? (parseNumber(String(row[trOrdemCol]     ?? '')) ?? 0) : 0;
-        const tlOrdemMin    = tlOrdemCol     ? (parseNumber(String(row[tlOrdemCol]     ?? '')) ?? 0) : 0;
-        const hdTotalMin    = hdTotalCol     ? (parseNumber(String(row[hdTotalCol]     ?? '')) ?? 0) : 0;
+        const trOrdemMin    = trOrdemCol     ? (parseNumber(String(row[trOrdemCol]     ?? '')) ?? 0)    : 0;
+        const tlOrdemMin    = tlOrdemCol     ? (parseNumber(String(row[tlOrdemCol]     ?? '')) ?? 0)    : 0;
+        const hdTotalMin    = hdTotalCol     ? (parseNumber(String(row[hdTotalCol]     ?? '')) ?? 0)    : 0;
         const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
         const tempPrepOs = tempPrepValues[i] ?? Number.NaN;
         const semOsMin   = semOsValues[i]    ?? Number.NaN;
@@ -519,9 +517,18 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
         const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
 
-        const flags: UtilizacaoOrderEvidence['flags'] = [];
+        const flags: OsDiaOrderEvidence['flags'] = [];
+        if (
+          hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
+          tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+          trOrdemMin > tempoPadraoRaw
+        ) {
+          flags.push('tr_excede_hd');
+        }
+        if (globalAvgTlMin > 0 && tlOrdemMin > globalAvgTlMin && hdTotalMin > 0 && tlOrdemMin > hdTotalMin * 0.30) {
+          flags.push('tl_excede_hd');
+        }
 
-        // Detect prior-dispatch conflict early so triagem_alto flag can be set alongside others
         let nrOrdemDespachoAnterior: string | undefined;
         let horaDespachoAnterior: string | undefined;
         let triagemMin: number | undefined;
@@ -546,18 +553,18 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         }
 
         const tempPrepThreshold = TEMP_PREP_THRESHOLD_MIN;
-        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) flags.push('temp_prep_alto');
-        if (triagemMin !== undefined && triagemMin >= TEMP_PREP_THRESHOLD_MIN + TOLERANCE_MIN) flags.push('triagem_alto');
-        // 1º Desloc.: Início Cal. → A Caminho, only for 1ª OS, threshold 25 min
+        if (Number.isFinite(tempPrepOs) && tempPrepOs >= tempPrepThreshold + TOLERANCE_MIN) {
+          flags.push('temp_prep_alto');
+        }
+        if (triagemMin !== undefined && triagemMin >= TEMP_PREP_THRESHOLD_MIN + TOLERANCE_MIN) {
+          flags.push('triagem_alto');
+        }
         const ocisoForFlag = ocisoValues[i];
-        if (i === 0 && ocisoForFlag !== undefined && ocisoForFlag >= 25) flags.push('primeiro_desloc_alto');
-        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) flags.push('sem_os_alto');
-        if (
-          hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
-          tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
-          trOrdemMin > tempoPadraoRaw
-        ) {
-          flags.push('tr_excede_hd');
+        if (i === 0 && ocisoForFlag !== undefined && ocisoForFlag >= 25) {
+          flags.push('primeiro_desloc_alto');
+        }
+        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+          flags.push('sem_os_alto');
         }
 
         const prevLiberadaDate   = prevRow && liberadaCol ? parseDateTimeBr(String(prevRow[liberadaCol] ?? '')) : null;
@@ -574,19 +581,18 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime() &&
           fimIntervaloDate.getTime() <= aCaminhoDate.getTime(),
         );
-        const intervaloDeslocMin = hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate
-          ? round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate))
-          : null;
-        const intervaloDeslocAboveGlobalAvg = Boolean(
-          intervaloDeslocMin !== null &&
-          Number.isFinite(intervaloDeslocMin) &&
-          globalAvgIntervaloDeslocMin > 0 &&
-          intervaloDeslocMin > globalAvgIntervaloDeslocMin,
-        );
-        if (intervaloDeslocAboveGlobalAvg) flags.push('sem_os_alto');
+        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate) {
+          const intDurMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate));
+          if (intDurMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+            flags.push('sem_os_alto');
+          }
+        }
 
-        let uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
-        if (uniqueFlags.length === 0) continue;
+        const uniqueFlags = [...new Set(flags)] as OsDiaOrderEvidence['flags'];
+
+        if (uniqueFlags.length === 0) {
+          continue;
+        }
 
         const intervaloNaJanela = Boolean(
           inicioIntervaloDate &&
@@ -595,7 +601,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           (prevLiberadaDate === null || inicioIntervaloDate.getTime() >= prevLiberadaDate.getTime()),
         );
 
-        const semOsDetails: NonNullable<UtilizacaoOrderEvidence['sem_os_details']> = [];
+        const semOsDetails: NonNullable<OsDiaOrderEvidence['sem_os_details']> = [];
         if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
           if (i === 0) {
             semOsDetails.push({
@@ -603,20 +609,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               min:  round2(semOsMin),
               from: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
               to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
-              global_avg_min: globalAvgInicioJornadaMin > 0 ? globalAvgInicioJornadaMin : undefined,
-              above_avg_pct: globalAvgInicioJornadaMin > 0 ? round2((semOsMin - globalAvgInicioJornadaMin) / globalAvgInicioJornadaMin * 100) : undefined,
             });
           } else {
             const prevDespStr = prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() || undefined : undefined;
-            const prevDespDate = prevDespStr ? parseDateTimeBr(prevDespStr) : null;
             const prevLibStr  = prevRow && liberadaCol  ? String(prevRow[liberadaCol]  ?? '').trim() || undefined : undefined;
-            const prevLibDate  = prevLibStr  ? parseDateTimeBr(prevLibStr)  : null;
             const despachadaDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
-            // When the interval overlaps the dispatch window (interceptsDispatch case), calculateSemOsValue
-            // already returns minutesBetween(inicioIntervalo, prevLiberada) as semOsMin — the exact
-            // pre-interval travel time.
-            // When the interval fits fully within the entre-ordens window (insideTolerance case),
-            // semOsMin is the total discounted gap. We must split it into separate entries.
             if (
               hasIntervaloDeslocamento &&
               semOsIntervalApplied[i] &&
@@ -628,35 +625,23 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
                 fimIntervaloDate && despachadaDate.getTime() < fimIntervaloDate.getTime(),
               );
               if (isInterceptsDispatch) {
-                // semOsMin IS the pre-interval travel time (minutesBetween(inicioIntervalo, prevLiberada)).
                 const interceptMin = round2(semOsMin);
                 if (interceptMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
-                  const overPct = globalAvgIntervaloDeslocMin > 0
-                    ? round2(((interceptMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
-                    : undefined;
                   semOsDetails.push({
                     type: 'intervalo_deslocamento',
                     min:  interceptMin,
                     from: prevLibStr,
                     to:   inicioIntervaloRaw || undefined,
-                    global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
-                    above_avg_pct: overPct,
                   });
                 }
               } else {
-                // insideTolerance: split into pre-interval travel (prevLiberada → inicioIntervalo)
-                // and post-interval wait (fimIntervalo → despachada).
-                if (intervaloDeslocMin !== null && intervaloDeslocMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
-                  const overPct = globalAvgIntervaloDeslocMin > 0
-                    ? round2(((intervaloDeslocMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
-                    : undefined;
+                const deslocIntervalMin = round2(minutesBetween(inicioIntervaloDate, prevLiberadaDate!));
+                if (deslocIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
                   semOsDetails.push({
                     type: 'intervalo_deslocamento',
-                    min:  intervaloDeslocMin,
+                    min:  deslocIntervalMin,
                     from: prevLibStr,
                     to:   inicioIntervaloRaw || undefined,
-                    global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
-                    above_avg_pct: overPct,
                   });
                 }
                 if (fimIntervaloDate) {
@@ -667,8 +652,6 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
                       min:  postIntervalMin,
                       from: fimIntervaloRaw || undefined,
                       to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
-                      global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
-                      above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((postIntervalMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
                     });
                   }
                 }
@@ -680,70 +663,50 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
                 from: prevLibStr,
                 to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
                 interval_discounted: semOsIntervalApplied[i] || undefined,
-                desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
-                global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
-                above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((semOsMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
               });
             }
           }
         }
-        // Skip intervalo_deslocamento when the interval was already absorbed into entre_ordens
-        // (semOsIntervalApplied[i] === true), to avoid two sub-flags pointing to the same time window.
-        if (intervaloDeslocAboveGlobalAvg && intervaloDeslocMin !== null && !semOsIntervalApplied[i] && intervaloDeslocMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
-          // When the current OS has a Despachada between prevLiberada and inicioIntervalo,
-          // the "Desl. Intervalo" is measured from Despachada (not Lib. Anterior).
+        if (hasIntervaloDeslocamento && inicioIntervaloDate && prevLiberadaDate && !semOsIntervalApplied[i]) {
           const despachadaAtualDate = despachadaCol ? parseDateTimeBr(String(row[despachadaCol] ?? '')) : null;
           const useDespachadaAsFrom = Boolean(
-            despachadaAtualDate && prevLiberadaDate && inicioIntervaloDate &&
+            despachadaAtualDate &&
             despachadaAtualDate.getTime() > prevLiberadaDate.getTime() &&
             despachadaAtualDate.getTime() < inicioIntervaloDate.getTime(),
           );
-          const displayMin = useDespachadaAsFrom && despachadaAtualDate && inicioIntervaloDate
-            ? round2(minutesBetween(inicioIntervaloDate, despachadaAtualDate))
-            : intervaloDeslocMin;
-          const fromStr = useDespachadaAsFrom
+          const intFrom  = useDespachadaAsFrom ? despachadaAtualDate! : prevLiberadaDate;
+          const intFromStr = useDespachadaAsFrom
             ? (despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined)
             : (prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() || undefined : undefined);
-          const overPct = globalAvgIntervaloDeslocMin > 0
-            ? round2(((displayMin - globalAvgIntervaloDeslocMin) / globalAvgIntervaloDeslocMin) * 100)
-            : undefined;
-          semOsDetails.push({
-            type: 'intervalo_deslocamento',
-            min:  displayMin,
-            from: fromStr,
-            to:   inicioIntervaloRaw || undefined,
-            global_avg_min: globalAvgIntervaloDeslocMin > 0 ? round2(globalAvgIntervaloDeslocMin) : undefined,
-            above_avg_pct: overPct,
-            from_label: useDespachadaAsFrom ? 'Despachada' : 'Lib. Anterior',
-          });
+          const intMin = round2(minutesBetween(inicioIntervaloDate, intFrom));
+          if (intMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN) {
+            semOsDetails.push({
+              type: 'intervalo_deslocamento',
+              min:  intMin,
+              from: intFromStr,
+              to:   inicioIntervaloRaw || undefined,
+              from_label: useDespachadaAsFrom ? 'Despachada' : 'Lib. Anterior',
+            });
+          }
         }
 
         const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
 
-        // If no sem_os sub-flag qualified individually, suppress sem_os_alto to avoid an
-        // empty "Sem Ordem/OS:" header in the report.
-        if (semOsDetails.length === 0 && uniqueFlags.includes('sem_os_alto')) {
-          uniqueFlags = uniqueFlags.filter((f) => f !== 'sem_os_alto') as UtilizacaoOrderEvidence['flags'];
-          if (uniqueFlags.length === 0) continue;
-        }
-
-        // Detect prior-dispatch conflict for the first OS of the day (i === 0).
-        // NOTE: detection already done above (before flags) — skip duplicate block.
-
         evidences.push({
+          source:           'Scanner 4.4 - CE M300',
           date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
           nr_ordem:          nrOrdemCol ? String(row[nrOrdemCol] ?? '').trim()         : '',
           classe:            classeCol  ? String(row[classeCol]  ?? '').trim()         : '',
           causa:             causaCol   ? String(row[causaCol]   ?? '').trim()         : '',
-          despachada:        despachadaCol       ? String(row[despachadaCol]       ?? '').trim() : '',
+          despachada:        despachadaCol        ? String(row[despachadaCol]        ?? '').trim() : '',
           a_caminho:                       String(row[caminhoCol]                     ?? '').trim(),
-          no_local:          noLocalCol  ? String(row[noLocalCol]  ?? '').trim()    : '',
-          liberada:          liberadaCol ? String(row[liberadaCol] ?? '').trim()    : '',
+          no_local:          noLocalCol   ? String(row[noLocalCol]   ?? '').trim()    : '',
+          liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim()    : '',
           inicio_intervalo:  intervaloNaJanela ? inicioIntervaloRaw : '',
           fim_intervalo:     intervaloNaJanela ? fimIntervaloRaw    : '',
-          prev_liberada:     prevRow && liberadaCol    ? String(prevRow[liberadaCol]    ?? '').trim() : undefined,
-          prev_nr_ordem:     prevRow && nrOrdemCol     ? String(prevRow[nrOrdemCol]     ?? '').trim() : undefined,
-          prev_despachada:   prevRow && despachadaCol  ? String(prevRow[despachadaCol]  ?? '').trim() : undefined,
+          prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
+          prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+          prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
           inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
           log_in:            logInCorrigidoCol   ? String(row[logInCorrigidoCol]   ?? '').trim() || undefined : undefined,
           tr_ordem_min:      round2(trOrdemMin),
@@ -751,10 +714,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           hd_total_min:      round2(hdTotalMin),
           hd_pct_tr:         hdPctTr,
           hd_pct_tl:         hdPctTl,
+          global_avg_tl_min: globalAvgTlMin,
+          global_avg_tr_min: globalAvgTrMin,
           tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
           temp_prep_os_min:  Number.isFinite(tempPrepOs) ? round2(tempPrepOs) : undefined,
           triagem_min:       triagemMin,
-          triagem_global_avg_min: (triagemMin !== undefined && globalAvgTriagemMin > 0) ? globalAvgTriagemMin : undefined,
           ocioso_min:        ocisoValues[i],
           sem_os_details:    semOsDetails.length > 0 ? semOsDetails : undefined,
           sem_os_total_min:  semOsTotalMin,
@@ -763,32 +727,27 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           hora_despacho_anterior:     horaDespachoAnterior,
         });
       }
-
-      // Always attach fim_jornada to the last OS for timeline rendering (Log Off segment).
-      // sem_os_alto activates when excess > 5 above retorno base (row), or > 20% above avg (row empty),
-      // or when Desl. Intervalo before end-of-day interval is ≥10 min.
       {
         const lastRow = ordered[ordered.length - 1];
         const lastNrOrdem = nrOrdemCol ? String(lastRow[nrOrdemCol] ?? '').trim() : '';
-        const logOffStr  = logOffCorrigidoCol ? String(lastRow[logOffCorrigidoCol] ?? '').trim() || undefined : undefined;
+        const logOffStr = logOffCorrigidoCol2 ? String(lastRow[logOffCorrigidoCol2] ?? '').trim() || undefined : undefined;
         const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
         if (logOffStr) {
           const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
-          const semOsAbove = fimDeslAbove; // fim_jornada is a separate flag, not part of ociosidade
-          const fimDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] = {
+          const semOsAbove = fimDeslAbove || retornoExcedenteThreshold;
+          const fimDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] = {
             type: 'fim_jornada',
             min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
             from: semOsFimFrom ?? liberadaStr,
             to:   logOffStr,
             from_label: semOsFimFromLabel,
-            retorno_base_discounted: semOsFimRetornoBaseRowVal > 0 ? semOsFimRetornoBaseRowVal : undefined,
+            retorno_base_discounted: semOsFimRetornoBaseUsedRow ? round2(semOsFimRetornoBaseRowVal) : undefined,
             retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
-            excess_min: semOsFimAboveThreshold && Number.isFinite(semOsFimJornadaMin) && retornoBaseAvg > 0 ? round2(semOsFimJornadaMin) : undefined,
-            global_avg_min: semOsFimAboveThreshold && retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
+            excess_min: retornoExcedenteThreshold ? round2(semOsFimDirectGapMin - 70) : undefined,
           };
           const fimInicioIntervalo = semOsFimHasIntervalInWindow && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
           const fimFimIntervalo    = semOsFimHasIntervalInWindow && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
-          const fimDeslDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] | null = fimDeslAbove
+          const fimDeslDetail: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null = fimDeslAbove
             ? {
                 type: 'intervalo_deslocamento',
                 min:  round2(semOsFimDeslIntervalMin),
@@ -798,8 +757,12 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               }
             : null;
 
-          const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
-          if (existingEvidence) {
+          const isLastEvidenceFromLastRow = evidences.length > 0 && 
+            evidences[evidences.length - 1].nr_ordem === lastNrOrdem && 
+            evidences[evidences.length - 1].liberada === liberadaStr;
+
+          if (isLastEvidenceFromLastRow) {
+            const existingEvidence = evidences[evidences.length - 1];
             const details = existingEvidence.sem_os_details ?? [];
             details.push(fimDetail);
             if (fimDeslDetail) details.push(fimDeslDetail);
@@ -808,9 +771,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               // Only Desl. Intervalo counts toward ociosidade total
               const semOsOnlyDetails = details.filter((d) => d.type !== 'fim_jornada');
               existingEvidence.sem_os_total_min = round2(semOsOnlyDetails.reduce((s, d) => s + d.min, 0));
-              if (!existingEvidence.flags.includes('sem_os_alto')) existingEvidence.flags.push('sem_os_alto');
+              if (!existingEvidence.flags.includes('sem_os_alto')) {
+                existingEvidence.flags.push('sem_os_alto');
+              }
             }
-            if (semOsFimAboveThreshold && !existingEvidence.flags.includes('retorno_excedente')) {
+            if (retornoExcedenteThreshold && !existingEvidence.flags.includes('retorno_excedente')) {
               existingEvidence.flags.push('retorno_excedente');
             }
             // Show interval chip when interval is in the fim window
@@ -819,6 +784,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
           } else if (semOsAbove || retornoExcedenteThreshold) {
+            // Last order had no flags — create evidence entry with full info
             const i = ordered.length - 1;
             const row = lastRow;
             const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
@@ -830,44 +796,47 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             const prevRow = i > 0 ? ordered[i - 1] : null;
             const allFimDetails = [fimDetail, ...(fimDeslDetail ? [fimDeslDetail] : [])];
             evidences.push({
+              source:           'Scanner 4.4 - CE M300',
               date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
               nr_ordem:          lastNrOrdem,
-              classe:            classeCol ? String(row[classeCol] ?? '').trim() : '',
-              causa:             causaCol  ? String(row[causaCol]  ?? '').trim() : '',
+              classe:            classeCol  ? String(row[classeCol]  ?? '').trim() : '',
+              causa:             causaCol   ? String(row[causaCol]   ?? '').trim() : '',
               despachada:        despachadaCol ? String(row[despachadaCol] ?? '').trim() : '',
               a_caminho:         String(row[caminhoCol] ?? '').trim(),
               no_local:          noLocalCol ? String(row[noLocalCol] ?? '').trim() : '',
               liberada:          liberadaCol  ? String(row[liberadaCol]  ?? '').trim() : '',
               inicio_intervalo:  fimInicioIntervalo,
               fim_intervalo:     fimFimIntervalo,
-              prev_liberada:     prevRow && liberadaCol    ? String(prevRow[liberadaCol]    ?? '').trim() : undefined,
-              prev_nr_ordem:     prevRow && nrOrdemCol     ? String(prevRow[nrOrdemCol]     ?? '').trim() : undefined,
-              prev_despachada:   prevRow && despachadaCol  ? String(prevRow[despachadaCol]  ?? '').trim() : undefined,
+              prev_liberada:     prevRow && liberadaCol ? String(prevRow[liberadaCol] ?? '').trim() : undefined,
+              prev_nr_ordem:     prevRow && nrOrdemCol  ? String(prevRow[nrOrdemCol]  ?? '').trim() : undefined,
+              prev_despachada:   prevRow && despachadaCol ? String(prevRow[despachadaCol] ?? '').trim() : undefined,
               inicio_calendario: inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() || undefined : undefined,
-              log_in:            logInCorrigidoCol   ? String(row[logInCorrigidoCol]   ?? '').trim() || undefined : undefined,
+              log_in:            logInCorrigidoCol ? String(row[logInCorrigidoCol] ?? '').trim() || undefined : undefined,
               tr_ordem_min:      round2(trOrdemMin),
               tl_ordem_min:      round2(tlOrdemMin),
               hd_total_min:      round2(hdTotalMin),
               hd_pct_tr:         hdPctTr,
               hd_pct_tl:         hdPctTl,
+              global_avg_tl_min: globalAvgTlMin,
+              global_avg_tr_min: globalAvgTrMin,
               tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
+              flag_temp_reparo_excedido: (
+                globalAvgTrMin > 0 && trOrdemMin > globalAvgTrMin &&
+                tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
+                trOrdemMin > tempoPadraoRaw
+              ) ? true : undefined,
               sem_os_details:    allFimDetails,
               sem_os_total_min:  semOsAbove ? round2(allFimDetails.filter((d) => d.type !== 'fim_jornada').reduce((s, d) => s + d.min, 0)) : undefined,
               ocioso_min:        ocisoValues[i],
               temp_prep_os_min:  tempPrepValues[i],
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
-                ...(semOsFimAboveThreshold ? ['retorno_excedente' as const] : []),
-                ...((
-                  hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
-                  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
-                  trOrdemMin > tempoPadraoRaw
-                ) ? ['tr_excede_hd' as const] : []),
+                ...(retornoExcedenteThreshold ? ['retorno_excedente' as const] : []),
               ],
             });
           } else {
             // Below threshold: inject fimDetail into the basic order so timeline shows Log Off
-            const basicOrders = teamAllBasicUtil.get(team) ?? [];
+            const basicOrders = teamAllBasicOrders.get(team) ?? [];
             const basicOrder = basicOrders.find((o) => o.nr_ordem === lastNrOrdem);
             if (basicOrder) {
               basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDetail);
@@ -888,37 +857,40 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       teamEvidences.set(team, evidences);
     }
 
-    // Build result
+    // 5. Build result
     const distinctDates = dateCol ? countDistinctDates(deslocRows, dateCol) : 0;
-    const result: UtilizacaoTeamAnalysis[] = [];
-    for (const [team, utilizacaoValue] of underPerforming.entries()) {
-      if (!Array.from(grouped.values()).some((g) => g.team === team)) continue;
+    const result: OsDiaTeamAnalysis[] = [];
+    for (const [team, osDiaValue] of underPerforming.entries()) {
+      // Skip if no deslocamento rows found for this team
+      if (!Array.from(grouped.values()).some((g) => g.team === team)) {
+        continue;
+      }
 
       const flaggedOrders = mergeEvidenceFlags(teamEvidences.get(team) ?? []);
-      const allBasic = teamAllBasicUtil.get(team) ?? [];
-      const flaggedUtilByKey = new Map(flaggedOrders.map(o => [o.nr_ordem || `${o.despachada}|${o.a_caminho}`, o]));
+      const allBasic = teamAllBasicOrders.get(team) ?? [];
+      const flaggedByKey = new Map(flaggedOrders.map(o => [`${o.nr_ordem || ''}|${o.a_caminho}|${o.liberada}`, o]));
       const seenExtra = new Set<string>();
-      const allMerged: UtilizacaoOrderEvidence[] = [];
+      const allMerged: OsDiaOrderEvidence[] = [];
       for (const o of allBasic) {
-        const key = o.nr_ordem || `${o.despachada}|${o.a_caminho}`;
-        if (!seenExtra.has(key)) {
-          seenExtra.add(key);
-          allMerged.push(flaggedUtilByKey.get(key) ?? o);
+        const key = `${o.nr_ordem || ''}|${o.a_caminho}|${o.liberada}`;
+        if (!seenExtra.has(key)) { 
+          seenExtra.add(key); 
+          allMerged.push(flaggedByKey.get(key) ?? o); 
         }
       }
 
       // Ordenação estritamente decrescente pelo tempo total ocioso
       allMerged.sort((a, b) => {
-        const fjA = a.flags?.includes('retorno_excedente') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
-        const fjB = b.flags?.includes('retorno_excedente') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const fjA = a.flags?.includes('retorno_excedente') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.excess_min ?? 0) : 0;
+        const fjB = b.flags?.includes('retorno_excedente') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.excess_min ?? 0) : 0;
         const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0) + fjA;
         const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0) + fjB;
         return idleB - idleA;
       });
 
-      const finalFlagged: UtilizacaoOrderEvidence[] = [];
-      const finalExtra: UtilizacaoOrderEvidence[] = [];
-
+      const finalFlagged: OsDiaOrderEvidence[] = [];
+      const finalExtra: OsDiaOrderEvidence[] = [];
+      
       for (const o of allMerged) {
         if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
           finalFlagged.push(o);
@@ -927,8 +899,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         }
       }
 
-      const enrichedFlaggedOrders = enrichUtilizacaoEvidence(finalFlagged);
-      const extraEnrichedFlaggedOrders = enrichUtilizacaoEvidence(finalExtra);
+      const prioritizedFlaggedOrders = enrichOsDiaEvidence(finalFlagged);
+      const extraFlaggedOrders = enrichOsDiaEvidence(finalExtra);
       const hdEntry       = teamHdTotals.get(team);
       const dayCount      = teamDayCount.get(team) ?? (hdEntry ? hdEntry.count : 1);
       const avgHdTotal    = hdEntry ? round2(hdEntry.sum / hdEntry.count) : 0;
@@ -946,45 +918,91 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       const idleAvgMin  = idleDays > 0
         ? round2(aboveAvgIdles.reduce((a, b) => a + b, 0) / idleDays)
         : 0;
-      const idleAnalysis: UtilizacaoTeamAnalysis['idleAnalysis'] =
-        avgHdTotal > 0 && idlePct >= IDLE_THRESHOLD_PCT
+      const idleAnalysis: OsDiaTeamAnalysis['idleAnalysis'] =
+        avgHdTotal > 0 && idlePct >= 10
           ? { idleMin, idlePct, horasExtras: round2((teamHorasExtrasSum.get(team) ?? 0) / dayCount) }
           : undefined;
 
-      const allJornadas = teamJornadas.get(team) ?? [];
-      const jornadasAbaixoMeta = allJornadas.filter(
-        (j) => j.hdTotalMin > 0 && (j.htTotalMin / j.hdTotalMin) * 100 < UTIL_META,
-      ).length;
-
       result.push({
         team,
-        utilizacaoValue:  round2(utilizacaoValue),
-        metaTarget:       UTIL_META,
-        gap:              round2(UTIL_META - utilizacaoValue),
-        hdTotalMin:       avgHdTotal,
+        osDiaValue:  round2(osDiaValue),
+        metaTarget:  OS_DIA_META,
+        gap:         round2(OS_DIA_META - osDiaValue),
+        hdTotalMin:  avgHdTotal,
+        globalAvgTlMin,
         tempPrepTotalMin: tempPrepTotal,
         semOrdemTotalMin: semOrdemTotal,
         totalOrders,
-        totalJornadas:    allJornadas.length,
+        totalJornadas: dayCount,
         idleDays,
         idleAvgMin,
-        jornadasAbaixoMeta,
-        flaggedOrders: enrichedFlaggedOrders,
-        extraFlaggedOrders: extraEnrichedFlaggedOrders,
+        flaggedOrders: prioritizedFlaggedOrders,
+        extraFlaggedOrders,
         summary: {
-          countTempPrepAlto: enrichedFlaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
-          countSemOsAlto:    enrichedFlaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
+          countTrExceeds:    flaggedOrders.filter((e) => e.flags.includes('tr_excede_hd')).length,
+          countTlExceeds:    flaggedOrders.filter((e) => e.flags.includes('tl_excede_hd')).length,
+          countTempPrepAlto: flaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
+          countSemOsAlto:    flaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
         },
         idleAnalysis,
       });
     }
 
     return result.sort((a, b) => {
-      if (a.utilizacaoValue !== b.utilizacaoValue) return a.utilizacaoValue - b.utilizacaoValue;
-      const aAlerts = a.summary.countTempPrepAlto + a.summary.countSemOsAlto;
-      const bAlerts = b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
+      // Primary: lowest OS/Dia first
+      if (a.osDiaValue !== b.osDiaValue) return a.osDiaValue - b.osDiaValue;
+      // Secondary: most total alerts first
+      const aAlerts = a.summary.countTrExceeds + a.summary.countTlExceeds + a.summary.countTempPrepAlto + a.summary.countSemOsAlto;
+      const bAlerts = b.summary.countTrExceeds + b.summary.countTlExceeds + b.summary.countTempPrepAlto + b.summary.countSemOsAlto;
       return bAlerts - aAlerts;
     }).slice(0, 3);
   }
 
-  // ─── TME IMP Analyzer ─────────────────────────────────────────────────────
+  /**
+   * Deduplicates an evidence array by nr_ordem/despachada+a_caminho key,
+   * merging flags and sem_os_details of duplicate entries into one.
+   */
+export function mergeEvidenceFlags<T extends {
+    nr_ordem: string;
+    despachada: string;
+    a_caminho: string;
+    flags: string[];
+    liberada?: string;
+    sem_os_details?: Array<{ type: string; min: number; [k: string]: unknown }>;
+    sem_os_total_min?: number;
+  }>(evidences: T[]): T[] {
+    const map = new Map<string, T>();
+    for (const ev of evidences) {
+      const key = `${ev.nr_ordem || ''}|${ev.a_caminho}|${ev.liberada}`;
+      const existing = map.get(key);
+      if (existing) {
+        for (const flag of ev.flags) {
+          if (!(existing.flags as string[]).includes(flag)) {
+            (existing.flags as string[]).push(flag);
+          }
+        }
+        if (ev.sem_os_details?.length) {
+          existing.sem_os_details = [...(existing.sem_os_details ?? []), ...ev.sem_os_details] as T['sem_os_details'];
+          existing.sem_os_total_min = (existing.sem_os_details ?? []).reduce((s, d) => s + d.min, 0);
+        }
+      } else {
+        map.set(key, { ...ev, flags: [...ev.flags] as T['flags'] });
+      }
+    }
+    return Array.from(map.values());
+  }
+
+export function countDistinctDates(rows: CsvRow[], dateCol: string): number {
+    const dates = new Set<string>();
+    for (const row of rows) {
+      const d = String(row[dateCol] ?? '').trim();
+      if (d) dates.add(d);
+    }
+    return dates.size;
+  }
+
+
+
+  // ─── Business logic text helpers — single source of truth for alert texts ──
+
+  /** Formats a number for Portuguese locale display (used in pre-computed alert texts). */
