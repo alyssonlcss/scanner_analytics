@@ -727,7 +727,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
           }
         }
 
-        const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
+        const semOsTotalMin = Number.isFinite(semOsMin) && semOsMin > 0 ? round2(semOsMin) : undefined;
 
         // Detect prior-dispatch conflict for the first OS of the day (i === 0).
         // If Hora 1º Despacho (team-day aggregate timestamp) differs from this OS's Despachada,
@@ -820,13 +820,12 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
               details.push(fimDetail);
               if (fimDeslDetail) details.push(fimDeslDetail);
               existingEvidence.sem_os_details = details;
+              const prevTotal = existingEvidence.sem_os_total_min ?? 0;
+              const newAdditions = (fimDetail.excess_min ?? 0) + (fimDeslDetail?.min ?? 0);
+              if (prevTotal + newAdditions > 0) {
+                existingEvidence.sem_os_total_min = round2(prevTotal + newAdditions);
+              }
               if (semOsAbove) {
-                existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => {
-                  if (d.type === 'fim_jornada') {
-                    return s + (d.excess_min ?? 0);
-                  }
-                  return s + d.min;
-                }, 0));
                 if (!existingEvidence.flags.includes('sem_os_alto')) {
                   existingEvidence.flags.push('sem_os_alto');
                 }

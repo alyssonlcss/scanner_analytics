@@ -6581,14 +6581,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected getOciosoTotal(ev: any): number | null {
-    if (!ev.prev_liberada) {
-      const total = (ev.ocioso_min || 0) + (ev.sem_os_total_min || 0);
-      return total > 0 ? total : null;
-    } else {
-      const tempPrep = ev.temp_prep_os_min ?? 0;
-      const total = tempPrep + (ev.sem_os_total_min || 0);
-      return total > 0 ? total : null;
-    }
+    const tempPrep = ev.temp_prep_os_min ?? 0;
+    const total = tempPrep + (ev.sem_os_total_min || 0);
+    return total > 0 ? total : null;
   }
 
   /** Detecta janela Entre OS após intervalo — delegado ao backend via entreOsAfterIntervalo */

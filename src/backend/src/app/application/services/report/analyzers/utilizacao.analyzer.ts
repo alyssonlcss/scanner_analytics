@@ -718,7 +718,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           });
         }
 
-        const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
+        const semOsTotalMin = Number.isFinite(semOsMin) && semOsMin > 0 ? round2(semOsMin) : undefined;
 
         // If no sem_os sub-flag qualified individually, suppress sem_os_alto to avoid an
         // empty "Sem Ordem/OS:" header in the report.
@@ -773,8 +773,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         const logOffStr  = logOffCorrigidoCol ? String(lastRow[logOffCorrigidoCol] ?? '').trim() || undefined : undefined;
         const liberadaStr = liberadaCol ? String(lastRow[liberadaCol] ?? '').trim() || undefined : undefined;
         if (logOffStr) {
+          const retornoExcedenteThreshold = Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 70;
           const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
-          const semOsAbove = fimDeslAbove; // fim_jornada is a separate flag, not part of ociosidade
+          const semOsAbove = fimDeslAbove || retornoExcedenteThreshold;
           const fimDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] = {
             type: 'fim_jornada',
             min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
@@ -783,8 +784,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             from_label: semOsFimFromLabel,
             retorno_base_discounted: semOsFimRetornoBaseRowVal > 0 ? semOsFimRetornoBaseRowVal : undefined,
             retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
-            excess_min: semOsFimAboveThreshold && Number.isFinite(semOsFimJornadaMin) && retornoBaseAvg > 0 ? round2(semOsFimJornadaMin) : undefined,
-            global_avg_min: semOsFimAboveThreshold && retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
+            excess_min: retornoExcedenteThreshold ? round2(semOsFimDirectGapMin - 70) : undefined,
+            global_avg_min: retornoExcedenteThreshold && retornoBaseAvg > 0 ? round2(retornoBaseAvg) : undefined,
           };
           const fimInicioIntervalo = semOsFimHasIntervalInWindow && inicioIntervaloCol ? String(lastRow[inicioIntervaloCol] ?? '').trim() : '';
           const fimFimIntervalo    = semOsFimHasIntervalInWindow && fimIntervaloCol    ? String(lastRow[fimIntervaloCol]    ?? '').trim() : '';
@@ -805,13 +806,15 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             if (fimDeslDetail) details.push(fimDeslDetail);
             existingEvidence.sem_os_details = details;
             if (semOsAbove) {
-              // Only Desl. Intervalo counts toward ociosidade total
-              const semOsOnlyDetails = details.filter((d) => d.type !== 'fim_jornada');
-              existingEvidence.sem_os_total_min = round2(semOsOnlyDetails.reduce((s, d) => s + d.min, 0));
-              if (!existingEvidence.flags.includes('sem_os_alto')) existingEvidence.flags.push('sem_os_alto');
-            }
-            if (semOsFimAboveThreshold && !existingEvidence.flags.includes('retorno_excedente')) {
-              existingEvidence.flags.push('retorno_excedente');
+              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => {
+                if (d.type === 'fim_jornada') {
+                  return s + (d.excess_min ?? 0);
+                }
+                return s + d.min;
+              }, 0));
+              if (!existingEvidence.flags.includes('sem_os_alto')) {
+                existingEvidence.flags.push('sem_os_alto');
+              }
             }
             // Show interval chip when interval is in the fim window
             if (semOsFimHasIntervalInWindow && !existingEvidence.inicio_intervalo) {
@@ -852,12 +855,16 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               hd_pct_tl:         hdPctTl,
               tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
               sem_os_details:    allFimDetails,
-              sem_os_total_min:  semOsAbove ? round2(allFimDetails.filter((d) => d.type !== 'fim_jornada').reduce((s, d) => s + d.min, 0)) : undefined,
+              sem_os_total_min:  semOsAbove ? round2(allFimDetails.reduce((s, d) => {
+                if (d.type === 'fim_jornada') {
+                  return s + (d.excess_min ?? 0);
+                }
+                return s + d.min;
+              }, 0)) : undefined,
               ocioso_min:        ocisoValues[i],
               temp_prep_os_min:  tempPrepValues[i],
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
-                ...(semOsFimAboveThreshold ? ['retorno_excedente' as const] : []),
                 ...((
                   hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
                   tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
