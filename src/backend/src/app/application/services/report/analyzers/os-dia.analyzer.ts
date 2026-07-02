@@ -599,8 +599,11 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
         // Remove duplicate flags
         const uniqueFlags = [...new Set(flags)] as OsDiaOrderEvidence['flags'];
+        const tempPrepOsMin = Number.isFinite(tempPrepOs) ? tempPrepOs : 0;
+        const semOsTotalFinal = (Number.isFinite(semOsMin) && semOsMin > 0) ? semOsMin : 0;
+        const hasOcioso = (tempPrepOsMin + semOsTotalFinal) > 0;
 
-        if (uniqueFlags.length === 0) {
+        if (uniqueFlags.length === 0 && !hasOcioso) {
           continue;
         }
 
@@ -614,7 +617,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
 
         // Build sem_os_details
         const semOsDetails: NonNullable<OsDiaOrderEvidence['sem_os_details']> = [];
-        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
+        if (Number.isFinite(semOsMin) && semOsMin > 0) {
           if (i === 0) {
             semOsDetails.push({
               type: 'inicio_jornada',
@@ -835,7 +838,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
-          } else if (semOsAbove || retornoExcedenteThreshold) {
+          } else if (semOsAbove || retornoExcedenteThreshold || ((tempPrepValues[ordered.length - 1] ?? 0) + (fimDetail?.min ?? 0) + (fimDeslDetail?.min ?? 0)) > 0) {
             // Last order had no flags — create evidence entry with full info
             const i = ordered.length - 1;
             const row = lastRow;
@@ -949,7 +952,7 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
       const finalExtra: OsDiaOrderEvidence[] = [];
       
       for (const o of allMerged) {
-        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+        if (finalFlagged.length < 10 && ((o.flags?.length ?? 0) > 0 || ((o.ocioso_min ?? 0) + (o.temp_prep_os_min ?? 0) + (o.sem_os_total_min ?? 0)) > 0)) {
           finalFlagged.push(o);
         } else if (finalFlagged.length + finalExtra.length < 50) {
           finalExtra.push(o);

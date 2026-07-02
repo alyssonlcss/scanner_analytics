@@ -586,7 +586,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         if (intervaloDeslocAboveGlobalAvg) flags.push('sem_os_alto');
 
         let uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
-        if (uniqueFlags.length === 0) continue;
+        const tempPrepOsMin = Number.isFinite(tempPrepOs) ? tempPrepOs : 0;
+        const semOsTotalFinal = (Number.isFinite(semOsMin) && semOsMin > 0) ? semOsMin : 0;
+        const hasOcioso = (tempPrepOsMin + semOsTotalFinal) > 0;
+
+        if (uniqueFlags.length === 0 && !hasOcioso) continue;
 
         const intervaloNaJanela = Boolean(
           inicioIntervaloDate &&
@@ -596,7 +600,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         );
 
         const semOsDetails: NonNullable<UtilizacaoOrderEvidence['sem_os_details']> = [];
-        if (Number.isFinite(semOsMin) && semOsMin >= SEM_OS_THRESHOLD_MIN) {
+        if (Number.isFinite(semOsMin) && semOsMin > 0) {
           if (i === 0) {
             semOsDetails.push({
               type: 'inicio_jornada',
@@ -724,7 +728,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         // empty "Sem Ordem/OS:" header in the report.
         if (semOsDetails.length === 0 && uniqueFlags.includes('sem_os_alto')) {
           uniqueFlags = uniqueFlags.filter((f) => f !== 'sem_os_alto') as UtilizacaoOrderEvidence['flags'];
-          if (uniqueFlags.length === 0) continue;
+          if (uniqueFlags.length === 0 && !hasOcioso) continue;
         }
 
         // Detect prior-dispatch conflict for the first OS of the day (i === 0).
@@ -821,7 +825,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
-          } else if (semOsAbove || retornoExcedenteThreshold) {
+          } else if (semOsAbove || retornoExcedenteThreshold || ((tempPrepValues[ordered.length - 1] ?? 0) + (fimDetail?.min ?? 0) + (fimDeslDetail?.min ?? 0)) > 0) {
             const i = ordered.length - 1;
             const row = lastRow;
             const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
@@ -927,7 +931,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       const finalExtra: UtilizacaoOrderEvidence[] = [];
 
       for (const o of allMerged) {
-        if (finalFlagged.length < 10 && (o.flags?.length ?? 0) > 0) {
+        if (finalFlagged.length < 10 && ((o.flags?.length ?? 0) > 0 || ((o.ocioso_min ?? 0) + (o.temp_prep_os_min ?? 0) + (o.sem_os_total_min ?? 0)) > 0)) {
           finalFlagged.push(o);
         } else if (finalFlagged.length + finalExtra.length < 50) {
           finalExtra.push(o);
