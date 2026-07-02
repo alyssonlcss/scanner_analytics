@@ -9,6 +9,7 @@ export interface TimelineSegment {
   durationMin: number;
   /** Quando definido, sobrescreve a exibição de duração (ex.: diff assinado do Log In). */
   overrideDuration?: string;
+  excessMin?: number;
   /** Informação adicional exibida após " | " dentro do mesmo segmento (ex.: "1º Desloc.: 93min"). */
   subtitle?: string;
   isInterval: boolean;
@@ -111,7 +112,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     'log_in_inicio_calendario': 'Log In',
     'inicio_calendario_despachada': '1º Despacho',
     'log_in_despachada': '1º Despacho',
-    'hora_despacho_anterior_despachada': 'Desp. Prioritário',
+    'hora_despacho_anterior_despachada': '2º Desp. | Prioritário',
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
@@ -144,6 +145,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     const flags: string[] = [];
     let overrideDuration: string | undefined;
     let subtitle: string | undefined;
+    let excessMinVal: number | undefined;
 
     if (label === 'Reparo') {
       // Override duration only for the direct no_local→liberada case (no interval inside).
@@ -185,12 +187,12 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
         const g: number | undefined = md.global_avg_min;
         if (g !== undefined && g > 0 && durationMin > g && durationMin > SEM_OS_LIMIT) flags.push('acima_media');
       }
-    } else if (label === 'Desp. Prioritário' && p1.key === 'hora_despacho_anterior') {
-      // Raw "Desp. Prioritário" after prior-dispatch point: hora_despacho_anterior → despachada
+    } else if (label === '2º Desp. | Prioritário' && p1.key === 'hora_despacho_anterior') {
+      // Raw "2º Desp. | Prioritário" after prior-dispatch point: hora_despacho_anterior → despachada
       const dMin = Math.round((p2.ts - p1.ts) / 60000);
       if (dMin > 10) {
         const pctLimit = Math.round((dMin - 10) / 10 * 100);
-        let fText = `Desp. Prioritário: ${dMin} min entre o 1º Despacho e o Despacho — ${pctLimit}% acima do limite (10 min)`;
+        let fText = `2º Desp. | Prioritário: ${dMin} min entre o Início da Jornada e o Despacho - ${pctLimit}% acima do limite (10 min)`;
         const globalAvg = ev.triagem_global_avg_min;
         if (globalAvg && Number.isFinite(globalAvg) && globalAvg > 0) {
           const pctAvg = Math.round((dMin - globalAvg) / globalAvg * 100);
@@ -219,6 +221,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
             label = 'Retorno a base';
             // Case C: row present + excess — show excess as subtitle beside the total duration
             const excessM: number | undefined = (md as any).excess_min;
+              if (excessM != null) excessMinVal = excessM;
             if (excessM != null) {
               subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
               flags.push('acima_media');
@@ -226,6 +229,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
           } else if ((md as any).excess_min != null) {
             // Case B: row empty + excess - show excess as subtitle
             const excessM = (md as any).excess_min;
+              if (excessM != null) excessMinVal = excessM;
             subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
             flags.push('acima_media');
           }
@@ -252,7 +256,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
     rawSegs.push({
       label, durationMin, overrideDuration, subtitle, isInterval,
       startTime: extractTime(p1.raw), endTime: extractTime(p2.raw),
-      startLabel: p1.label, endLabel: p2.label, flags,
+      startLabel: p1.label, endLabel: p2.label, flags, excessMin: excessMinVal,
     });
   }
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Alysson Pinheiro. Todos os direitos reservados.
 // Software proprietário e confidencial. Uso não autorizado é proibido.
 import { CommonModule } from '@angular/common';
+import { buildTimelineSegments } from '../../shared/utils/timeline-segment.utils';
 import { TimelineVisualComponent } from '../../shared/components/timeline-visual/timeline-visual.component';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
@@ -617,7 +618,7 @@ type SavedFilterState = {
                                   <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                                  <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                  <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
                                   <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
@@ -870,7 +871,7 @@ type SavedFilterState = {
                                   <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                                  <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                  <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
                                   <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
@@ -1177,7 +1178,7 @@ type SavedFilterState = {
                               <strong>Sem deslocamento registrado:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('sem_desloc_registrado', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                              <strong>Desp. Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                              <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                             </li>
                             
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
@@ -6581,8 +6582,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   protected getOciosoTotal(ev: any): number | null {
-    const tempPrep = ev.temp_prep_os_min ?? 0;
-    const total = tempPrep + (ev.sem_os_total_min || 0);
+    const segs = buildTimelineSegments(ev, false);
+    let total = 0;
+    for (const seg of segs) {
+      const lbl = seg.label;
+      if (lbl === 'Retorno a base' || lbl === 'Retorno Vazio') {
+        total += seg.excessMin ?? 0;
+      } else if (
+        lbl.startsWith('1º Despacho') ||
+        lbl.startsWith('2º Desp. | Prioritário') ||
+        lbl === 'Entre OS' ||
+        lbl === 'Desl. Intervalo' ||
+        lbl === 'Partida'
+      ) {
+        total += seg.durationMin;
+      }
+    }
     return total > 0 ? total : null;
   }
 
@@ -6747,7 +6762,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const pct = Math.round((val - limit) / limit * 100);
     const horaAnterior = this.formatDespachoHora(ev.hora_despacho_anterior);
     const horaDesp = this.formatDespachoHora(ev.despachada);
-    let text = `${this.nf(val)} min entre o 1º Despacho (${horaAnterior || '—'}) e o Despacho (${horaDesp || '—'}) — ${pct}% acima do limite (${limit} min)`;
+    let text = `${this.nf(val)} min entre o Início da Jornada e o Despacho da 2ª OS (${horaDesp || '-'}) - ${pct}% acima do limite (${limit} min). O 1º Despacho ocorreu às ${horaAnterior || '-'}`;
     if (ev.triagem_global_avg_min && Number.isFinite(ev.triagem_global_avg_min) && ev.triagem_global_avg_min > 0) {
       const pctAvg = Math.round((val - ev.triagem_global_avg_min) / ev.triagem_global_avg_min * 100);
       const dir = pctAvg >= 0 ? 'acima' : 'abaixo';

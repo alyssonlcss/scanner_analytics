@@ -59,12 +59,26 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', 'Desp. Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Retorno Vazio',
+    '1º Despacho', '2º Desp. | Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Retorno Vazio',
   ]);
 
   private getOciosoTotal(ev: any): number | null {
-    const tempPrep = ev.temp_prep_os_min ?? 0;
-    const total = tempPrep + (ev.sem_os_total_min || 0);
+    const segs = buildTimelineSegments(ev, false);
+    let total = 0;
+    for (const seg of segs) {
+      const lbl = seg.label;
+      if (lbl === 'Retorno a base' || lbl === 'Retorno Vazio') {
+        total += seg.excessMin ?? 0;
+      } else if (
+        lbl.startsWith('1º Despacho') ||
+        lbl.startsWith('2º Desp. | Prioritário') ||
+        lbl === 'Entre OS' ||
+        lbl === 'Desl. Intervalo' ||
+        lbl === 'Partida'
+      ) {
+        total += seg.durationMin;
+      }
+    }
     return total > 0 ? total : null;
   }
 
@@ -290,8 +304,8 @@ export class DashboardPdfService {
         
         if (kpiName === 'OS Dia' || kpiName === 'Utilização') {
           merged.sort((x, y) => {
-            const idleX = (x.ocioso_min ?? 0) + (x.temp_prep_os_min ?? 0) + (x.sem_os_total_min ?? 0);
-            const idleY = (y.ocioso_min ?? 0) + (y.temp_prep_os_min ?? 0) + (y.sem_os_total_min ?? 0);
+            const idleX = (x.ocioso_min ?? 0);
+            const idleY = (y.ocioso_min ?? 0);
             return idleY - idleX;
           });
         } else if (kpiName === 'Eficiência' || kpiName === 'TME IMP') {
@@ -853,7 +867,7 @@ export class DashboardPdfService {
               if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
               if (ev.flags?.includes('tl_excede_hd')) orderItems.push(alertItem(`Tempo de Deslocamento alto: ${helpers.osDiaAlertBody('tl_excede_hd', ev)}`));
               if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
-              if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`Desp. Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+              if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
               if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
@@ -1014,7 +1028,7 @@ export class DashboardPdfService {
             if (utilTl) orderItems.push(utilTl);
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
             if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
-            if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`Desp. Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
             if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
@@ -1175,7 +1189,7 @@ export class DashboardPdfService {
             if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${helpers.deslocAlertBody('despacho_tardio', ev)}`));
             if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_lento', ev)}`));
-            if (ev.flags?.includes('triagem_alto')) dayItems.push(alertItem(`Desp. Prioritário: ${helpers.deslocAlertBody('triagem_alto', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) dayItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.deslocAlertBody('triagem_alto', ev)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${helpers.deslocAlertBody('sem_desloc_registrado', ev)}`));
             if (ev.nr_ordem_despacho_anterior) {
               const horaFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');

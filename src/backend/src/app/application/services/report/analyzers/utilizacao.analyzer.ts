@@ -513,7 +513,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         const tlOrdemMin    = tlOrdemCol     ? (parseNumber(String(row[tlOrdemCol]     ?? '')) ?? 0) : 0;
         const hdTotalMin    = hdTotalCol     ? (parseNumber(String(row[hdTotalCol]     ?? '')) ?? 0) : 0;
         const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
-        const tempPrepOs = tempPrepValues[i] ?? Number.NaN;
+        let tempPrepOs = tempPrepValues[i] ?? Number.NaN;
         const semOsMin   = semOsValues[i]    ?? Number.NaN;
 
         const hdPctTr = hdTotalMin > 0 ? round2((trOrdemMin / hdTotalMin) * 100) : 0;
@@ -535,12 +535,18 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             if (anteriorRow) {
               nrOrdemDespachoAnterior = String(anteriorRow[nrOrdemCol] ?? '').trim() || undefined;
               horaDespachoAnterior = hora1oDespachoRaw || undefined;
-              const hora1oDt = parseDateTimeBr(hora1oDespachoRaw);
-              const despachadaDt = parseDateTimeBr(thisDespachadaRaw);
-              if (hora1oDt && despachadaDt) {
-                const tMin = minutesBetween(despachadaDt, hora1oDt);
-                if (Number.isFinite(tMin) && tMin > 0) triagemMin = round2(tMin);
-              }
+                              const inicioCalRaw = inicioCalendarioCol ? String(row[inicioCalendarioCol] ?? '').trim() : '';
+                const hora1oDt = inicioCalRaw ? parseDateTimeBr(inicioCalRaw) : parseDateTimeBr(hora1oDespachoRaw);
+                const despachadaDt = parseDateTimeBr(thisDespachadaRaw);
+                if (hora1oDt && despachadaDt) {
+                  const tMin = minutesBetween(despachadaDt, hora1oDt);
+                  if (Number.isFinite(tMin) && tMin > 0) triagemMin = round2(tMin);
+                }
+                
+                if (nrOrdemDespachoAnterior && horaDespachoAnterior) {
+                  tempPrepOs = Number.NaN; // Absorbed into triagemMin
+                }
+                
             }
           }
         }
@@ -588,7 +594,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         let uniqueFlags = [...new Set(flags)] as UtilizacaoOrderEvidence['flags'];
         const tempPrepOsMin = Number.isFinite(tempPrepOs) ? tempPrepOs : 0;
         const semOsTotalFinal = (Number.isFinite(semOsMin) && semOsMin > 0) ? semOsMin : 0;
-        const hasOcioso = (tempPrepOsMin + semOsTotalFinal) > 0;
+        const hasOcioso = (ocisoValues[i] ?? 0) > 0;
 
         if (uniqueFlags.length === 0 && !hasOcioso) continue;
 

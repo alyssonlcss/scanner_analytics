@@ -1,12 +1,57 @@
-﻿import { Component, Input, OnInit } from '@angular/core';
+var TimelineVisualComponent_1;
+import { __decorate } from "tslib";
+import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/timeline-segment.utils';
-
-@Component({
-  selector: 'app-timeline-visual',
-  standalone: true,
-  imports: [CommonModule],
-  template: `
+import { buildTimelineSegments, tlFlexGrow } from '../../utils/timeline-segment.utils';
+let TimelineVisualComponent = class TimelineVisualComponent {
+    constructor() {
+        this.hidePartida = false;
+        this.trimToACaminho = false;
+        this.segments = [];
+    }
+    static { TimelineVisualComponent_1 = this; }
+    ngOnInit() {
+        this.buildTimeline();
+    }
+    // Escala logarÃ­tmica: comprime intervalos longos e aumenta segmentos curtos
+    getFlexGrow(durationMin) {
+        return tlFlexGrow(durationMin);
+    }
+    static { this.IDLE_LABELS = new Set(['1º Despacho', '2º Desp. | Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off']); }
+    isIdleSegment(seg) {
+        return (TimelineVisualComponent_1.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && seg.label !== 'Deslocamento p/OS';
+    }
+    isIdleHighSegment(seg) {
+        return ((TimelineVisualComponent_1.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0))
+            || (seg.label === 'Retorno a base' && (seg.flags?.length ?? 0) > 0);
+    }
+    isRepairAlarmSegment(seg) {
+        return seg.label === 'Reparo' && (seg.flags?.length ?? 0) > 0;
+    }
+    isLoginAlarmSegment(seg) {
+        return seg.label === 'Log In' && (seg.flags?.length ?? 0) > 0;
+    }
+    buildTimeline() {
+        if (!this.ev)
+            return;
+        this.segments = buildTimelineSegments(this.ev, this.hidePartida ?? false, this.trimToACaminho ?? false);
+    }
+};
+__decorate([
+    Input()
+], TimelineVisualComponent.prototype, "ev", void 0);
+__decorate([
+    Input()
+], TimelineVisualComponent.prototype, "hidePartida", void 0);
+__decorate([
+    Input()
+], TimelineVisualComponent.prototype, "trimToACaminho", void 0);
+TimelineVisualComponent = TimelineVisualComponent_1 = __decorate([
+    Component({
+        selector: 'app-timeline-visual',
+        standalone: true,
+        imports: [CommonModule],
+        template: `
     <div class="timeline-visual-container">
       <!-- Barra principal da timeline -->
       <div class="timeline-bar">
@@ -43,7 +88,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
       </div>
     </div>
   `,
-  styles: [`
+        styles: [`
     .timeline-visual-container {
       margin: 0.5rem 0 2.5rem 0;
       font-family: sans-serif;
@@ -168,44 +213,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
       text-align: right;
     }
   `]
-})
-export class TimelineVisualComponent implements OnInit {
-  @Input() ev: any;
-  @Input() hidePartida: boolean = false;
-  @Input() trimToACaminho: boolean = false;
-
-  segments: TimelineSegment[] = [];
-
-  ngOnInit() {
-    this.buildTimeline();
-  }
-
-  // Escala logarÃ­tmica: comprime intervalos longos e aumenta segmentos curtos
-  getFlexGrow(durationMin: number): number {
-    return tlFlexGrow(durationMin);
-  }
-
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', '2º Desp. | Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off']);
-
-  isIdleSegment(seg: TimelineSegment): boolean {
-    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && seg.label !== 'Deslocamento p/OS';
-  }
-
-  isIdleHighSegment(seg: TimelineSegment): boolean {
-    return ((TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0))
-      || (seg.label === 'Retorno a base' && (seg.flags?.length ?? 0) > 0);
-  }
-
-  isRepairAlarmSegment(seg: TimelineSegment): boolean {
-    return seg.label === 'Reparo' && (seg.flags?.length ?? 0) > 0;
-  }
-
-  isLoginAlarmSegment(seg: TimelineSegment): boolean {
-    return seg.label === 'Log In' && (seg.flags?.length ?? 0) > 0;
-  }
-
-  private buildTimeline() {
-    if (!this.ev) return;
-    this.segments = buildTimelineSegments(this.ev, this.hidePartida ?? false, this.trimToACaminho ?? false);
-  }
-}
+    })
+], TimelineVisualComponent);
+export { TimelineVisualComponent };
+//# sourceMappingURL=timeline-visual.component.js.map

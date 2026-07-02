@@ -3743,6 +3743,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     this.throwIfAborted(signal);
 
+    // Evita UnhandledPromiseRejectionWarning (que derruba o node) caso a promise original
+    // falhe *depois* que a Promise.race já retornou via reject por causa do abort signal.
+    // Ex: "ProtocolError: Execution context was destroyed" disparado minutos depois.
+    promise.catch(() => {});
+
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
@@ -3864,19 +3869,17 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       const isCorrectReport = currentFile && expectedFile && currentFile === expectedFile;
 
       if (currentUrl.includes('/analysis') && isCorrectReport && await this.isAnalysisReady(page)) {
-        // Reload the existing tab so scroll state and filter visual state are
-        // fully reset before applying new filters. This is faster than a full
-        // navigation to the analysis URL and covers "aplicar", "reaplicar" and
-        // backend startup cases where a tab is already open.
-        this.info('Recarregando página existente do Spotfire para resetar estado...');
-        this.log('reloading existing Spotfire analysis page', {
+        // Em vez de recarregar a aba inteira (o que destrói contextos de execução pendentes e
+        // pode causar ProtocolError / Crash do Node), apenas resetamos os filtros visíveis
+        // conforme solicitado pelo usuário.
+        this.info('Página existente do Spotfire detectada. Limpando filtros visíveis...');
+        this.log('resetting existing Spotfire analysis page filters instead of reloading', {
           reportTitle,
           currentUrl,
           currentFile,
           expectedFile,
         });
-        await page.reload({ waitUntil: 'networkidle2', timeout: 120000 });
-        await this.completeLoginIfRequired(page);
+        await this.resetVisibleFilters(page);
         await this.waitForSpotfireIdle(page);
         return;
       }
