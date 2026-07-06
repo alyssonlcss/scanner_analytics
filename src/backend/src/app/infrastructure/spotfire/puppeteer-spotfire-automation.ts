@@ -178,6 +178,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           }, req);
           const { availableTabs, availableTables, filters } = await this.withSpotfireRecovery(page, async () => {
             this.emitProgress(req, 'Carregando filtros...');
+            await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
             await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
 
             if (!req.skipFilterReset) {
@@ -404,6 +405,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           if (retryRound === MAX_FILTER_RETRIES) {
             // Last round: full reset before retrying to clear any stale filter state
             this.info(`Filtro "${filter.title}" — resetando filtros e tentando novamente (round ${retryRound}/${MAX_FILTER_RETRIES})...`);
+            await this.ensureNoMaximizedVisualization(page);
             await this.resetVisibleFilters(page);
             await this.ensureAllFiltersVisible(page);
             // Re-apply all previously confirmed filters so the state is consistent
@@ -4139,7 +4141,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       let restoredAny = false;
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const restoreButton = document.querySelector<HTMLElement>('.sfc-maximize-visual-button[title="Restore visualization layout"]')
+        const restoreButton = document.querySelector<HTMLElement>('.sfc-maximize-visual-button[title="Restore visualization layout"], .sfc-maximize-visual-button[title="Restaurar layout da visualização"], .sfc-maximize-visual-button[title="Restaurar visualização"]')
           ?? Array.from(document.querySelectorAll<HTMLElement>('[title], button, div'))
             .filter(function (element) { return isVisible(element); })
             .find(function (element) {
@@ -4149,9 +4151,19 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
               return title === 'restore visualization layout'
                 || title === 'minimize visualization'
                 || title === 'restore visualization'
+                || title === 'restaurar layout da visualização'
+                || title === 'minimizar visualização'
+                || title === 'restaurar visualização'
+                || title === 'restaurar'
+                || title === 'minimizar'
                 || text === 'restore visualization layout'
                 || text === 'minimize visualization'
-                || text === 'restore visualization';
+                || text === 'restore visualization'
+                || text === 'restaurar layout da visualização'
+                || text === 'minimizar visualização'
+                || text === 'restaurar visualização'
+                || text === 'restaurar'
+                || text === 'minimizar';
             })
           ?? null;
 
