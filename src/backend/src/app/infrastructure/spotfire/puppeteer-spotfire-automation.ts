@@ -3877,7 +3877,15 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
     }
 
-    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1600,1000', '--start-maximized', '--lang=pt-BR'];
+    const launchArgs = [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox', 
+      '--window-size=1600,1000', 
+      '--start-maximized', 
+      '--lang=pt-BR',
+      '--disable-gpu',
+      '--window-position=-32000,-32000'
+    ];
 
     if (this.environment.spotfire.profileDirectory) {
       launchArgs.push(`--profile-directory=${this.environment.spotfire.profileDirectory}`);
