@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, rename, stat } from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import { extname, join, resolve } from 'node:path';
 
 import puppeteer, { Browser, Page } from 'puppeteer';
@@ -105,7 +106,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         analysisTab: request.analysisTab ?? null,
         tableTitle: request.tableTitle ?? null,
         headless: this.environment.spotfire.headless,
-        keepOpen: this.environment.spotfire.keepOpen,
         outputDirectory,
       });
 
@@ -137,7 +137,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
         req.signal?.addEventListener('abort', abortHandler, { once: true });
 
-        const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(), req.signal);
+        const { browser, page, createdNewPage } = await this.raceAbort(this.getAutomationSession(req.clientBrowserType), req.signal);
         const errorMonitor = this.startErrorPopupMonitor(page, req);
 
         let extractionResult: ScannerAutomationResult | undefined;
@@ -212,15 +212,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             return { availableTabs, availableTables, filters };
           }, req);
 
-          // Apply Data Referência filter in right panel (LAST filter — after all left-panel filters)
-          if (req.periodSelection?.dayRange || req.periodSelection?.monthDayRanges) {
-            await this.withSpotfireRecovery(page, async () => {
-              await this.raceAbort(
-                this.applyDataReferenciaFilter(page, req.periodSelection!, req),
-                req.signal,
-              );
-            }, req);
-          }
 
           const exportedFiles: Array<string | undefined> = [];
           const MAX_TABLE_RETRIES = 2;
@@ -311,13 +302,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           errorMonitor.stop();
           req.signal?.removeEventListener('abort', abortHandler);
 
-          if (extractionResult !== undefined && this.environment.spotfire.keepOpen) {
-            this.logStep('browser', 'OK', 'keeping browser and page open because keepOpen=true');
-          } else if (this.isSupersededAbort(req.signal)) {
+          if (this.isSupersededAbort(req.signal)) {
             this.logStep('browser', 'OK', 'keeping browser and page open because job was superseded — next job will reuse this session');
           } else {
             const reason = extractionResult !== undefined
-              ? 'closing browser because keepOpen=false'
+              ? 'closing browser'
               : `closing browser after failed extraction attempt ${extractionAttempt}`;
             this.logStep('browser', 'WARN', reason);
             await this.disposeAutomationSession().catch(() => undefined);
@@ -2740,9 +2729,9 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         return { applied: false, reason: `year row not found for ${year}` };
       }
 
-      const clicked = await this.selectRightPanelYearBySearch(page, filterTitle, year, index > 0);
-      if (!clicked) {
-        return { applied: false, reason: `could not select year ${year} inside the validated right-panel region` };
+      const result = await this.selectRightPanelItemBySearch(page, filterTitle, year, index > 0);
+      if (!result.success) {
+        return { applied: false, reason: `could not select year ${year} inside the validated right-panel region (reason: ${result.reason})` };
       }
 
       await new Promise((r) => setTimeout(r, 250));
@@ -2766,43 +2755,55 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     };
   }
 
-  private async selectRightPanelYearBySearch(page: Page, filterTitle: string, year: string, ctrlKey: boolean): Promise<boolean> {
-    const inputPrepared = await this.setRightPanelSearchInputValue(page, filterTitle, year);
-    if (!inputPrepared) {
-      return false;
+  private async selectRightPanelItemBySearch(page: Page, filterTitle: string, value: string, ctrlKey: boolean): Promise<{ success: boolean; reason: string }> {
+    const inputPrepared = await this.setRightPanelSearchInputValue(page, filterTitle);
+    if (!inputPrepared.success) {
+      return inputPrepared;
     }
 
-    await new Promise((r) => setTimeout(r, 220));
-
-    const targetCoords = await this.getRightPanelListItemCoords(page, filterTitle, year);
-    if (!targetCoords) {
-      return false;
+    await page.keyboard.type(value, { delay: 10 });
+    
+    // Poll for coords up to 2 seconds since Spotfire search is debounced and asynchronous
+    let targetCoords: { x: number; y: number } | null = null;
+    for (let w = 0; w < 10; w++) {
+      await new Promise((r) => setTimeout(r, 200));
+      targetCoords = await this.getRightPanelListItemCoords(page, filterTitle, value);
+      if (targetCoords) break;
     }
 
-    if (ctrlKey) {
-      await page.keyboard.down('Control');
+    let clicked = false;
+    if (targetCoords) {
+      if (ctrlKey) await page.keyboard.down('Control');
+      await page.mouse.click(targetCoords.x, targetCoords.y);
+      if (ctrlKey) await page.keyboard.up('Control');
+      clicked = true;
+    } else {
+      // Fallback: try dispatchEvent click if element is in DOM but off-screen
+      const dispatched = await this.clickRightPanelDateItem(page, filterTitle, value, ctrlKey);
+      if (dispatched) {
+        clicked = true;
+      }
     }
 
-    await page.mouse.click(targetCoords.x, targetCoords.y);
-
-    if (ctrlKey) {
-      await page.keyboard.up('Control');
+    if (!clicked) {
+      return { success: false, reason: 'coords_not_found' };
     }
 
     await new Promise((r) => setTimeout(r, 180));
 
-    const cleared = await this.setRightPanelSearchInputValue(page, filterTitle, '');
-    if (!cleared) {
-      return true;
+    // Clear search using our function again
+    const cleared = await this.setRightPanelSearchInputValue(page, filterTitle);
+    if (!cleared.success) {
+      return { success: true, reason: 'clicked_but_failed_to_clear' };
     }
 
     await new Promise((r) => setTimeout(r, 80));
 
-    return true;
+    return { success: true, reason: 'ok' };
   }
 
-  private async setRightPanelSearchInputValue(page: Page, filterTitle: string, value: string): Promise<boolean> {
-    return page.evaluate((args: { title: string; value: string }) => {
+  private async setRightPanelSearchInputValue(page: Page, filterTitle: string): Promise<{ success: boolean; reason: string }> {
+    return page.evaluate((args: { title: string }) => {
       function nc(v: string | null | undefined): string {
         return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       }
@@ -2822,7 +2823,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         ?? document.querySelector<HTMLElement>('.StyledScrollbar.FilterPanelScroll');
 
       if (!panelRoot) {
-        return false;
+        return { success: false, reason: 'panel_not_found' };
       }
 
       const rootRect = panelRoot.getBoundingClientRect();
@@ -2836,20 +2837,29 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             && rect.top < rootRect.bottom;
         }) ?? null;
 
-      const input = filterEl?.querySelector<HTMLInputElement>('input.SearchInput, input[placeholder*="Type to search in list"]');
+      let input = filterEl?.querySelector<HTMLInputElement>('input.SearchInput, input[placeholder*="Type to search in list"]');
       if (!input || !isVisible(input)) {
-        return false;
+        // Try clicking the search icon to reveal the input
+        const searchBtn = filterEl?.querySelector<HTMLElement>('.sfc-search-button, [title="Search"]');
+        if (searchBtn && isVisible(searchBtn)) {
+          searchBtn.click();
+        }
+        return { success: false, reason: 'input_not_visible' };
       }
 
       input.scrollIntoView({ block: 'center' });
       input.focus();
       input.click();
-      input.value = args.value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: args.value ? args.value.slice(-1) : 'Backspace' }));
-      return document.activeElement === input && input.value === args.value;
-    }, { title: filterTitle, value });
+      
+      // Clear existing value if any
+      if (input.value !== '') {
+         input.value = '';
+         input.dispatchEvent(new Event('input', { bubbles: true }));
+         input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      
+      return { success: document.activeElement === input, reason: document.activeElement === input ? 'focused' : 'focus_failed' };
+    }, { title: filterTitle });
   }
 
   private async getRightPanelSearchInputCoords(page: Page, filterTitle: string): Promise<{ x: number; y: number } | null> {
@@ -3597,11 +3607,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     return filter.selectedValues.some((value) => value.trim().length > 0);
   }
 
-  private async getAutomationSession(): Promise<{ browser: Browser; page: Page; createdNewPage: boolean }> {
+  private async getAutomationSession(clientBrowserType?: 'edge' | 'chrome'): Promise<{ browser: Browser; page: Page; createdNewPage: boolean }> {
     let browser = this.persistentBrowser;
 
     if (!browser || !browser.connected) {
-      browser = await this.launchBrowser();
+      browser = await this.launchBrowser(clientBrowserType);
       this.persistentBrowser = browser;
       this.persistentPage = undefined;
     }
@@ -3621,7 +3631,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         this.persistentPage = page;
         createdNewPage = false;
       } else {
-        page = await browser.newPage();
+        const pages = await browser.pages();
+        const emptyUrls = ['about:blank', 'edge://newtab/', 'chrome://newtab/', 'edge://new-tab-page/'];
+        const blankPage = pages.find(p => emptyUrls.some(u => p.url().startsWith(u)));
+        
+        if (blankPage) {
+          page = blankPage;
+        } else {
+          page = await browser.newPage();
+        }
+        
         this.persistentPage = page;
         createdNewPage = true;
       }
@@ -3788,7 +3807,28 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     return error;
   }
 
-  private async launchBrowser(): Promise<Browser> {
+  private resolveExecutablePath(clientBrowserType?: 'edge' | 'chrome'): string | undefined {
+    if (clientBrowserType === 'edge') {
+      const edgePaths = [
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+      ];
+      for (const p of edgePaths) {
+        if (existsSync(p)) return p;
+      }
+    } else if (clientBrowserType === 'chrome') {
+      const chromePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+      ];
+      for (const p of chromePaths) {
+        if (existsSync(p)) return p;
+      }
+    }
+    return this.environment.spotfire.browserPath || undefined;
+  }
+
+  private async launchBrowser(clientBrowserType?: 'edge' | 'chrome'): Promise<Browser> {
     this.log('launching browser', {
       headless: this.environment.spotfire.headless,
       browserPath: this.environment.spotfire.browserPath || null,
@@ -3837,7 +3877,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
     }
 
-    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1600,1000', '--start-maximized'];
+    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1600,1000', '--start-maximized', '--lang=pt-BR'];
 
     if (this.environment.spotfire.profileDirectory) {
       launchArgs.push(`--profile-directory=${this.environment.spotfire.profileDirectory}`);
@@ -3848,7 +3888,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
     return puppeteer.launch({
       headless: this.environment.spotfire.headless,
-      executablePath: this.environment.spotfire.browserPath || undefined,
+      executablePath: this.resolveExecutablePath(clientBrowserType),
       userDataDir: resolvedUserDataDir,
       defaultViewport: { width: 1600, height: 1000 },
       args: launchArgs,
@@ -4472,49 +4512,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.logStep('filters-panel', 'OK', 'filter bar scrolled to the bottom and idle');
   }
 
-  /**
-   * Build date strings (DD/MM/YYYY) for the right-panel Data Referência filter
-   * from the periodSelection. Generates one date per day in the dayRange.
-   */
-  private generateReferenceDates(periodSelection: NonNullable<ScannerRunRequest['periodSelection']>): string[] {
-    const years = this.normalizePeriodSelectionValues(periodSelection.year);
-    const months = this.normalizePeriodSelectionValues(periodSelection.month);
-
-    if (years.length === 0 || months.length === 0) {
-      return [];
-    }
-
-    const dates: string[] = [];
-
-    for (const yearStr of years) {
-      const year = parseInt(yearStr, 10);
-      if (Number.isNaN(year)) continue;
-
-      for (const monthStr of months) {
-        const monthKey = monthStr.toLowerCase();
-        const monthIndex = MONTH_OPTIONS.indexOf(monthKey);
-        if (monthIndex === -1) continue;
-
-        // Per-month range takes precedence over the global dayRange
-        const range = periodSelection.monthDayRanges?.[monthKey] ?? periodSelection.dayRange;
-        const minDay = range?.min ?? 1;
-        const maxDay = range?.max ?? 31;
-
-        for (let day = minDay; day <= maxDay; day += 1) {
-          const d = new Date(year, monthIndex, day);
-          // Stop if the date rolls into the next month (e.g. Feb 30 → Mar 2)
-          if (d.getMonth() !== monthIndex) break;
-          // Spotfire shows dates as DD/MM/YYYY (leading zeros, Brazilian format)
-          const dd = String(day).padStart(2, '0');
-          const mm = String(monthIndex + 1).padStart(2, '0');
-          dates.push(`${dd}/${mm}/${year}`);
-        }
-      }
-    }
-
-    this.log('generated Data Referência date strings', { count: dates.length, sample: dates.slice(0, 5) });
-    return dates;
-  }
 
   private async loadAllFilters(page: Page): Promise<SpotfireFilter[]> {
     this.log('waiting for filter titles in the right panel', {
@@ -6425,420 +6422,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }, { title: filterTitle, label: itemLabel, ctrlKey });
   }
 
-  /**
-   * Applies the "Data Referência" filter inside the right-side Filters panel.
-   * Opens the panel, generates dates from periodSelection, and selects them
-   * using scroll buttons + click (same approach as left-panel filters).
-   * This is the LAST filter to be applied.
-   */
-  private async applyDataReferenciaFilter(
-    page: Page,
-    periodSelection: NonNullable<ScannerRunRequest['periodSelection']>,
-    request: ScannerRunRequest,
-  ): Promise<void> {
-    const dates = this.generateReferenceDates(periodSelection);
-    if (dates.length === 0) {
-      this.log('no Data Referência dates to apply (empty dayRange or invalid period)');
-      return;
-    }
-
-    this.emitProgress(request, 'Abrindo painel de filtros do Spotfire...');
-    await this.ensureRightFiltersPanelOpen(page);
-
-    const filterTitle = 'Data Referência';
-
-    // Build the complete ordered list of dates that Spotfire shows in the
-    // Data Referência filter panel. Spotfire shows ALL calendar days for each
-    // selected month (not just the dayRange subset), in month-ascending order.
-    // This gives us the EXACT scroll-position (0-based index) of every target
-    // date so we can jump straight to it with scrollRightPanelDownN.
-    const selectedYears = this.normalizePeriodSelectionValues(periodSelection.year);
-    const selectedMonthNames = this.normalizePeriodSelectionValues(periodSelection.month);
-    const filterYear = parseInt(selectedYears[0] ?? '0', 10);
-    const fullDateList: string[] = [];
-    for (const monthName of selectedMonthNames) {
-      const monthIndex = MONTH_OPTIONS.indexOf(monthName.toLowerCase()); // 0-based (jan=0)
-      if (monthIndex === -1) continue;
-      const mm = String(monthIndex + 1).padStart(2, '0');
-      const daysInMonth = new Date(filterYear, monthIndex + 1, 0).getDate();
-      for (let d = 1; d <= daysInMonth; d++) {
-        fullDateList.push(`${String(d).padStart(2, '0')}/${mm}/${filterYear}`);
-      }
-    }
-    // Map each date string to its 0-based index in the Spotfire list.
-    const listPositions = new Map<string, number>();
-    fullDateList.forEach((d, i) => listPositions.set(d, i));
-    this.log('Data Referência full list built', {
-      totalDays: fullDateList.length,
-      sample: fullDateList.slice(0, 5),
-    });
-
-    // Wait for Spotfire to finish recalculating the Data Referência list after
-    // left-panel filters (Mês, Atuação, Base) were applied.
-    await this.waitForSpotfireIdle(page, 10000);
-
-    // Scroll Data Referência list to the top before starting.
-    await this.scrollRightPanelFilterToTop(page, filterTitle);
-    await new Promise((r) => setTimeout(r, 300)); // settle after top-scroll
-
-    this.logStep('data-referencia', 'START', `applying ${dates.length} date(s) in right panel`, {
-      dates,
-      fullListSize: fullDateList.length,
-    });
-
-    this.emitProgress(request, `Aplicando filtro Data Referência (${dates.length} dia(s))...`);
-
-    // Strategy — one-directional forward scroll with per-date confirm-before-advance:
-    //   • currentScrollPos tracks scroll state (0 = top).
-    //   • For each date: scroll DOWN to targetScrollPos, click, verify via title attr.
-    //   • On failure: read which dates are currently visible, compute the exact
-    //     correction (up or +1 down), adjust, retry — WITHOUT going back to top.
-    //   • Ctrl held from 2nd date. waitForSpotfireIdle ONLY after the first click.
-    const monthKey = (d: string) => d.substring(3); // "MM/YYYY"
-    const maxRetries = 6;
-    let ctrlHeld = false;
-    const failedDates: string[] = [];
-    let currentMonthKey = '';
-    let currentScrollPos = 0;
-
-    // Per-month tracking for progress logs.
-    const datesByMonth = new Map<string, string[]>();
-    for (const d of dates) {
-      const mk = monthKey(d);
-      if (!datesByMonth.has(mk)) datesByMonth.set(mk, []);
-      datesByMonth.get(mk)!.push(d);
-    }
-    const selectedByMonth = new Map<string, string[]>();
-    const failedByMonth = new Map<string, string[]>();
-
-    const logMonthSummary = (mk: string) => {
-      const expected = datesByMonth.get(mk) ?? [];
-      const selected = selectedByMonth.get(mk) ?? [];
-      const failed = failedByMonth.get(mk) ?? [];
-      const pending = expected.filter((d) => !selected.includes(d) && !failed.includes(d));
-      const level = failed.length > 0 || pending.length > 0 ? 'WARN' : 'OK';
-      this.logStep('data-referencia', level,
-        `[MÊS ${mk}] ${selected.length}/${expected.length} selecionadas — ${failed.length} falhas — ${pending.length} pendentes`,
-        { selected, failed, pending });
-    };
-
-    // Verify selection specifically via title="DD/MM/YYYY" + sfpc-selected class.
-    // Returns 'selected' | 'not_selected' | 'not_in_dom' so callers know WHY.
-    const verifySelected = async (label: string): Promise<'selected' | 'not_selected' | 'not_in_dom'> =>
-      page.evaluate((args: { ft: string; label: string }) => {
-        function nc(v: string | null | undefined): string {
-          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        }
-        const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
-          ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-        if (!panelRoot) return 'not_in_dom' as const;
-        const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-          return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.ft);
-        });
-        if (!filterEl) return 'not_in_dom' as const;
-        // Primary: exact title attribute match (as the user requires).
-        const safeTitle = args.label.replace(/"/g, '\\"');
-        let item: HTMLElement | null = filterEl.querySelector<HTMLElement>(`[title="${safeTitle}"]`);
-        // Fallback: textContent match in case Spotfire omits the title attr.
-        if (!item) {
-          item = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-            .find((it) => (it.getAttribute('title') ?? it.textContent ?? '').replace(/\s+/g, ' ').trim() === args.label) ?? null;
-        }
-        if (!item) return 'not_in_dom' as const;
-        return item.classList.contains('sfpc-selected') ? 'selected' as const : 'not_selected' as const;
-      }, { ft: filterTitle, label });
-
-    // Poll verifySelected up to maxWaitMs, stopping early on 'selected'.
-    // Returns the final status.
-    const pollSelected = async (label: string, maxWaitMs: number): Promise<'selected' | 'not_selected' | 'not_in_dom'> => {
-      const interval = 100;
-      const rounds = Math.ceil(maxWaitMs / interval);
-      let status: 'selected' | 'not_selected' | 'not_in_dom' = 'not_selected';
-      for (let t = 0; t < rounds; t++) {
-        await new Promise((r) => setTimeout(r, interval));
-        status = await verifySelected(label);
-        if (status === 'selected') break;
-      }
-      return status;
-    };
-
-    // Get the date labels currently visible in the filter list (title="DD/MM/YYYY" items).
-    // Returns them in DOM order (top → bottom), along with an isLoading flag if '...' is present.
-    const getVisibleDatesState = (): Promise<{ dates: string[], allDatesInDom: string[], isLoading: boolean }> =>
-      page.evaluate((ft: string) => {
-        function nc(v: string | null | undefined): string {
-          return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        }
-        const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
-          ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-        if (!panelRoot) return { dates: [], allDatesInDom: [], isLoading: false };
-        const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-          const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-          return nc(el?.getAttribute('title') ?? el?.textContent) === nc(ft);
-        });
-        if (!filterEl) return { dates: [], allDatesInDom: [], isLoading: false };
-        const dates: string[] = [];
-        const allDatesInDom: string[] = [];
-        let isLoading = false;
-        for (const item of filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item')) {
-          const title = item.getAttribute('title') ?? '';
-          const text = item.textContent ?? '';
-          const t = (title || text).replace(/\s+/g, ' ').trim();
-          if (t === '...') {
-            const rect = item.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-              isLoading = true;
-            }
-            continue;
-          }
-          if (!/^\d{2}\/\d{2}\/\d{4}$/.test(t)) continue;
-          allDatesInDom.push(t);
-          const rect = item.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) dates.push(t);
-        }
-        return { dates, allDatesInDom, isLoading };
-      }, filterTitle);
-
-    try {
-      for (let index = 0; index < dates.length; index += 1) {
-        const dateValue = dates[index];
-        const useCtrl = index > 0;
-        let itemSelected = false;
-
-        await this.assertDataReferenciaFilterVisible(page, filterTitle);
-
-        const dateMonth = monthKey(dateValue);
-        const isNewMonth = dateMonth !== currentMonthKey;
-
-        if (isNewMonth) {
-          if (currentMonthKey !== '') {
-            logMonthSummary(currentMonthKey);
-          }
-          currentMonthKey = dateMonth;
-          selectedByMonth.set(currentMonthKey, []);
-          failedByMonth.set(currentMonthKey, []);
-          this.logStep('data-referencia', 'OK',
-            `[MÊS ${currentMonthKey}] iniciando — ${datesByMonth.get(currentMonthKey)?.length ?? 0} data(s) esperadas`,
-            { expected: datesByMonth.get(currentMonthKey) });
-        }
-
-        if (useCtrl && !ctrlHeld) {
-          await page.keyboard.down('Control');
-          ctrlHeld = true;
-        }
-
-        // ── Step 1: check if in DOM already, otherwise scroll DOWN ─────────────
-        const isTargetInDom = await page.evaluate((args) => {
-          function nc(v: string | null | undefined): string {
-            return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-          }
-          const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
-            ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-          if (!panelRoot) return false;
-          const filterEl = Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).find((f) => {
-            const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-            return nc(el?.getAttribute('title') ?? el?.textContent) === nc(args.title);
-          });
-          if (!filterEl) return false;
-          const safeLabel = args.label.replace(/"/g, '\\"');
-          let target = filterEl.querySelector<HTMLElement>(`[title="${safeLabel}"]`);
-          if (!target) {
-            target = Array.from(filterEl.querySelectorAll<HTMLElement>('.sf-element-list-box-item'))
-              .find((item) => (item.getAttribute('title') ?? item.textContent ?? '').trim() === args.label) ?? null;
-          }
-          return !!target;
-        }, { title: filterTitle, label: dateValue });
-
-        const listPos = listPositions.get(dateValue) ?? index;
-        if (!isTargetInDom) {
-          const targetScrollPos = Math.max(0, listPos - 1);
-          const delta = Math.max(0, targetScrollPos - currentScrollPos);
-
-          if (delta > 0) {
-            if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
-            if (delta > 1) {
-              this.logAlways(`[data-referencia] ↓ +${delta} para "${dateValue}" (pos ${currentScrollPos}→${targetScrollPos})`);
-            }
-            await this.scrollRightPanelDownN(page, filterTitle, delta, undefined, 40);
-            currentScrollPos = targetScrollPos;
-            if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
-            await new Promise((r) => setTimeout(r, 80)); // settle
-          }
-        } else {
-          this.logAlways(`[data-referencia] "${dateValue}" já está no DOM. Pulando rolagem inicial.`);
-        }
-
-        // ── Step 2: click + verify — retry with scroll correction on failure ───
-        // RULE: never click again if item is already selected (toggle danger).
-        // On each failure: inspect visible dates → compute exact correction →
-        //   scroll UP or +1 DOWN → retry. Never reset to top.
-        let loadingWaits = 0;
-        for (let attempt = 0; attempt < maxRetries && !itemSelected; attempt++) {
-          // Pre-check before every attempt (including attempt 0 — belt and braces).
-          const preStatus = await verifySelected(dateValue);
-          if (preStatus === 'selected') {
-            itemSelected = true;
-            selectedByMonth.get(currentMonthKey)?.push(dateValue);
-            this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue} (pre-check)`, { attempt });
-            break;
-          }
-
-          // Scroll correction on retries.
-          if (attempt > 0) {
-            if (ctrlHeld) { await page.keyboard.up('Control'); ctrlHeld = false; }
-
-            // Inspect which dates are currently visible to know exactly where we are.
-            const visibleState = await getVisibleDatesState();
-            const targetAvailable = visibleState.allDatesInDom.includes(dateValue);
-
-            if (visibleState.isLoading && !targetAvailable && loadingWaits < 15) {
-              this.logAlways(`[data-referencia] "..." detectado! Alvo "${dateValue}" ainda não carregou. Aguardando...`);
-              await new Promise((r) => setTimeout(r, 1000));
-              loadingWaits++;
-              attempt--; // Do not burn a retry while loading
-              if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
-              continue;
-            }
-            
-            if (visibleState.isLoading && targetAvailable) {
-              this.logAlways(`[data-referencia] "..." detectado, mas alvo "${dateValue}" já está disponível na lista. Ignorando espera.`);
-            } else if (visibleState.isLoading) {
-              this.logAlways(`[data-referencia] "..." persistindo tempo demais. Prosseguindo assim mesmo.`);
-            }
-
-            const visible = visibleState.dates;
-            this.logAlways(`[data-referencia] retry ${attempt} — visíveis: [${visible.join(', ')}] — alvo: "${dateValue}"`);
-
-            if (visible.length > 0) {
-              const firstVisPos = listPositions.get(visible[0]) ?? 0;
-              const lastVisPos = listPositions.get(visible[visible.length - 1]) ?? 0;
-
-              if (listPos < firstVisPos) {
-                // Target is ABOVE the visible window — scroll UP to bring it in.
-                const upClicks = Math.min(firstVisPos - listPos + 1, 8);
-                this.logAlways(`[data-referencia] ↑ ${upClicks} para trazer "${dateValue}" para cima`);
-                await this.scrollRightPanelUpN(page, filterTitle, upClicks, 40);
-                currentScrollPos = Math.max(0, currentScrollPos - upClicks);
-              } else if (listPos > lastVisPos) {
-                // Target is BELOW the visible window — scroll DOWN 1 more.
-                this.logAlways(`[data-referencia] ↓ +1 para trazer "${dateValue}" para baixo`);
-                await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
-                currentScrollPos++;
-              } else {
-                // Target should be in window — maybe clipped at edge, scroll +1.
-                await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
-                currentScrollPos++;
-              }
-            } else {
-              // No visible dates — just nudge down 1.
-              await this.scrollRightPanelDownN(page, filterTitle, 1, undefined, 40);
-              currentScrollPos++;
-            }
-
-            if (useCtrl && !ctrlHeld) { await page.keyboard.down('Control'); ctrlHeld = true; }
-            await new Promise((r) => setTimeout(r, 80)); // settle after correction
-          }
-
-          let clicked = false;
-          const coords = await this.getRightPanelListItemCoords(page, filterTitle, dateValue);
-          if (coords) {
-            await page.mouse.click(coords.x, coords.y);
-            clicked = true;
-          } else {
-            const dispatched = await this.clickRightPanelDateItem(page, filterTitle, dateValue, ctrlHeld);
-            if (dispatched) {
-              clicked = true;
-              this.logAlways(`[data-referencia] alvo "${dateValue}" clicado via dispatchEvent (off-screen).`);
-            }
-          }
-
-          if (!clicked) {
-            this.logStep('data-referencia', 'WARN', 'could not get item coords', { dateValue, attempt, currentScrollPos });
-            continue; // next retry will inspect visible and correct
-          }
-
-          // Poll up to 1 s — Spotfire updates sfpc-selected asynchronously.
-          const status = await pollSelected(dateValue, 1000);
-
-          if (status === 'selected') {
-            itemSelected = true;
-            selectedByMonth.get(currentMonthKey)?.push(dateValue);
-            this.logStep('data-referencia', 'OK', `selected ${index + 1}/${dates.length}: ${dateValue}`, { attempt: attempt + 1 });
-          } else {
-            this.logStep('data-referencia', 'WARN',
-              status === 'not_in_dom' ? 'item left DOM after click (virtualised list moved)' : 'click did not select',
-              { dateValue, attempt });
-          }
-        }
-
-        if (!itemSelected) {
-          failedDates.push(dateValue);
-          failedByMonth.get(currentMonthKey)?.push(dateValue);
-          this.logStep('data-referencia', 'WARN', `could not select date "${dateValue}" after ${maxRetries} attempts`);
-        }
-
-        // Only wait for Spotfire to re-render after the very first (Ctrl-less) click.
-        if (index === 0) {
-          await this.waitForSpotfireIdle(page, 8000);
-          await this.assertDataReferenciaFilterVisible(page, filterTitle);
-        }
-      }
-    } finally {
-      if (ctrlHeld) {
-        await page.keyboard.up('Control');
-        this.logStep('data-referencia', 'OK', 'released Ctrl after multi-select');
-      }
-      if (currentMonthKey !== '') logMonthSummary(currentMonthKey);
-    }
-
-    await this.waitForSpotfireIdle(page);
-
-    const selectedCount = dates.length - failedDates.length;
-    if (selectedCount === 0) {
-      this.info(`Data Referência: nenhuma das ${dates.length} data(s) selecionada ✗`);
-      this.logStep('data-referencia', 'FAIL', `none of the ${dates.length} date(s) could be selected — aborting`, { failedDates });
-      throw new Error(`Data Referência: nenhuma das ${dates.length} data(s) pôde ser selecionada. Verifique se o filtro está visível no painel direito.`);
-    }
-
-    if (failedDates.length > 0) {
-      this.info(`Data Referência: ${selectedCount}/${dates.length} data(s) selecionada(s), ${failedDates.length} falharam`);
-      this.logStep('data-referencia', 'WARN', `${selectedCount}/${dates.length} date(s) selected, ${failedDates.length} failed`, { failedDates });
-    } else {
-      this.info(`Data Referência: ${selectedCount} data(s) selecionada(s) ✓`);
-    }
-
-    this.logStep('data-referencia', 'OK', `Data Referência filter applied: ${selectedCount}/${dates.length} date(s) selected`);
-    this.emitProgress(request, 'Filtro Data Referência aplicado');
-  }
-
-  /**
-   * Checks that the right-panel filter named `filterTitle` is still present in
-   * the DOM. If it is gone (because Spotfire silently reloaded the page without
-   * throwing a Puppeteer error), throws an error whose message matches
-   * `isSpotfireReloadError` so that `withSpotfireRecovery` triggers a full retry.
-   */
-  private async assertDataReferenciaFilterVisible(page: Page, filterTitle: string): Promise<void> {
-    const found = await page.evaluate((title: string) => {
-      function nc(v: string | null | undefined): string {
-        return (v ?? '').replace(/\s+/g, ' ').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      }
-      const panelRoot = document.querySelector<HTMLElement>('.sfc-filter-panel')
-        ?? document.querySelector<HTMLElement>('.FilterPanelScroll');
-      if (!panelRoot) return false;
-      return Array.from(panelRoot.querySelectorAll<HTMLElement>('.sf-element-filter')).some((f) => {
-        const el = f.querySelector<HTMLElement>('span.sf-element-filter-content.sf-element-filter-title[title]');
-        return nc(el?.getAttribute('title') ?? el?.textContent) === nc(title);
-      });
-    }, filterTitle).catch(() => false);
-
-    if (!found) {
-      throw new Error(
-        `execution context was destroyed: filter panel for "${filterTitle}" is no longer in the DOM — ` +
-        `Spotfire likely reloaded silently`,
-      );
-    }
-  }
 
   private isSpotfireReloadError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);

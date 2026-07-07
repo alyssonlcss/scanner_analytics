@@ -12,6 +12,7 @@ export interface ScannerJob {
     reportTitle: string;
     tableTitle?: string;
     selectedFilters?: SpotfireFilter[];
+    clientBrowserType?: 'edge' | 'chrome';
   };
   createdAt: string;
   updatedAt: string;

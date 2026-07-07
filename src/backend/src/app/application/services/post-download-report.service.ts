@@ -522,13 +522,54 @@ export class PostDownloadReportService {
     const dateCol = accessor.resolve(['Data Referência', 'Data Referencia']);
     if (!dateCol) return null;
 
-    // Convert DD/MM/YYYY → numeric YYYYMMDD for comparison
-    const toNum = (s: string): number => {
-      const parts = s.split('/');
-      if (parts.length !== 3) return NaN;
-      return parseInt(parts[2], 10) * 10000 + parseInt(parts[1], 10) * 100 + parseInt(parts[0], 10);
-    };
+    let isAmerican = false;
+    let detected = false;
 
+    // First pass: detect format by checking values > 12
+    for (const row of rows) {
+      const raw = (row[dateCol] ?? '').trim();
+      if (!raw) continue;
+      const parts = raw.split('/');
+      if (parts.length !== 3) continue;
+
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+
+      if (p0 > 12 && p1 <= 12) {
+        isAmerican = false; // p0 is Day => Brazilian
+        detected = true;
+        break;
+      }
+      if (p1 > 12 && p0 <= 12) {
+        isAmerican = true; // p1 is Day => American
+        detected = true;
+        break;
+      }
+    }
+
+    // If not detected, check which part varies
+    if (!detected) {
+      const p0Values = new Set<number>();
+      const p1Values = new Set<number>();
+      for (const row of rows) {
+        const raw = (row[dateCol] ?? '').trim();
+        if (!raw) continue;
+        const parts = raw.split('/');
+        if (parts.length === 3) {
+          p0Values.add(parseInt(parts[0], 10));
+          p1Values.add(parseInt(parts[1], 10));
+        }
+      }
+      if (p0Values.size > p1Values.size) {
+        isAmerican = false;
+      } else if (p1Values.size > p0Values.size) {
+        isAmerican = true;
+      } else {
+        isAmerican = false; // default
+      }
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
     let minStr = '';
     let maxStr = '';
     let minNum = Infinity;
@@ -537,10 +578,23 @@ export class PostDownloadReportService {
     for (const row of rows) {
       const raw = (row[dateCol] ?? '').trim();
       if (!raw) continue;
-      const n = toNum(raw);
+      const parts = raw.split('/');
+      if (parts.length !== 3) continue;
+
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      const yyyy = parseInt(parts[2], 10);
+
+      const dd = isAmerican ? p1 : p0;
+      const mm = isAmerican ? p0 : p1;
+
+      const n = yyyy * 10000 + mm * 100 + dd;
       if (Number.isNaN(n)) continue;
-      if (n < minNum) { minNum = n; minStr = raw; }
-      if (n > maxNum) { maxNum = n; maxStr = raw; }
+
+      const formatted = `${pad(dd)}/${pad(mm)}/${yyyy}`;
+
+      if (n < minNum) { minNum = n; minStr = formatted; }
+      if (n > maxNum) { maxNum = n; maxStr = formatted; }
     }
 
     if (!minStr || !maxStr) return null;

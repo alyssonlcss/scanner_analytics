@@ -23,6 +23,22 @@ if (-not (Test-Path $EdgePath)) {
   throw "Edge executable not found at: $EdgePath"
 }
 
+if (Test-Path "../.env") {
+  $envContent = Get-Content "../.env"
+} elseif (Test-Path ".env") {
+  $envContent = Get-Content ".env"
+} else {
+  $envContent = @()
+}
+
+$runBackground = $false
+
+foreach ($line in $envContent) {
+  if ($line -match "^SPOTFIRE_BACKGROUND=(.*)$") {
+    if ($matches[1] -eq "true") { $runBackground = $true }
+  }
+}
+
 Write-Host "Starting Edge with remote debugging on port $Port..."
 Start-Process $EdgePath "--remote-debugging-port=$Port"
 Write-Host "Edge started. You can now run 'npm run dev'."

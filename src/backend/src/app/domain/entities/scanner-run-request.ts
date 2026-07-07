@@ -31,6 +31,7 @@ export interface ScannerRunRequest {
   selectedFilters?: SpotfireFilter[];
   periodSelection?: ScannerPeriodSelection;
   skipFilterReset?: boolean;
+  clientBrowserType?: 'edge' | 'chrome';
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
 }
