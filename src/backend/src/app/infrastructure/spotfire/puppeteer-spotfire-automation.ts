@@ -157,7 +157,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           this.emitProgress(req, 'Abrindo análise no Spotfire...');
           await this.withSpotfireRecovery(page, async () => {
             await this.raceAbort(
-              this.openAnalysis(page, req.reportTitle ?? this.environment.spotfire.defaultReportTitle),
+              this.openAnalysis(page, req.reportTitle ?? this.environment.spotfire.defaultReportTitle, req),
               req.signal,
             );
           }, req);
@@ -3903,7 +3903,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
   }
 
-  private async openAnalysis(page: Page, reportTitle: string): Promise<void> {
+  private async openAnalysis(page: Page, reportTitle: string, req?: ScannerRunRequest): Promise<void> {
     if (!page.isClosed()) {
       await this.waitForSpotfireIdle(page).catch(function () { return undefined; });
 
@@ -3959,7 +3959,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       currentUrl: page.url(),
     });
 
-    await this.completeLoginIfRequired(page);
+    await this.completeLoginIfRequired(page, req);
 
     if (await this.isLoginPage(page)) {
       throw new Error(`login did not complete when opening Spotfire analysis: ${this.environment.spotfire.analysisUrl}`);
@@ -3974,7 +3974,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
         waitUntil: 'networkidle2',
         timeout: 120000,
       });
-      await this.completeLoginIfRequired(page);
+      await this.completeLoginIfRequired(page, req);
     }
 
     await this.waitForSpotfireIdle(page);
@@ -4001,14 +4001,16 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
   }
 
-  private async completeLoginIfRequired(page: Page): Promise<void> {
+  private async completeLoginIfRequired(page: Page, req?: ScannerRunRequest): Promise<void> {
     if (!await this.isLoginPage(page)) {
+      if (req) this.emitProgress(req, 'Sessão ativa detectada, pulando login e indo direto para o scanner...');
       this.log('login step skipped because page is already authenticated', {
         currentUrl: page.url(),
       });
       return;
     }
 
+    if (req) this.emitProgress(req, 'Iniciando processo de login...');
     this.info('Login detectado, autenticando...');
     this.log('login page detected, filling credentials', {
       currentUrl: page.url(),
@@ -4018,7 +4020,12 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await page.locator("input[type='text']").fill(this.environment.spotfire.username);
     await page.locator("input[type='password']").fill(this.environment.spotfire.password);
 
-    await this.submitLogin(page);
+    try {
+      await this.submitLogin(page);
+    } catch (err) {
+      if (req) this.emitProgress(req, `Erro ao realizar o login: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
 
     this.info('Login concluído');
     this.log('login submit completed, checking resulting page', {
@@ -4036,6 +4043,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
 
       if (await this.isLoginPage(page)) {
+        if (req) this.emitProgress(req, 'Erro ao realizar o login: credenciais inválidas ou erro no portal.');
         throw new Error(`Spotfire stayed on login page after submit. Current URL: ${page.url()}`);
       }
     }
@@ -5008,7 +5016,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await this.clickExportMenuAction(page);
 
     this.log('waiting for download to complete...');
-    const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
+    const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles, request, request.tableTitle);
     this.log(`download result: ${downloadedFile ?? '(no file downloaded)'}`);
 
     try {
@@ -5043,7 +5051,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   private async awaitExportDownload(outputDirectory: string, existingFiles: Set<string>, request: ScannerRunRequest): Promise<string | undefined> {
     this.log(`waiting for download of "${request.tableTitle}"...`);
-    const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles);
+    const downloadedFile = await this.waitForDownloadedFile(outputDirectory, existingFiles, request, request.tableTitle ?? 'export');
     this.log(`download result for "${request.tableTitle}": ${downloadedFile ?? '(no file downloaded)'}`);
     return this.finalizeDownloadedFile(outputDirectory, downloadedFile, request);
   }
@@ -5431,19 +5439,127 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }, this.environment.spotfire.exportMenuLabel);
   }
 
-  private async waitForDownloadedFile(outputDirectory: string, existingFiles: Set<string>): Promise<string> {
+  private estimateDownloadSize(request?: ScannerRunRequest, tableTitle?: string): number | null {
+    if (!request?.periodSelection?.month) return null;
+    
+    const months = Array.isArray(request.periodSelection.month) 
+      ? request.periodSelection.month 
+      : [request.periodSelection.month];
+
+    if (months.length === 0 || months.includes('All') || months.includes('(All)')) {
+      return null;
+    }
+
+    const currentYear = new Date().getFullYear();
+    const selectedYears = Array.isArray(request.periodSelection.year) 
+      ? request.periodSelection.year 
+      : request.periodSelection.year ? [request.periodSelection.year] : [String(currentYear)];
+      
+    const isCurrentYearSelected = selectedYears.some((y) => String(y) === String(currentYear)) || selectedYears.length === 0 || selectedYears.includes('All');
+
+    let baseSizeMB = 6.0;
+    const titleLower = (tableTitle ?? '').toLowerCase();
+    
+    if (titleLower.includes('ranking')) {
+      baseSizeMB = 0.01;
+    } else if (titleLower.includes('deslocamento') || titleLower.includes('completa')) {
+      baseSizeMB = 6.0;
+    }
+
+    const BASE_MONTH_SIZE_BYTES = baseSizeMB * 1024 * 1024;
+    
+    const now = new Date();
+    const currentMonthIndex = now.getMonth();
+    const currentDay = now.getDate();
+    const daysInCurrentMonth = new Date(now.getFullYear(), currentMonthIndex + 1, 0).getDate();
+    
+    const monthOptionsMap: Record<string, number> = {
+      'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 
+      'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11
+    };
+
+    let totalEstimatedBytes = 0;
+
+    for (const monthLabel of months) {
+      const monthLower = monthLabel.toLowerCase().trim().slice(0, 3);
+      const mIndex = monthOptionsMap[monthLower];
+      
+      if (mIndex === undefined) {
+        totalEstimatedBytes += BASE_MONTH_SIZE_BYTES;
+        continue;
+      }
+
+      if (isCurrentYearSelected && mIndex === currentMonthIndex) {
+        const proportion = currentDay / daysInCurrentMonth;
+        totalEstimatedBytes += BASE_MONTH_SIZE_BYTES * proportion;
+      } else if (isCurrentYearSelected && mIndex > currentMonthIndex) {
+        // Future month, no data
+      } else {
+        totalEstimatedBytes += BASE_MONTH_SIZE_BYTES;
+      }
+    }
+    
+    return totalEstimatedBytes > 0 ? totalEstimatedBytes : null;
+  }
+
+  private async waitForDownloadedFile(
+    outputDirectory: string,
+    existingFiles: Set<string>,
+    request?: ScannerRunRequest,
+    tableTitle?: string
+  ): Promise<string> {
     const startedAt = Date.now();
+    let lastSizeStr = '';
+    const estimatedTotalBytes = this.estimateDownloadSize(request, tableTitle);
 
     while (Date.now() - startedAt < DOWNLOAD_TIMEOUT_MS) {
       const files = await readdir(outputDirectory);
       const freshFile = files.find((fileName) => !existingFiles.has(fileName));
 
-      if (freshFile && !freshFile.endsWith('.crdownload')) {
+      if (freshFile) {
         const filePath = join(outputDirectory, freshFile);
-        const fileStats = await stat(filePath);
 
-        if (fileStats.isFile()) {
-          return freshFile;
+        if (freshFile.endsWith('.crdownload')) {
+          try {
+            const fileStats = await stat(filePath);
+            if (fileStats.size > 0 && request && tableTitle) {
+              const sizeMB = (fileStats.size / 1024 / 1024).toFixed(2);
+              if (sizeMB !== lastSizeStr) {
+                lastSizeStr = sizeMB;
+                let message = `Baixando tabela "${tableTitle}"... (${sizeMB} MB`;
+                
+                if (estimatedTotalBytes) {
+                  let percent = Math.round((fileStats.size / estimatedTotalBytes) * 100);
+                  if (percent > 99) percent = 99;
+                  
+                  const elapsedMs = Date.now() - startedAt;
+                  const speedBytesPerMs = fileStats.size / elapsedMs;
+                  const remainingBytes = Math.max(0, estimatedTotalBytes - fileStats.size);
+                  
+                  let timeStr = '';
+                  if (speedBytesPerMs > 0 && remainingBytes > 0) {
+                    const remainingSecs = Math.round(remainingBytes / speedBytesPerMs / 1000);
+                    if (remainingSecs > 60) {
+                      timeStr = ` ~${Math.floor(remainingSecs / 60)}m ${remainingSecs % 60}s restantes`;
+                    } else {
+                      timeStr = ` ~${remainingSecs}s restantes`;
+                    }
+                  }
+                  
+                  message += ` - ~${percent}%${timeStr})`;
+                } else {
+                  message += ')';
+                }
+
+                this.emitProgress(request, message);
+              }
+            }
+          } catch { /* ignore */ }
+        } else {
+          const fileStats = await stat(filePath);
+          if (fileStats.isFile()) {
+            return freshFile;
+          }
         }
       }
 
