@@ -3951,7 +3951,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     });
 
     await page.goto(this.environment.spotfire.analysisUrl, {
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: 120000,
     });
 
@@ -3971,7 +3971,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
 
       await page.goto(this.environment.spotfire.analysisUrl, {
-        waitUntil: 'networkidle2',
+        waitUntil: 'domcontentloaded',
         timeout: 120000,
       });
       await this.completeLoginIfRequired(page, req);
@@ -4038,7 +4038,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
 
       await page.goto(this.environment.spotfire.analysisUrl, {
-        waitUntil: 'networkidle2',
+        waitUntil: 'domcontentloaded',
         timeout: 120000,
       });
 
@@ -4071,11 +4071,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       });
 
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; }),
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(function () { return undefined; }),
         element.click(),
       ]);
 
-      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 120000 }).catch(function () { return undefined; });
+      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(function () { return undefined; });
       return;
     }
 
@@ -4085,18 +4085,18 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       this.log('submitting login by pressing Enter on password field');
 
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; }),
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(function () { return undefined; }),
         passwordInput.press('Enter'),
       ]);
 
-      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 120000 }).catch(function () { return undefined; });
+      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(function () { return undefined; });
       return;
     }
 
     this.log('submitting login by pressing Enter on page');
     await page.keyboard.press('Enter');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 120000 }).catch(function () { return undefined; });
-    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 120000 }).catch(function () { return undefined; });
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(function () { return undefined; });
+    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(function () { return undefined; });
   }
 
   private async isLoginPage(page: Page): Promise<boolean> {
@@ -6572,7 +6572,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     await new Promise((r) => setTimeout(r, 3000));
 
     // If a navigation is in progress, wait for it to finish (short timeout — don't block if already done)
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => undefined);
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => undefined);
 
     // Wait for Spotfire analysis elements to appear (proves the page loaded fully)
     const analysisReady = await this.isAnalysisReady(page);
