@@ -181,33 +181,45 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
             await this.raceAbort(this.ensureNoMaximizedVisualization(page), req.signal);
             await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
 
-            if (!req.skipFilterReset) {
-              this.info('Resetando filtros...');
-              this.emitProgress(req, 'Resetando filtros...');
-              await this.raceAbort(this.resetVisibleFilters(page), req.signal);
-              await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+            this.emitProgress(req, 'Lendo estado atual dos filtros...');
+            let currentFilters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
+            const filtersToApply = this.buildFiltersToApply(currentFilters, req);
+            
+            const identical = this.areFiltersIdentical(currentFilters, filtersToApply);
+
+            let filters = currentFilters;
+
+            if (identical) {
+              this.info('Filtros já configurados. Pulando aplicação.');
+              this.emitProgress(req, 'Filtros já configurados. Pulando aplicação.');
             } else {
-              this.log('skipping filter reset because skipFilterReset=true');
+              if (!req.skipFilterReset) {
+                this.info('Resetando filtros...');
+                this.emitProgress(req, 'Resetando filtros...');
+                await this.raceAbort(this.resetVisibleFilters(page), req.signal);
+                await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+                
+                // Read fresh state after reset
+                currentFilters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
+              } else {
+                this.log('skipping filter reset because skipFilterReset=true');
+              }
+
+              if (filtersToApply.length > 0) {
+                const updatedFiltersToApply = this.buildFiltersToApply(currentFilters, req);
+                this.info(`Aplicando ${updatedFiltersToApply.length} filtro(s): ${updatedFiltersToApply.map(f => f.title).join(', ')}`);
+                this.emitProgress(req, `Aplicando ${updatedFiltersToApply.length} filtro(s)...`);
+                await this.raceAbort(this.applySelectedFilters(page, updatedFiltersToApply, req), req.signal);
+                await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
+              }
+
+              filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
+              this.logFiltersSummary(filters);
             }
 
             const availableTabs = await this.raceAbort(this.loadAvailableTabs(page), req.signal);
             this.emitProgress(req, 'Lendo tabelas disponíveis...');
             const availableTables = await this.raceAbort(this.loadAvailableTables(page), req.signal);
-            this.emitProgress(req, 'Lendo estado dos filtros...');
-            let filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
-
-            this.logFiltersSummary(filters);
-
-            const filtersToApply = this.buildFiltersToApply(filters, req);
-
-            if (filtersToApply.length > 0) {
-              this.info(`Aplicando ${filtersToApply.length} filtro(s): ${filtersToApply.map(f => f.title).join(', ')}`);
-              this.emitProgress(req, `Aplicando ${filtersToApply.length} filtro(s)...`);
-              await this.raceAbort(this.applySelectedFilters(page, filtersToApply, req), req.signal);
-              await this.raceAbort(this.ensureAllFiltersVisible(page), req.signal);
-              filters = await this.raceAbort(this.readVisibleFilters(page), req.signal);
-              this.logFiltersSummary(filters);
-            }
 
             return { availableTabs, availableTables, filters };
           }, req);
@@ -304,10 +316,10 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
           if (this.isSupersededAbort(req.signal)) {
             this.logStep('browser', 'OK', 'keeping browser and page open because job was superseded — next job will reuse this session');
+          } else if (extractionResult !== undefined) {
+            this.logStep('browser', 'OK', 'keeping browser and page open to reuse in future extractions');
           } else {
-            const reason = extractionResult !== undefined
-              ? 'closing browser'
-              : `closing browser after failed extraction attempt ${extractionAttempt}`;
+            const reason = `closing browser after failed extraction attempt ${extractionAttempt}`;
             this.logStep('browser', 'WARN', reason);
             await this.disposeAutomationSession().catch(() => undefined);
           }
@@ -5641,6 +5653,56 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     }
 
     return builtFilters;
+  }
+
+  private areFiltersIdentical(currentFilters: SpotfireFilter[], targetFilters: SpotfireFilter[]): boolean {
+    if (targetFilters.length === 0) {
+      return false;
+    }
+
+    for (const target of targetFilters) {
+      const current = currentFilters.find(f => this.normalizeFilterName(f.title) === this.normalizeFilterName(target.title));
+      if (!current) {
+        return false;
+      }
+
+      const currentVals = [...current.selectedValues].map(v => v.trim()).sort();
+      const targetVals = [...target.selectedValues].map(v => v.trim()).sort();
+      
+      const currentIsAll = currentVals.length === 0 || (currentVals.length === 1 && currentVals[0] === '(All)');
+      const targetIsAll = targetVals.length === 0 || (targetVals.length === 1 && targetVals[0] === '(All)');
+      
+      if (currentIsAll && targetIsAll) {
+        continue;
+      }
+      
+      if (currentIsAll !== targetIsAll) {
+        return false;
+      }
+
+      if (currentVals.length !== targetVals.length) {
+        return false;
+      }
+
+      for (let i = 0; i < currentVals.length; i++) {
+        if (currentVals[i] !== targetVals[i]) {
+          return false;
+        }
+      }
+    }
+    
+    for (const current of currentFilters) {
+      const isTargeted = targetFilters.some(t => this.normalizeFilterName(t.title) === this.normalizeFilterName(current.title));
+      if (!isTargeted) {
+        const currentVals = current.selectedValues.map(v => v.trim());
+        const currentIsAll = currentVals.length === 0 || (currentVals.length === 1 && currentVals[0] === '(All)');
+        if (!currentIsAll) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   private buildFiltersToApply(availableFilters: SpotfireFilter[], request: ScannerRunRequest): SpotfireFilter[] {
