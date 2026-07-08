@@ -3762,7 +3762,7 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
 
   private usesExternalBrowserConnection(): boolean {
     return !this.environment.spotfire.headless
-      && Boolean(this.environment.spotfire.browserUrl || this.environment.spotfire.browserWSEndpoint);
+      && Boolean(this.environment.spotfire.browserWSEndpoint);
   }
 
   private async disposeAutomationSession(): Promise<void> {
@@ -3916,7 +3916,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.log('launching browser', {
       headless: this.environment.spotfire.headless,
       browserPath: this.environment.spotfire.browserPath || null,
-      browserUrl: this.environment.spotfire.browserUrl || null,
       browserWSEndpoint: this.environment.spotfire.browserWSEndpoint || null,
       userDataDir: this.environment.spotfire.userDataDir || null,
       profileDirectory: this.environment.spotfire.profileDirectory || null,
@@ -3941,25 +3940,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
       }
     }
 
-    if (!this.environment.spotfire.headless && this.environment.spotfire.browserUrl) {
-      this.log('connecting to existing browser by remote debugging URL', {
-        browserUrl: this.environment.spotfire.browserUrl,
-      });
-
-      try {
-        return await puppeteer.connect({
-          browserURL: this.environment.spotfire.browserUrl,
-          defaultViewport: null,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(
-          `Could not connect to the existing Edge browser at ${this.environment.spotfire.browserUrl}. `
-          + `Open Edge with remote debugging enabled on port 9222 and retry. `
-          + `You can run 'npm run edge:debug' in src/backend first. Details: ${message}`,
-        );
-      }
-    }
 
     const launchArgs = [
       '--no-sandbox', 

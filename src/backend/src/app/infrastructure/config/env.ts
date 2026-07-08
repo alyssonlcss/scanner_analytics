@@ -37,9 +37,7 @@ const environmentSchema = z.object({
   SPOTFIRE_REPORT_URL: z.string().min(1).optional(),
   SPOTFIRE_USERNAME: z.string().min(1),
   SPOTFIRE_PASSWORD: z.string().min(1),
-  SPOTFIRE_BACKGROUND: booleanFromEnvironment.default(false),
   SPOTFIRE_BROWSER_PATH: z.string().optional().default(''),
-  SPOTFIRE_BROWSER_URL: z.string().url().optional(),
   SPOTFIRE_BROWSER_WS_ENDPOINT: z.string().url().optional(),
   SPOTFIRE_USER_DATA_DIR: z.string().optional().default(''),
   SPOTFIRE_PROFILE_DIRECTORY: z.string().optional().default(''),
@@ -50,7 +48,6 @@ const environmentSchema = z.object({
   SPOTFIRE_OUTPUT_DIR: z.string().default('../../data'),
   SPOTFIRE_DOWNLOAD_TABLES: z.string().default('Tab_Completa-Deslocamentos,Ranking-Detalhamento_Diário,Desvios-Relatório_Geral:Desvios'),
   SPOTFIRE_DEBUG: booleanFromEnvironment.default(false),
-  REPORT_AUTO_GENERATE: booleanFromEnvironment.default(true),
   REPORT_OUTPUT_FILE_NAME: z.string().default('scanner-analytics-report.json'),
 });
 
@@ -125,7 +122,6 @@ export const environment = {
     password: parsedEnvironment.SPOTFIRE_PASSWORD,
     headless: true,
     browserPath: parsedEnvironment.SPOTFIRE_BROWSER_PATH,
-    browserUrl: parsedEnvironment.SPOTFIRE_BROWSER_URL,
     browserWSEndpoint: parsedEnvironment.SPOTFIRE_BROWSER_WS_ENDPOINT,
     userDataDir: parsedEnvironment.SPOTFIRE_USER_DATA_DIR,
     profileDirectory: parsedEnvironment.SPOTFIRE_PROFILE_DIRECTORY,
@@ -138,7 +134,6 @@ export const environment = {
     debug: parsedEnvironment.SPOTFIRE_DEBUG,
   },
   report: {
-    autoGenerate: parsedEnvironment.REPORT_AUTO_GENERATE,
     outputFileName: parsedEnvironment.REPORT_OUTPUT_FILE_NAME,
     basesConfig,
     extraTeamTags: basesConfig.extraTeamTags || [],
