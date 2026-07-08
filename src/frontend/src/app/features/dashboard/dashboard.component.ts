@@ -64,9 +64,6 @@ type ReportTypeOption = {
 type PeriodSelectionPayload = {
   year?: string[];
   month?: string[];
-  dayRange?: { min: number; max: number };
-  /** Per-month ranges for cross-month selections (key = month abbrev e.g. "abr") */
-  monthDayRanges?: Record<string, { min: number; max: number }>;
 };
 
 const ALL_OPTION = 'All';
@@ -94,7 +91,6 @@ const STORAGE_KEY = 'scanner_filter_state';
 
 type SavedFilterState = {
   filters: Record<FilterKey, string[]>;
-  dayRange: { min: number; max: number };
   reportType: ReportTypeValue;
   analiticoFilters?: Record<ReportFilterKey, string[]>;
   operacionalFilters?: Record<ReportFilterKey, string[]>;
@@ -221,39 +217,6 @@ type SavedFilterState = {
                   </ng-container>
                 </div>
 
-                <div class="day-range-shell">
-                  <div class="range-summary-shell">
-                    <span class="select-caption">Dia</span>
-                    <div class="day-range-display">
-                      <div>
-                        <ng-container *ngIf="!multiMonthSelected(); else multiMinInput">
-                          <input #minNumInput type="number" class="day-input" min="1" [max]="dayLimit()" [value]="resolvedDayRange().min" (change)="updateDayRangeFromInput('min', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia inicial" />
-                        </ng-container>
-                        <ng-template #multiMinInput>
-                          <input type="text" class="day-input" [value]="dayMinLabel()" (change)="updateDayRangeFromText('min', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia inicial" placeholder="dd/mm" />
-                        </ng-template>
-                      </div>
-
-                      <div>
-                        <ng-container *ngIf="!multiMonthSelected(); else multiMaxInput">
-                          <input #maxNumInput type="number" class="day-input" min="1" [max]="dayLimit()" [value]="resolvedDayRange().max" (change)="updateDayRangeFromInput('max', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia final" />
-                        </ng-container>
-                        <ng-template #multiMaxInput>
-                          <input type="text" class="day-input" [value]="dayMaxLabel()" (change)="updateDayRangeFromText('max', $event)" (keydown.enter)="$any($event.target).blur()" aria-label="Dia final" placeholder="dd/mm" />
-                        </ng-template>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="dual-slider">
-                    <!-- Track fill: driven directly by Angular, no CSS custom-property lag -->
-                    <div #sliderFill class="dual-slider-fill"
-                         [style.left.%]="fillLeft()"
-                         [style.width.%]="fillWidth()"></div>
-                    <input #sliderThumbMin type="range" min="1" [max]="sliderTotal()" step="1" [value]="sliderMin()" (input)="updateDayRangeSlider('min', $event)" [style.z-index]="dayRangeMinOnTop() ? 3 : 2" aria-label="Dia inicial" />
-                    <input #sliderThumbMax type="range" min="1" [max]="sliderTotal()" step="1" [value]="sliderMax()" (input)="updateDayRangeSlider('max', $event)" [style.z-index]="dayRangeMinOnTop() ? 2 : 3" aria-label="Dia final" />
-                  </div>
-                </div>
               </div>
             </article>
 
@@ -2105,16 +2068,16 @@ type SavedFilterState = {
       }
 
       .period-selects .option-list {
-        gap: 2px;
-        max-height: 98px;
-        padding: 2px;
+        gap: 3px;
+        height: 150px;
+        padding: 3px;
         align-content: start;
       }
 
       .period-selects .option-item {
-        padding: 4px 6px;
-        font-size: 0.75rem;
-        line-height: 1;
+        padding: 5px 7px;
+        font-size: 0.78rem;
+        line-height: 1.05;
       }
 
       .option-item {
@@ -2144,128 +2107,7 @@ type SavedFilterState = {
         font-weight: 600;
       }
 
-      .day-range-shell {
-        padding: 6px;
-        border-radius: 12px;
-        background: var(--glass);
-        border: 1px solid var(--border);
-        display: grid;
-        gap: 4px;
-      }
 
-      .day-range-display {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 4px;
-      }
-
-      .day-range-display > div {
-        padding: 2px 4px;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.7);
-        border: 1px solid var(--border);
-      }
-
-      .day-input {
-        width: 100%;
-        border: none;
-        background: transparent;
-        font-weight: 700;
-        font-size: 0.78rem;
-        text-align: center;
-        color: inherit;
-        outline: none;
-        cursor: text;
-        -moz-appearance: textfield;
-      }
-
-      .day-input::-webkit-inner-spin-button,
-      .day-input::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-      }
-
-      .day-input:focus {
-        outline: 1.5px solid var(--accent);
-        border-radius: 4px;
-      }
-
-      .dual-slider {
-        position: relative;
-        height: 28px;
-        display: grid;
-        align-items: center;
-      }
-
-      /* Inactive track base layer */
-      .dual-slider::before {
-        content: '';
-        position: absolute;
-        left: 3px;
-        right: 3px;
-        top: 50%;
-        height: 6px;
-        transform: translateY(-50%);
-        border-radius: 999px;
-        background: rgba(60, 40, 30, 0.12);
-      }
-
-      /* Red fill — driven directly by Angular [style] bindings for zero-lag updates */
-      .dual-slider-fill {
-        position: absolute;
-        top: 50%;
-        height: 6px;
-        transform: translateY(-50%);
-        border-radius: 999px;
-        background: rgba(192, 18, 45, 0.75);
-        pointer-events: none;
-      }
-
-      .dual-slider input[type='range'] {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        appearance: none;
-        -webkit-appearance: none;
-        pointer-events: none;
-      }
-
-      .dual-slider input[type='range']::-webkit-slider-runnable-track {
-        height: 6px;
-        background: transparent;
-      }
-
-      .dual-slider input[type='range']::-moz-range-track {
-        height: 6px;
-        background: transparent;
-      }
-
-      .dual-slider input[type='range']::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 14px;
-        height: 14px;
-        margin-top: -4px;
-        border-radius: 50%;
-        border: 2px solid var(--accent);
-        background: #ffffff;
-        box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
-        pointer-events: auto;
-        cursor: pointer;
-      }
-
-      .dual-slider input[type='range']::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        border: 2px solid var(--accent);
-        background: #ffffff;
-        box-shadow: 0 2px 6px rgba(23, 26, 31, 0.18);
-        pointer-events: auto;
-        cursor: pointer;
-      }
 
       @media (max-width: 720px) {
         .report-filter-groups {
@@ -5081,20 +4923,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   protected readonly openDropdownKey = signal<string | null>(null);
   protected readonly dropdownSearch = signal('');
-  protected readonly dayRange = signal({ min: 1, max: 31 });
-  protected readonly resolvedDayRange = computed(() => {
-    const r = this.dayRange();
-    // When multiple months are selected we allow the day-range to span across
-    // month boundaries (e.g. 29 .. 2 to mean 29 of first month → 2 of next).
-    // In that case we must preserve the raw values and NOT reorder them.
-    const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
-    const activeMonths = (monthFilter?.value ?? []).filter((m) => m !== ALL_OPTION);
-    if (activeMonths.length > 1) {
-      return { min: r.min, max: r.max };
-    }
 
-    return { min: Math.min(r.min, r.max), max: Math.max(r.min, r.max) };
-  });
   protected readonly reportTypeOptions = REPORT_TYPE_OPTIONS;
   protected readonly reportTypeLabel = computed(() => {
     const opt = this.reportTypeOptions.find((o) => o.value === this.reportType());
@@ -5103,17 +4932,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly filtersVisible = computed(() => this.selectFilters().length > 0);
   protected readonly periodFilters = computed(() => this.selectFilters().filter((filter) => filter.key === 'ano' || filter.key === 'mes'));
   protected readonly secondaryFilters = computed(() => this.selectFilters().filter((filter) => filter.key !== 'ano' && filter.key !== 'mes'));
-  protected readonly dayLimit = computed(() => {
-    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? [];
-    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? [];
-    return this.dayLimitForMonthPosition(year, month, 'last');
-  });
-  // Upper bound for the MIN (start) slider — max day of the FIRST selected month
-  protected readonly dayLimitMin = computed(() => {
-    const year = this.periodFilters().find((filter) => filter.key === 'ano')?.value ?? [];
-    const month = this.periodFilters().find((filter) => filter.key === 'mes')?.value ?? [];
-    return this.dayLimitForMonthPosition(year, month, 'first');
-  });
   protected readonly periodRangeLabel = computed(() => {
     // Prefer the actual date range from the downloaded file data over the filter selection
     const dataRange = this.reportData()?.dataDateRange;
@@ -5133,98 +4951,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       .sort((a, b) => parseInt(a.num) - parseInt(b.num));
     const activeYears = (yearFilter?.value ?? []).filter((y) => y !== ALL_OPTION).sort();
     if (activeMonths.length === 0) return '';
-    const range = this.resolvedDayRange();
-    const pad = (n: number) => String(n).padStart(2, '0');
     const firstYear = activeYears[0] ?? String(new Date().getFullYear());
     const lastYear = activeYears[activeYears.length - 1] ?? firstYear;
-    const startFull = `${pad(range.min)}/${activeMonths[0].num}/${firstYear}`;
-    const endFull = `${pad(range.max)}/${activeMonths[activeMonths.length - 1].num}/${lastYear}`;
+    const startFull = `${activeMonths[0].num}/${firstYear}`;
+    const endFull = `${activeMonths[activeMonths.length - 1].num}/${lastYear}`;
     return startFull === endFull ? startFull : `${startFull} a ${endFull}`;
   });
 
-  // True when more than one month is selected — triggers dd/mm mode
-  protected readonly multiMonthSelected = computed(() => {
-    const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
-    return (monthFilter?.value ?? []).filter((m) => m !== ALL_OPTION).length > 1;
-  });
-  private readonly sortedActiveMonthIndexes = computed(() => {
-    const monthFilter = this.periodFilters().find((f) => f.key === 'mes');
-    return (monthFilter?.value ?? [])
-      .filter((m) => m !== ALL_OPTION)
-      .map((m) => MONTH_OPTIONS.indexOf(m))
-      .filter((i) => i !== -1)
-      .sort((a, b) => a - b);
-  });
-  // Days available per selected month (in order), respecting D-2 cap on current month
-  protected readonly monthDayCounts = computed(() => {
-    const year = this.periodFilters().find((f) => f.key === 'ano')?.value ?? [];
-    const indexes = this.sortedActiveMonthIndexes();
-    if (indexes.length === 0) return [];
-    const currentDate = new Date();
-    const normalizedYears = year.filter((v) => v !== ALL_OPTION).map(Number).filter(Number.isFinite);
-    const resolvedYear = normalizedYears.length > 0 ? Math.max(...normalizedYears) : currentDate.getFullYear();
-    return indexes.map((idx) => {
-      const maxDay = new Date(resolvedYear, idx + 1, 0).getDate();
-      const isCurrentPeriod = resolvedYear === currentDate.getFullYear() && idx === currentDate.getMonth();
-      const days = isCurrentPeriod ? Math.max(Math.min(maxDay, currentDate.getDate() - 2), 1) : maxDay;
-      return { monthIndex: idx, days };
-    });
-  });
-  // Total days across all selected months (slider max in multi-month mode)
-  protected readonly sliderTotal = computed(() => {
-    if (!this.multiMonthSelected()) return this.dayLimit();
-    return this.monthDayCounts().reduce((sum, m) => sum + m.days, 0);
-  });
-  // Raw position of the left thumb (thumb 1) — may be > sliderMax when thumbs cross
-  protected readonly sliderMin = computed(() => this.dayRange().min);
-  // Raw absolute position of the right thumb (thumb 2)
-  protected readonly sliderMax = computed(() => {
-    if (!this.multiMonthSelected()) return this.dayRange().max;
-    const counts = this.monthDayCounts();
-    const daysBeforeLast = counts.slice(0, -1).reduce((sum, m) => sum + m.days, 0);
-    return daysBeforeLast + this.dayRange().max;
-  });
-  // Display label for the start day input (e.g. "29/04" in multi-month mode)
-  protected readonly dayMinLabel = computed(() => {
-    const indexes = this.sortedActiveMonthIndexes();
-    if (indexes.length <= 1) return String(this.resolvedDayRange().min);
-    const monthNum = String(indexes[0] + 1).padStart(2, '0');
-    const day = String(this.resolvedDayRange().min).padStart(2, '0');
-    return `${day}/${monthNum}`;
-  });
-  // Display label for the end day input (e.g. "02/05" in multi-month mode)
-  protected readonly dayMaxLabel = computed(() => {
-    const indexes = this.sortedActiveMonthIndexes();
-    if (indexes.length <= 1) return String(this.resolvedDayRange().max);
-    const monthNum = String(indexes[indexes.length - 1] + 1).padStart(2, '0');
-    const day = String(this.resolvedDayRange().max).padStart(2, '0');
-    return `${day}/${monthNum}`;
-  });
-  // Left edge of the red fill as a percentage of the track (0-100)
-  protected readonly fillLeft = computed(() => {
-    const total = this.sliderTotal();
-    const lo = Math.min(this.sliderMin(), this.sliderMax());
-    return total > 1 ? ((lo - 1) / (total - 1)) * 100 : 0;
-  });
-  // Width of the red fill as a percentage
-  protected readonly fillWidth = computed(() => {
-    const total = this.sliderTotal();
-    const lo = Math.min(this.sliderMin(), this.sliderMax());
-    const hi = Math.max(this.sliderMin(), this.sliderMax());
-    if (total <= 1) return 100;
-    return ((hi - lo) / (total - 1)) * 100;
-  });
-  // Legacy aliases used by periodRangeLabel and buildPeriodSelection
-  protected readonly dayRangeStart = this.fillLeft;
-  protected readonly dayRangeEnd = computed(() => {
-    const total = this.sliderTotal();
-    const hi = Math.max(this.sliderMin(), this.sliderMax());
-    return total > 1 ? ((hi - 1) / (total - 1)) * 100 : 100;
-  });
-  // Swap z-index when thumb 1 is at or past thumb 2 so both remain clickable
-  protected readonly dayRangeMinOnTop = computed(() => {
-    return this.dayRange().min >= this.dayRange().max || this.sliderMin() >= this.sliderTotal();
-  });
 
   private scrollObserver?: IntersectionObserver;
 
@@ -5361,13 +5094,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     if (saved) {
       this.reportType.set(saved.reportType);
-      if (saved.dayRange) {
-        this.dayRange.set(saved.dayRange);
-      } else {
-        this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
-      }
-    } else {
-      this.dayRange.set(this.buildDayRange(new Map(builtFilters.map((filter) => [filter.key, filter.value]))));
     }
     window.addEventListener('mouseup', this.boundEndFilterDrag);
     window.addEventListener('mousemove', this.boundWindowMouseMove, { passive: true });
@@ -5906,9 +5632,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       .sort((a, b) => parseInt(a.num) - parseInt(b.num));
     const activeYears = (yearFilter?.value ?? []).filter((y) => y !== ALL_OPTION).sort();
 
-    const range = this.resolvedDayRange();
-    const pad = (n: number): string => String(n).padStart(2, '0');
-
     let dateSuffix = '';
     let dateRangeLabel = '';
 
@@ -5924,11 +5647,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const lastMonth = activeMonths[activeMonths.length - 1].num;
       const firstYear = activeYears[0] ?? String(new Date().getFullYear());
       const lastYear = activeYears[activeYears.length - 1] ?? firstYear;
-      const startDate = `${pad(range.min)}-${firstMonth}`;
-      const endDate = `${pad(range.max)}-${lastMonth}`;
+      const startDate = firstMonth;
+      const endDate = lastMonth;
       dateSuffix = ` ${startDate === endDate ? startDate : `${startDate} ao ${endDate}`}`;
-      const startFull = `${pad(range.min)}/${firstMonth}/${firstYear}`;
-      const endFull = `${pad(range.max)}/${lastMonth}/${lastYear}`;
+      const startFull = `${firstMonth}/${firstYear}`;
+      const endFull = `${lastMonth}/${lastYear}`;
       dateRangeLabel = startFull === endFull ? startFull : `${startFull} a ${endFull}`;
     }
 
@@ -7029,7 +6752,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       const overrideValues = new Map(updatedFilters.map((filter) => [filter.key, filter.value]));
       const rebuiltFilters = this.buildSelectFilters(overrideValues);
       this.selectFilters.set(rebuiltFilters);
-      this.dayRange.set(this.buildDayRange(new Map(rebuiltFilters.map((filter) => [filter.key, filter.value]))));
       this.saveToStorage();
       return;
     }
@@ -7038,107 +6760,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.saveToStorage();
   }
 
-  /**
-   * Handles both single-month and multi-month slider input.
-   * The slider always uses an "absolute" scale (1 → sliderTotal).
-   * For single-month: absolute value = day number directly.
-   * For multi-month: min thumb = day in first month; max thumb is converted
-   * from absolute position back to a day in the last month.
-   */
-  /**
-   * Syncs the fill div and the number-input labels imperatively so they update
-   * on every slider frame without waiting for Angular's async change-detection.
-   */
-  private syncSliderDOM(): void {
-    // Update fill div
-    const fill = this.sliderFillRef?.nativeElement;
-    if (fill) {
-      const left = this.fillLeft();
-      const width = this.fillWidth();
-      fill.style.left = left + '%';
-      fill.style.width = width + '%';
-    }
-    // Update slider thumb positions so they reflect signal value immediately
-    const total = this.sliderTotal();
-    const sMin = this.sliderMin();
-    const sMax = this.sliderMax();
-    if (this.sliderThumbMinRef?.nativeElement) this.sliderThumbMinRef.nativeElement.value = String(sMin);
-    if (this.sliderThumbMaxRef?.nativeElement) this.sliderThumbMaxRef.nativeElement.value = String(sMax);
-    // Update number inputs (single-month) with normalised resolved values
-    if (!this.multiMonthSelected()) {
-      const r = this.resolvedDayRange();
-      if (this.minNumInputRef?.nativeElement) this.minNumInputRef.nativeElement.value = String(r.min);
-      if (this.maxNumInputRef?.nativeElement) this.maxNumInputRef.nativeElement.value = String(r.max);
-    }
-    void total; // suppress unused-var lint
-  }
 
-  protected updateDayRangeSlider(boundary: 'min' | 'max', event: Event): void {
-    const absolute = Number((event.target as HTMLInputElement | null)?.value ?? Number.NaN);
-    if (Number.isNaN(absolute)) return;
 
-    if (!this.multiMonthSelected()) {
-      // Store raw thumb positions — thumbs can cross freely.
-      // resolvedDayRange() normalises min≤max for display and submission.
-      this.dayRange.update((range) => ({
-        min: boundary === 'min' ? absolute : range.min,
-        max: boundary === 'max' ? absolute : range.max,
-      }));
-      this.syncSliderDOM();
-      this.saveToStorage();
-      return;
-    }
 
-    const counts = this.monthDayCounts();
-    if (boundary === 'min') {
-      const firstMonthDays = counts[0]?.days ?? 1;
-      const day = Math.max(1, Math.min(Math.round(absolute), firstMonthDays));
-      this.dayRange.update((range) => ({ ...range, min: day }));
-    } else {
-      const lastIdx = counts.length - 1;
-      const daysBeforeLast = counts.slice(0, lastIdx).reduce((s, m) => s + m.days, 0);
-      const dayInLast = Math.max(1, Math.min(Math.round(absolute) - daysBeforeLast, counts[lastIdx]?.days ?? 1));
-      this.dayRange.update((range) => ({ ...range, max: dayInLast }));
-    }
-    this.syncSliderDOM();
-    this.saveToStorage();
-  }
-
-  protected updateDayRangeFromInput(boundary: 'min' | 'max', event: Event): void {
-    // Only called in single-month mode (number input); both sides share the same dayLimit().
-    const input = event.target as HTMLInputElement;
-    const raw = Number(input.value);
-    const limit = this.dayLimit();
-    const clamped = Math.max(1, Math.min(Number.isFinite(raw) ? Math.round(raw) : 1, limit));
-    this.dayRange.update((range) => {
-      const a = boundary === 'min' ? clamped : range.min;
-      const b = boundary === 'max' ? clamped : range.max;
-      return { min: Math.min(a, b), max: Math.max(a, b) };
-    });
-    input.value = String(boundary === 'min' ? this.resolvedDayRange().min : this.resolvedDayRange().max);
-    this.saveToStorage();
-  }
-
-  protected updateDayRangeFromText(boundary: 'min' | 'max', event: Event): void {
-    // Called in multi-month mode (text input showing dd/mm).
-    // Only the day part is parsed; the month is fixed by position (first/last selected month).
-    const input = event.target as HTMLInputElement;
-    const dayStr = input.value.split('/')[0].trim();
-    const dayNum = parseInt(dayStr, 10);
-    const limit = boundary === 'min' ? this.dayLimitMin() : this.dayLimit();
-    const clamped = Number.isFinite(dayNum) ? Math.max(1, Math.min(dayNum, limit)) : (boundary === 'min' ? 1 : this.dayLimit());
-    this.dayRange.update((range) => ({
-      min: boundary === 'min' ? clamped : range.min,
-      max: boundary === 'max' ? clamped : range.max,
-    }));
-    // Re-format display as dd/mm
-    const indexes = this.sortedActiveMonthIndexes();
-    const idx = boundary === 'min' ? 0 : indexes.length - 1;
-    const monthNum = indexes[idx] !== undefined ? String(indexes[idx] + 1).padStart(2, '0') : '??';
-    const finalDay = boundary === 'min' ? this.resolvedDayRange().min : this.resolvedDayRange().max;
-    input.value = `${String(finalDay).padStart(2, '0')}/${monthNum}`;
-    this.saveToStorage();
-  }
 
   protected submit(): void {
     if (!this.filtersVisible()) {
@@ -7625,35 +7249,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.analiticoFilters.set(updateFilters(this.analiticoFilters(), 'analitico'));
     this.operacionalFilters.set(updateFilters(this.operacionalFilters(), 'operacional'));
   }
-  private buildDayRange(overrideValues?: Map<FilterKey, string[]>): { min: number; max: number } {
-    const values = overrideValues ?? new Map(this.selectFilters().map((filter) => [filter.key, filter.value]));
-    const days = this.dayOptionsFromSelection(values.get('ano') ?? [], values.get('mes') ?? []);
-    const minDay = days[0] ?? 1;
-    const maxDay = days[days.length - 1] ?? 31;
 
-    // If the current month+year is in the selection, default to D-2
-    const currentDate = new Date();
-    const selectedYears = (values.get('ano') ?? []).filter((v) => v !== ALL_OPTION);
-    const selectedMonths = (values.get('mes') ?? []).filter((v) => v !== ALL_OPTION);
-    const currentYearStr = String(currentDate.getFullYear());
-    const currentMonthStr = MONTH_OPTIONS[currentDate.getMonth()];
-
-    const includesCurrentYear = selectedYears.length === 0 || selectedYears.includes(currentYearStr);
-    const includesCurrentMonth = selectedMonths.length === 0 || selectedMonths.includes(currentMonthStr);
-
-    if (includesCurrentYear && includesCurrentMonth) {
-      const d2 = currentDate.getDate() - 2;
-      if (selectedMonths.length > 1) {
-        // Multi-month crossing current: start at first available day, end at D-2 of current month
-        return { min: minDay, max: Math.max(Math.min(d2, maxDay), 1) };
-      }
-      // Single current month: default both boundaries to D-2
-      const clamped = Math.max(Math.min(d2, maxDay), minDay);
-      return { min: clamped, max: clamped };
-    }
-
-    return { min: minDay, max: maxDay };
-  }
 
   private yearOptions(): string[] {
     const currentYear = new Date().getFullYear();
@@ -7760,41 +7356,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       ? monthFilter.options.filter((option) => option !== ALL_OPTION)
       : (monthFilter?.value ?? []);
 
-    const resolved = this.resolvedDayRange();
-    const sortedIndexes = this.sortedActiveMonthIndexes();
-    const counts = this.monthDayCounts();
-
-    // Multi-month: each month has its own day range
-    //  • first month: resolvedDayRange().min  →  last day of that month
-    //  • middle months: 1 → last day of that month (full month)
-    //  • last month:  1 → resolvedDayRange().max
-    if (sortedIndexes.length > 1 && counts.length === sortedIndexes.length) {
-      const monthDayRanges: Record<string, { min: number; max: number }> = {};
-      for (let i = 0; i < sortedIndexes.length; i++) {
-        const abbr = MONTH_OPTIONS[sortedIndexes[i]];
-        const monthMaxDay = counts[i].days;
-        if (i === 0) {
-          monthDayRanges[abbr] = { min: resolved.min, max: monthMaxDay };
-        } else if (i === sortedIndexes.length - 1) {
-          monthDayRanges[abbr] = { min: 1, max: resolved.max };
-        } else {
-          monthDayRanges[abbr] = { min: 1, max: monthMaxDay };
-        }
-      }
-      return {
-        year: year.length > 0 ? year : undefined,
-        month: month.length > 0 ? month : undefined,
-        monthDayRanges,
-      };
-    }
-
-    // Single month: classic dayRange
-    const limit = this.dayLimit();
-    const isFullRange = resolved.min <= 1 && resolved.max >= limit;
     return {
       year: year.length > 0 ? year : undefined,
       month: month.length > 0 ? month : undefined,
-      dayRange: isFullRange ? undefined : { min: resolved.min, max: resolved.max },
     };
   }
 
@@ -7841,7 +7405,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const state: SavedFilterState = {
       filters,
-      dayRange: this.resolvedDayRange(),
       reportType: this.reportType(),
       analiticoFilters: analiticoFiltersMap,
       operacionalFilters: operacionalFiltersMap,
@@ -7860,7 +7423,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (parsed && typeof parsed === 'object' && parsed.filters) {
         const today = new Date().toISOString().slice(0, 10);
         if (parsed.savedAt !== today) {
-          delete parsed.dayRange;
           delete parsed.filters.ano;
           delete parsed.filters.mes;
         }

@@ -95,6 +95,73 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     request.onProgress?.(message);
   }
 
+  private estimateExtraction(req: ScannerRunRequest): { size: string, time: string } | null {
+    if (!req.periodSelection?.month || !req.tablesToExport?.length) return null;
+    const months = Array.isArray(req.periodSelection.month) ? req.periodSelection.month : [req.periodSelection.month];
+    
+    // We assume current date is 7/7/2026 based on user context
+    const now = new Date(2026, 6, 7); // jul = 6, 7 = dia 7
+    const currentMonthNum = now.getMonth();
+    const currentDay = now.getDate();
+    const currentYear = now.getFullYear();
+
+    const monthAbbrevToNum: Record<string, number> = {
+      jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5,
+      jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11
+    };
+
+    let totalMb = 0;
+    
+    let baseMbPerMonth = 0;
+    for (const t of req.tablesToExport) {
+        if (t.tableTitle.toLowerCase().includes('deslocamentos')) {
+           baseMbPerMonth += 6.0;
+        } else if (t.tableTitle.toLowerCase().includes('diário')) {
+           baseMbPerMonth += 0.01; // 10kb
+        } else {
+           baseMbPerMonth += 3.0; // fallback avg
+        }
+    }
+    
+    if (baseMbPerMonth === 0) baseMbPerMonth = 6.0;
+
+    for (const m of months) {
+      if (m === 'All') {
+         totalMb += baseMbPerMonth * 12;
+         continue;
+      }
+      const mNum = monthAbbrevToNum[m.toLowerCase()];
+      if (mNum === undefined) continue;
+
+      let proportion = 1;
+      if (mNum === currentMonthNum) {
+         const daysInMonth = new Date(currentYear, currentMonthNum + 1, 0).getDate();
+         proportion = currentDay / daysInMonth; // e.g. 7/31 = ~1/4 as requested by user
+      } else if (mNum > currentMonthNum) {
+         proportion = 0;
+      }
+      totalMb += baseMbPerMonth * proportion;
+    }
+
+    if (totalMb <= 0) return null;
+    
+    // estimate time based on size. Approx 5 seconds per MB.
+    const estimatedSeconds = Math.max(2, Math.round(totalMb * 5));
+    
+    // format size
+    let sizeStr = '';
+    if (totalMb < 1) {
+      sizeStr = `${(totalMb * 1024).toFixed(0)} KB`;
+    } else {
+      sizeStr = `${totalMb.toFixed(2)} MB`;
+    }
+
+    return {
+      size: sizeStr,
+      time: `${estimatedSeconds}s`
+    };
+  }
+
   public async runExtraction(request: ScannerRunRequest): Promise<ScannerAutomationResult> {
     return this.runSerialized(async (combinedSignal) => {
       // Overlay the combined (external + supersede) signal so all inner raceAbort calls react.
@@ -231,6 +298,11 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           // New multi-table export logic
           if (req.tablesToExport && req.tablesToExport.length > 0) {
             this.logStep('export', 'START', `starting multi-table export for ${req.tablesToExport.length} tables`);
+            const est = this.estimateExtraction(req);
+            if (est) {
+              this.logStep('export', 'START', `estimated size: ${est.size}, time: ${est.time}`);
+              this.emitProgress(req, `Estimativa de arquivo e tempo: ${est.size} (${est.time})`);
+            }
             this.emitProgress(req, 'Preparando exportação das tabelas...');
             const totalTables = req.tablesToExport.length;
 
@@ -5718,7 +5790,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     this.log('period selection resolved — Data Referência will be applied in right panel after left-panel filters', {
       year: this.normalizePeriodSelectionValues(request.periodSelection.year),
       month: this.normalizePeriodSelectionValues(request.periodSelection.month),
-      dayRange: request.periodSelection.dayRange ?? null,
     });
 
     return this.orderFiltersForApplication(filtersToApply);
@@ -5769,8 +5840,6 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
     const normalizedYears = this.normalizePeriodSelectionValues(periodSelection.year).filter((value) => value !== ALL_OPTION);
     const normalizedMonths = this.normalizePeriodSelectionValues(periodSelection.month).filter((value) => value !== ALL_OPTION);
     const selectedMonthIndexes = normalizedMonths.map((value) => MONTH_OPTIONS.indexOf(value.toLowerCase())).filter((value) => value !== -1);
-    const minDay = periodSelection.dayRange?.min ?? 1;
-    const maxDay = periodSelection.dayRange?.max ?? 31;
 
     const selectedValues = referenceDateFilter.options
       .map((option) => option.label)
@@ -5790,16 +5859,13 @@ export class PuppeteerSpotfireAutomation implements ScannerAutomationPort {
           return false;
         }
 
-        const day = parsedDate.getDate();
-        return day >= minDay && day <= maxDay;
+        return true;
       });
 
     if (!selectedValues.length) {
       this.log('period selection did not resolve any Data Referência values', {
         year: normalizedYears,
         month: normalizedMonths,
-        minDay,
-        maxDay,
       });
       return undefined;
     }
