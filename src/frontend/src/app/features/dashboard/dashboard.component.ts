@@ -5377,13 +5377,30 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         if ((osDiaMap.get(team.team)?.idleAnalysis?.idlePct ?? 0) >= 15) motivos.push('Ociosidade ≥ 15%');
         if (team.kpisBelowMeta >= 4) motivos.push('4+ KPIs abaixo da meta');
 
+        const isMultiDay = (this.buildReportFiltersPayload().dates?.length ?? 1) > 1;
+
         let desviosText = '';
         const infos = [];
-        if (countPrep > 0 && maxPrep > 15) {
-          infos.push(`_Partida Média:_ *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
-        }
-        if (countSemOs > 0 && maxSemOs > 15) {
-          infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
+        if (!isMultiDay) {
+          if (countPrep > 0 && maxPrep > 15) {
+            infos.push(`_Partida Média:_ *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
+          }
+          if (countSemOs > 0 && maxSemOs > 15) {
+            infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
+          }
+        } else {
+          const prepOrders = flaggedOrders.filter((o: any) => o.flags?.includes('temp_prep_alto') && (o.temp_prep_os_min || 0) > 15);
+          if (prepOrders.length > 0) {
+            prepOrders.sort((a: any, b: any) => (b.temp_prep_os_min || 0) - (a.temp_prep_os_min || 0));
+            const top = prepOrders.slice(0, 3).map((o: any) => `*${Math.round(o.temp_prep_os_min!)}m* (${o.date_ref?.substring(0, 5) || '?'})`).join(', ');
+            infos.push(`_Partidas:_ ${top}`);
+          }
+          const semOsOrders = flaggedOrders.filter((o: any) => o.flags?.includes('sem_os_alto') && (o.sem_os_total_min || 0) > 15);
+          if (semOsOrders.length > 0) {
+            semOsOrders.sort((a: any, b: any) => (b.sem_os_total_min || 0) - (a.sem_os_total_min || 0));
+            const top = semOsOrders.slice(0, 3).map((o: any) => `*${Math.round(o.sem_os_total_min!)}m* (${o.date_ref?.substring(0, 5) || '?'})`).join(', ');
+            infos.push(`_Sem OS:_ ${top}`);
+          }
         }
 
         if (infos.length > 0) desviosText += infos.join(' | ');
@@ -5393,7 +5410,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         let linha = `• ${team.team} (Motivo: ${motivos.join(', ')}):\n`;
-        if (kpisImpactados.length > 0) linha += `    ↳ KPIs Impactados: ${kpisImpactados.join(', ')}\n`;
+        if (kpisImpactados.length > 0 && !isMultiDay) linha += `    ↳ KPIs Impactados: ${kpisImpactados.join(', ')}\n`;
         if (desviosText) linha += `    ↳ Desvios: ${desviosText}\n`;
 
         text += linha;
