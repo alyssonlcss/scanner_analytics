@@ -110,7 +110,28 @@ export function calculateTempPrepSemOs(rows: CsvRow[], retornoBaseAvgMin: number
           isInterOrdem = true;
         }
 
-        semOsValues.push(semOs.value);
+        let totalSemOs = semOs.value;
+
+        if (inicioIntervalo && fimIntervalo && aCaminho && liberada && despachada) {
+          const hasIntervaloDeslocamento = Boolean(
+            inicioIntervalo.getTime() >= liberada.getTime() &&
+            fimIntervalo.getTime() <= aCaminho.getTime()
+          );
+
+          if (hasIntervaloDeslocamento && !semOs.intervalApplied) {
+            const useDespachadaAsFrom = Boolean(
+              despachada.getTime() > liberada.getTime() &&
+              despachada.getTime() < inicioIntervalo.getTime()
+            );
+            const intFrom = useDespachadaAsFrom ? despachada : liberada;
+            const intMin = Math.round((inicioIntervalo.getTime() - intFrom.getTime()) / 60000);
+            if (intMin > 0) {
+              totalSemOs = (Number.isFinite(totalSemOs) ? totalSemOs : 0) + intMin;
+            }
+          }
+        }
+
+        semOsValues.push(totalSemOs);
       }
 
       // SemOrdem: gap between last order's Liberada and Log Off Corrigido, minus 60min interval and retorno base avg
@@ -210,8 +231,6 @@ export function calculateTempPrepValue(input: {
         }
         intervalApplied = true;
       } else {
-        value = minutesBetween(aCaminho, despachada);
-
         const insideTolerance = Boolean(
           inicioIntervalo &&
           fimIntervalo &&
@@ -220,9 +239,17 @@ export function calculateTempPrepValue(input: {
           !isIntervalAlreadyApplied,
         );
 
-        if (insideTolerance) {
+        if (insideTolerance && inicioIntervalo && fimIntervalo) {
+          value = Math.max(0, minutesBetween(aCaminho, new Date(Math.max(despachada.getTime(), fimIntervalo.getTime()))));
+          const duration = minutesBetween(fimIntervalo, new Date(Math.max(despachada.getTime(), inicioIntervalo.getTime())));
+          if (duration > 60) {
+            value += duration - 60;
+          }
           intervalApplied = true;
-          shouldApplyDiscount = true;
+          // We already discounted the interval by computing the post-interval time directly.
+          shouldApplyDiscount = false;
+        } else {
+          value = minutesBetween(aCaminho, despachada);
         }
       }
     } else {
@@ -235,15 +262,13 @@ export function calculateTempPrepValue(input: {
       );
 
       if (intervalBetweenLiberadaAndCaminho && inicioIntervalo && fimIntervalo) {
-        value = minutesBetween(aCaminho, fimIntervalo);
-        const duration = minutesBetween(fimIntervalo, inicioIntervalo);
+        value = Math.max(0, minutesBetween(aCaminho, new Date(Math.max(liberada.getTime(), fimIntervalo.getTime()))));
+        const duration = minutesBetween(fimIntervalo, new Date(Math.max(liberada.getTime(), inicioIntervalo.getTime())));
         if (duration > 60) {
           value += duration - 60;
         }
         intervalApplied = true;
       } else {
-        value = minutesBetween(aCaminho, liberada);
-
         const insideTolerance = Boolean(
           inicioIntervalo &&
           fimIntervalo &&
@@ -252,9 +277,16 @@ export function calculateTempPrepValue(input: {
           !isIntervalAlreadyApplied,
         );
 
-        if (insideTolerance) {
+        if (insideTolerance && inicioIntervalo && fimIntervalo) {
+          value = Math.max(0, minutesBetween(aCaminho, new Date(Math.max(liberada.getTime(), fimIntervalo.getTime()))));
+          const duration = minutesBetween(fimIntervalo, new Date(Math.max(liberada.getTime(), inicioIntervalo.getTime())));
+          if (duration > 60) {
+            value += duration - 60;
+          }
           intervalApplied = true;
-          shouldApplyDiscount = true;
+          shouldApplyDiscount = false;
+        } else {
+          value = minutesBetween(aCaminho, liberada);
         }
       }
     }

@@ -696,15 +696,16 @@ export function analyzeOsDia(deslocRows: CsvRow[], rankingRows: CsvRow[], kpis: 
                 }
               }
             } else {
+              const trueEntreOrdens = (despachadaDate && prevLibDate) ? round2(minutesBetween(despachadaDate, prevLibDate)) : round2(semOsMin);
               semOsDetails.push({
                 type: 'entre_ordens',
-                min:  round2(semOsMin),
+                min:  trueEntreOrdens,
                 from: prevLibStr,
                 to:   despachadaCol ? String(row[despachadaCol] ?? '').trim() || undefined : undefined,
                 interval_discounted: semOsIntervalApplied[i] || undefined,
                 desp_anterior: (prevDespDate && prevLibDate && prevDespDate.getTime() > prevLibDate.getTime()) ? prevDespStr : undefined,
                 global_avg_min: globalAvgEntreOrdensMin > 0 ? globalAvgEntreOrdensMin : undefined,
-                above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((semOsMin - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
+                above_avg_pct: globalAvgEntreOrdensMin > 0 ? round2((trueEntreOrdens - globalAvgEntreOrdensMin) / globalAvgEntreOrdensMin * 100) : undefined,
               });
             }
           }
