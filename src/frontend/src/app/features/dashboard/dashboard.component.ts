@@ -581,7 +581,7 @@ type SavedFilterState = {
                                   <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                                  <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                  <strong>2º Desp.:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
                                   <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
@@ -834,7 +834,7 @@ type SavedFilterState = {
                                   <strong>Tempo de Partida/OS:</strong> <span [innerHTML]="highlightMin(tempPrepAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                                  <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                                  <strong>2º Desp.:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                                 </li>
                                 <li *ngIf="ev.flags.includes('primeiro_desloc_alto')" class="osdia-ev-alert">
                                   <strong>1º Desloc.:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['primeiro_desloc_alto'] ?? '')"></span>
@@ -1141,7 +1141,7 @@ type SavedFilterState = {
                               <strong>Sem deslocamento registrado:</strong> <span [innerHTML]="highlightMin(deslocAlertBody('sem_desloc_registrado', ev))"></span>
                             </li>
                             <li *ngIf="ev.flags.includes('triagem_alto')" class="osdia-ev-alert">
-                              <strong>2º Desp. | Prioritário:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
+                              <strong>2º Desp.:</strong> <span [innerHTML]="highlightMin(triagemAltoText(ev))"></span>
                             </li>
                             
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
@@ -6329,8 +6329,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (lbl === 'Retorno a base' || lbl === 'Retorno Vazio') {
         total += seg.excessMin ?? 0;
       } else if (
-        lbl.startsWith('1º Despacho') ||
-        lbl.startsWith('2º Desp. | Prioritário') ||
+        lbl.startsWith('1º Desp.') ||
+        lbl.startsWith('2º Desp.') ||
         lbl === 'Entre OS' ||
         lbl === 'Desl. Intervalo' ||
         lbl === 'Partida'

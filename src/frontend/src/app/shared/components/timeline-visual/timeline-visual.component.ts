@@ -1,4 +1,4 @@
-﻿import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/timeline-segment.utils';
 
@@ -30,12 +30,22 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
 
           </div>
 
-          <!-- Marcador de horÃ¡rio de inÃ­cio -->
+          <!-- Marcadores invisíveis para forçar a largura e evitar sobreposição dos absolutos -->
+          <div class="spacers-container" aria-hidden="true" style="display: flex; width: 100%; justify-content: space-between; height: 0; visibility: hidden; overflow: hidden;">
+            <div class="time-marker-spacer">
+              {{ seg.startLabel }}<br>{{ seg.startTime }}
+            </div>
+            <div *ngIf="isLast" class="time-marker-spacer" style="padding-left: 20px;">
+              {{ seg.endLabel }}<br>{{ seg.endTime }}
+            </div>
+          </div>
+
+          <!-- Marcador de horário de início -->
           <div class="time-marker start-marker">
             {{ seg.startLabel }}<br>{{ seg.startTime }}
           </div>
           
-          <!-- Marcador de horÃ¡rio de fim (apenas no Ãºltimo segmento) -->
+          <!-- Marcador de horário de fim (apenas no último segmento) -->
           <div *ngIf="isLast" class="time-marker end-marker">
             {{ seg.endLabel }}<br>{{ seg.endTime }}
           </div>
@@ -44,6 +54,16 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
     </div>
   `,
   styles: [`
+    .time-marker-spacer {
+      visibility: hidden;
+      height: 0;
+      overflow: hidden;
+      font-size: 0.62rem;
+      font-weight: 600;
+      line-height: 1.4;
+      white-space: nowrap;
+      padding-left: 3px;
+    }
     .timeline-visual-container {
       margin: 0.5rem 0 2.5rem 0;
       font-family: sans-serif;
@@ -62,6 +82,7 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
     .timeline-segment {
       position: relative;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       border-right: 2px solid #fff;
@@ -69,7 +90,8 @@ import { TimelineSegment, buildTimelineSegments, tlFlexGrow } from '../../utils/
       color: #1e3a8a;
       font-size: 0.8rem;
       font-weight: 600;
-      min-width: 50px;
+      min-width: max(85px, max-content);
+      padding: 0 12px;
       transition: all 0.2s ease;
     }
     .timeline-segment:hover {
@@ -185,14 +207,14 @@ export class TimelineVisualComponent implements OnInit {
     return tlFlexGrow(durationMin);
   }
 
-  private static readonly IDLE_LABELS = new Set(['1º Despacho', '2º Desp. | Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off']);
+  private static readonly IDLE_LABELS = new Set(['Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Antes Log Off']);
 
   isIdleSegment(seg: TimelineSegment): boolean {
-    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && seg.label !== 'Deslocamento p/OS';
+    return (TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Desp.') || seg.label.startsWith('2º Desp.')) && seg.label !== 'Deslocamento p/OS';
   }
 
   isIdleHighSegment(seg: TimelineSegment): boolean {
-    return ((TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Despacho:')) && ((seg.flags?.length ?? 0) > 0))
+    return ((TimelineVisualComponent.IDLE_LABELS.has(seg.label) || seg.label.startsWith('1º Desp.') || seg.label.startsWith('2º Desp.')) && ((seg.flags?.length ?? 0) > 0))
       || (seg.label === 'Retorno a base' && (seg.flags?.length ?? 0) > 0);
   }
 

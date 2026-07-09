@@ -59,7 +59,7 @@ export interface SemOsDetail {
 export class DashboardPdfService {
 
   private static readonly TIMELINE_IDLE_LABELS = new Set([
-    '1º Despacho', '2º Desp. | Prioritário', 'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Retorno Vazio',
+    'Entre OS', 'Desl. Intervalo', 'Partida', 'Deslocamento p/OS', 'Retorno Vazio',
   ]);
 
   private getOciosoTotal(ev: any): number | null {
@@ -70,8 +70,8 @@ export class DashboardPdfService {
       if (lbl === 'Retorno a base' || lbl === 'Retorno Vazio') {
         total += seg.excessMin ?? 0;
       } else if (
-        lbl.startsWith('1º Despacho') ||
-        lbl.startsWith('2º Desp. | Prioritário') ||
+        lbl.startsWith('1º Desp.') ||
+        lbl.startsWith('2º Desp.') ||
         lbl === 'Entre OS' ||
         lbl === 'Desl. Intervalo' ||
         lbl === 'Partida'
@@ -89,7 +89,7 @@ export class DashboardPdfService {
     const IDLE = DashboardPdfService.TIMELINE_IDLE_LABELS;
     const isRepairAlarm = (s: TimelineSegment): boolean => (s.label === 'Reparo' || s.label === 'Log In') && (s.flags?.length ?? 0) > 0;
     const isDeslocAlarm = (s: TimelineSegment): boolean => s.label === 'Deslocamento p/OS' && (s.flags?.length ?? 0) > 0;
-    const isIdleLabel = (s: TimelineSegment): boolean => IDLE.has(s.label) || s.label.startsWith('1º Despacho:');
+    const isIdleLabel = (s: TimelineSegment): boolean => IDLE.has(s.label) || s.label.startsWith('1º Desp.') || s.label.startsWith('2º Desp.');
     const isRetornoBaseAlarm = (s: TimelineSegment): boolean => s.label === 'Retorno a base' && (s.flags?.length ?? 0) > 0;
     const getFill = (s: TimelineSegment): string =>
       s.isInterval ? '#fde68a' : isRepairAlarm(s) || isDeslocAlarm(s) || isRetornoBaseAlarm(s) ? '#fca5a5' :
@@ -105,11 +105,12 @@ export class DashboardPdfService {
     const totalGrow = grows.reduce((a, b) => a + b, 0);
     const rawWidths = grows.map(g => (g / totalGrow) * TOTAL_W);
 
-    // 2. Mínimo para caber o texto em uma linha.
+    // 2. Mínimo para caber o texto em uma linha e espaço para o marcador de tempo abaixo (aprox. 42pt).
     const minWidths = segs.map(s => {
       const durStr = s.overrideDuration ?? `${s.durationMin}min`;
       const durFull = s.subtitle ? `${durStr} | ${s.subtitle}` : durStr;
-      return Math.ceil(Math.max(s.label.length, durFull.length) * CHAR_W + 4);
+      const textWidth = Math.ceil(Math.max(s.label.length, durFull.length) * CHAR_W + 4);
+      return Math.max(42, textWidth); // 42pt guarantees space for time markers like "13:37 01/07"
     });
 
     // 3. Aplica mínimos (boost segmentos estreitos demais).
@@ -867,7 +868,7 @@ export class DashboardPdfService {
               if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
               if (ev.flags?.includes('tl_excede_hd')) orderItems.push(alertItem(`Tempo de Deslocamento alto: ${helpers.osDiaAlertBody('tl_excede_hd', ev)}`));
               if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
-              if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+              if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp.: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
               if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
               if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
                 orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
@@ -1028,7 +1029,7 @@ export class DashboardPdfService {
             if (utilTl) orderItems.push(utilTl);
             if (ev.flags?.includes('tr_excede_hd')) orderItems.push(alertItem(`Tempo de Reparo alto: ${helpers.osDiaAlertBody('tr_excede_hd', ev)}`));
             if (ev.flags?.includes('temp_prep_alto')) orderItems.push(alertItem(`Tempo de Partida/OS: ${helpers.osDiaAlertBody('temp_prep_alto', ev)}`));
-            if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) orderItems.push(alertItem(`2º Desp.: ${helpers.osDiaAlertBody('triagem_alto', ev)}`));
             if (ev.flags?.includes('primeiro_desloc_alto')) orderItems.push(alertItem(`1º Desloc.: ${helpers.osDiaAlertBody('primeiro_desloc_alto', ev)}`));
             if (ev.flags?.includes('sem_os_alto') && ev.sem_os_details?.length) {
               orderItems.push(alertItem(`Sem Ordem/OS: ${helpers.osDiaAlertBody('sem_os_alto', ev)}`));
@@ -1189,7 +1190,7 @@ export class DashboardPdfService {
             if (ev.flags?.includes('despacho_tardio')) dayItems.push(alertItem(`Despacho tardio: ${helpers.deslocAlertBody('despacho_tardio', ev)}`));
             if (ev.flags?.includes('desloc_muito_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_muito_lento', ev)}`));
             else if (ev.flags?.includes('desloc_lento')) dayItems.push(alertItem(`1º Desloc.: ${helpers.deslocAlertBody('desloc_lento', ev)}`));
-            if (ev.flags?.includes('triagem_alto')) dayItems.push(alertItem(`2º Desp. | Prioritário: ${helpers.deslocAlertBody('triagem_alto', ev)}`));
+            if (ev.flags?.includes('triagem_alto')) dayItems.push(alertItem(`2º Desp.: ${helpers.deslocAlertBody('triagem_alto', ev)}`));
             if (ev.flags?.includes('sem_desloc_registrado')) dayItems.push(alertItem(`Sem deslocamento registrado: ${helpers.deslocAlertBody('sem_desloc_registrado', ev)}`));
             if (ev.nr_ordem_despacho_anterior) {
               const horaFmt = (ev.hora_despacho_anterior || '').replace(/^(\d{2}\/\d{2})\/\d{4}\s+(\d{2}:\d{2}).*$/, '$1 $2');

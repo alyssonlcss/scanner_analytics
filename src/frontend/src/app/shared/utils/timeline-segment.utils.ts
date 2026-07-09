@@ -71,9 +71,9 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
   }
   if (!despAfterPrevLib) {
     if (ev.nr_ordem_despacho_anterior && ev.hora_despacho_anterior) {
-      addPt('hora_despacho_anterior', ev.hora_despacho_anterior, `1º Despacho: ${ev.nr_ordem_despacho_anterior}`);
+      addPt('hora_despacho_anterior', ev.hora_despacho_anterior, '1º Desp.');
     }
-    const despLabel = (ev.nr_ordem_despacho_anterior && ev.nr_ordem) ? `Despachada: ${ev.nr_ordem}` : 'Despachada';
+    const despLabel = (ev.nr_ordem_despacho_anterior && ev.nr_ordem) ? '2º Desp.' : 'Despachada';
     addPt('despachada', despachada, despLabel);
   }
   addPt('a_caminho', aCaminho, 'A Caminho');
@@ -110,9 +110,9 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
   const labelMap: Record<string, string> = {
     'inicio_calendario_log_in': 'Log In',
     'log_in_inicio_calendario': 'Log In',
-    'inicio_calendario_despachada': '1º Despacho',
-    'log_in_despachada': '1º Despacho',
-    'hora_despacho_anterior_despachada': '2º Desp. | Prioritário',
+    'inicio_calendario_despachada': '1º Desp.',
+    'log_in_despachada': '1º Desp.',
+    'hora_despacho_anterior_despachada': '2º Desp.',
     'prev_liberada_despachada': 'Entre OS',
     'liberada_despachada': 'Entre OS',
     'prev_liberada_inicio_intervalo': 'Desl. Intervalo',
@@ -139,17 +139,21 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
 
     const isInterval = isInInterval(p1.ts + (p2.ts - p1.ts) / 2);
     let label = isInterval ? 'INTERVALO' : (labelMap[`${p1.key}_${p2.key}`] ?? `${p1.label} → ${p2.label}`);
-    if (p2.key === 'hora_despacho_anterior' && ev.nr_ordem_despacho_anterior) {
-      label = `1º Despacho: ${ev.nr_ordem_despacho_anterior}`;
+    
+    // Anexa o número da OS no segmento se for 1º ou 2º Despacho
+    if (label === '1º Desp.' || (p2.key === 'hora_despacho_anterior' && ev.nr_ordem_despacho_anterior)) {
+      const nr = p2.key === 'hora_despacho_anterior' ? ev.nr_ordem_despacho_anterior : ev.nr_ordem;
+      label = `1º Desp. ${nr || ''}`.trim();
+    } else if (label === '2º Desp.') {
+      label = `2º Desp. ${ev.nr_ordem || ''}`.trim();
     }
+
     const flags: string[] = [];
     let overrideDuration: string | undefined;
     let subtitle: string | undefined;
     let excessMinVal: number | undefined;
 
     if (label === 'Reparo') {
-      // Override duration only for the direct no_local→liberada case (no interval inside).
-      // For fim_intervalo→liberada keep the calculated segment duration.
       if (p1.key === 'no_local' && p2.key === 'liberada' && ev.tr_ordem_min !== undefined) {
         durationMin = Math.max(ev.tr_ordem_min, 1);
       }
@@ -159,67 +163,66 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
       if (ev.flags?.includes('tl_excede_hd')) flags.push('Temp. Deslocamento Alto');
     } else if (label === 'Partida') {
       if (ev.primeiro_desloc_min !== undefined && ev.temp_prep_os_min === undefined) {
-        // KPI 1º Desloc.: a duração DO segmento Partida É o tempo Início Cal.→A Caminho
         durationMin = Math.max(ev.primeiro_desloc_min, 1);
         if (ev.flags?.includes('desloc_lento') || ev.flags?.includes('desloc_muito_lento')) {
           flags.push('1º Desloc. ≥25min');
         }
       } else if (ev.temp_prep_os_min !== undefined) {
-        // OS Dia / Utilização: Partida = temp_prep_os_min
         durationMin = Math.max(ev.temp_prep_os_min, 1);
         if (ev.flags?.includes('temp_prep_alto')) flags.push('Temp. Partida ≥10min');
-        // Show 1º Desloc. subtitle for 1ª OS
-        if (!ev.prev_liberada) {
-          const ocisoVal: number | undefined = ev.ocioso_min;
-          if (ocisoVal !== undefined && Number.isFinite(ocisoVal) && ocisoVal >= 0) {
-            subtitle = `1º Desloc.: ${Math.round(ocisoVal)}min`;
-            if (ev.flags?.includes('primeiro_desloc_alto')) flags.push('1º Desloc. ≥25min');
-          }
-        }
       }
-    } else if (label.startsWith('1º Despacho:') && p2.key === 'hora_despacho_anterior') {
-      // Prior-dispatch 1st segment: duration = Início Cal. → hora_despacho_anterior
+    } else if (label === 'Entre OS' && ev.entre_ordens_min !== undefined && ev.entre_ordens_min > 0) {
+      durationMin = Math.max(ev.entre_ordens_min, 1);
+      if (ev.flags?.includes('entre_ordens_alto')) flags.push('Entre OS ≥15min');
+    } else if (label === 'Log In' && p1.key === 'inicio_calendario') {
+      const hdMin = ev.hd_total_min;
+      if (hdMin && durationMin > hdMin * 0.1 && durationMin >= 10) {
+        flags.push('Atraso Inicial');
+      }
+      if (ev.log_in_diff_min !== undefined && ev.log_in_diff_min !== durationMin) {
+        overrideDuration = `${durationMin}min (diff: ${ev.log_in_diff_min > 0 ? '+' : ''}${ev.log_in_diff_min}m)`;
+      }
+    } else if (label.startsWith('1º Desp.') && p2.key === 'hora_despacho_anterior') {
       const icalPt2 = uniquePts.find(p => p.key === 'inicio_calendario');
-      if (icalPt2) durationMin = Math.max(Math.round((p2.ts - icalPt2.ts) / 60000), 1);
-      const md = ev.sem_os_details?.find((s: any) => s.type === 'inicio_jornada');
-      if (md) {
-        const SEM_OS_LIMIT = 10;
-        const g: number | undefined = md.global_avg_min;
+      if (icalPt2 && p2.ts > icalPt2.ts) {
+        durationMin = Math.max(Math.round((p2.ts - icalPt2.ts) / 60000), 1);
+      }
+      const SEM_OS_LIMIT = 20;
+      if (durationMin > SEM_OS_LIMIT) {
+        flags.push('Desp. Prioritário ≥10min');
+        const g = ev.desp_global_avg_min;
         if (g !== undefined && g > 0 && durationMin > g && durationMin > SEM_OS_LIMIT) flags.push('acima_media');
       }
-    } else if (label === '2º Desp. | Prioritário' && p1.key === 'hora_despacho_anterior') {
-      // Raw "2º Desp. | Prioritário" after prior-dispatch point: hora_despacho_anterior → despachada
+    } else if (label.startsWith('2º Desp.') && p1.key === 'hora_despacho_anterior') {
       const dMin = Math.round((p2.ts - p1.ts) / 60000);
       if (dMin > 10) {
         const pctLimit = Math.round((dMin - 10) / 10 * 100);
-        let fText = `2º Desp. | Prioritário: ${dMin} min entre o Início da Jornada e o Despacho - ${pctLimit}% acima do limite (10 min)`;
+        let fText = `2º Desp.: ${dMin} min entre o Início da Jornada e o Despacho - ${pctLimit}% acima do limite (10 min)`;
         const globalAvg = ev.triagem_global_avg_min;
         if (globalAvg && Number.isFinite(globalAvg) && globalAvg > 0) {
-          const pctAvg = Math.round((dMin - globalAvg) / globalAvg * 100);
-          const dir = pctAvg >= 0 ? 'acima' : 'abaixo';
-          fText += ` | ${Math.abs(pctAvg)}% ${dir} da média geral (${Math.round(globalAvg)} min)`;
+          const pctGlobal = Math.round(((dMin - globalAvg) / globalAvg) * 100);
+          if (pctGlobal > 0) fText += ` | ${pctGlobal}% acima da média geral (${Math.round(globalAvg)} min)`;
         }
         flags.push(fText + '.');
       }
-    } else if (['1º Despacho', 'Entre OS', 'Desl. Intervalo', 'Retorno Vazio', 'Retorno a Base'].includes(label) && ev.sem_os_details) {
+    } else if ((label.startsWith('1º Desp.') || ['Entre OS', 'Desl. Intervalo', 'Retorno Vazio', 'Retorno a Base'].includes(label)) && ev.sem_os_details) {
       const detType: Record<string, string> = {
-        '1º Despacho': 'inicio_jornada',
         'Desl. Intervalo': 'intervalo_deslocamento',
         'Retorno Vazio': 'fim_jornada',
-        'Retorno a Base': 'fim_jornada',
-        'Entre OS': 'entre_ordens',
+        'Retorno a Base': 'fim_jornada'
       };
       const md = ev.sem_os_details?.find((s: any) => {
-        if (s.type !== detType[label]) return false;
-        if (label === '1º Despacho' || label === 'Retorno Vazio' || label === 'Retorno a Base') return s.to === p2.raw;
+        const is1st = label.startsWith('1º Desp.');
+        const lType = is1st ? 'inicio_jornada' : detType[label];
+        if (s.type !== lType) return false;
+        if (is1st || label === 'Retorno Vazio' || label === 'Retorno a Base') return s.to === p2.raw;
         return s.from === p1.raw && s.to === p2.raw;
       });
-      if ((label === '1º Despacho' || label === 'Retorno Vazio' || label === 'Retorno a Base') && md) durationMin = Math.max(md.min, 1);
+      if ((label.startsWith('1º Desp.') || label === 'Retorno Vazio' || label === 'Retorno a Base') && md) durationMin = Math.max(md.min, 1);
       if (md) {
         if (detType[label] === 'fim_jornada') {
           if ((md as any).retorno_base_discounted != null) {
             label = 'Retorno a base';
-            // Case C: row present + excess — show excess as subtitle beside the total duration
             const excessM: number | undefined = (md as any).excess_min;
               if (excessM != null) excessMinVal = excessM;
             if (excessM != null) {
