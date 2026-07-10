@@ -30,6 +30,7 @@ import { analyzeTmeImp } from './report/analyzers/tme-imp.analyzer.js';
 import { analyzePrimeiroLogin } from './report/analyzers/primeiro-login.analyzer.js';
 import { analyzePrimeiroDesloc } from './report/analyzers/primeiro-desloc.analyzer.js';
 import { analyzeRetornoBase } from './report/analyzers/retorno-base.analyzer.js';
+import { analyzeDespacho } from './report/analyzers/despacho.analyzer.js';
 
 type CsvRow = Record<string, string>;
 type TeamType = 
@@ -193,6 +194,7 @@ export class PostDownloadReportService {
     const primeiroLoginAnalysis = analyzePrimeiroLogin(filtered.deslocamentos, kpis);
     const primeiroDeslocAnalysis = analyzePrimeiroDesloc(filtered.deslocamentos, kpis);
     const retornoBaseAnalysis  = analyzeRetornoBase(filtered.deslocamentos, kpis);
+    const despachoAnalysis = analyzeDespacho(filtered.deslocamentos, filtered.resolvedTeams);
 
     const actionPlan = buildActionPlans(
       teamMetrics, kpis, deviationInsights.teamBreakdown,
@@ -287,6 +289,7 @@ export class PostDownloadReportService {
         primeiroLoginAnalysis,
         primeiroDeslocAnalysis,
         retornoBaseAnalysis,
+        despachoAnalysis,
       },
       outputFiles: {
         jsonPath: join(params.dataDirectory, this.environment.report.outputFileName),

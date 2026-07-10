@@ -362,6 +362,26 @@ type SavedFilterState = {
                     </div>
                   </div>
 
+                  <div class="export-option-row">
+                    <div class="export-option-info">
+                      <span class="export-option-icon">⏱️</span>
+                      <div class="export-option-body">
+                        <span class="export-option-title">Relatório de Despacho</span>
+                        <span class="export-option-sub">PDF focado nas maiores incidências e médias de tempo Sem Ordem.</span>
+                      </div>
+                    </div>
+                    <div class="export-option-actions">
+                      <button class="export-action-btn export-action-btn--download" (click)="exportWithMode('despacho', false)" [disabled]="exportLoading()" title="Baixar PDF">
+                        ⬇ Baixar
+                      </button>
+                      <button class="export-action-btn export-action-btn--share"
+                        (click)="shareMode('despacho')"
+                        [disabled]="!!shareModeLoading()" title="Compartilhar via Windows">
+                        {{ shareModeLoading() === 'despacho' ? '⏳ Preparando...' : '📤 Compartilhar' }}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               </ng-container>
 
@@ -4894,9 +4914,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   protected readonly selectedDayPerKpi = signal<Record<string, string | null>>({});
   protected readonly expandedTeamDetails = signal<{ team: string; kpi: string; perTeamDailyData?: any } | null>(null);
   protected readonly kpiStates = signal<Record<string, { expanded: boolean }>>({});
-  protected readonly pendingShareMode = signal<'current' | 'proprias' | 'parceiras' | null>(null);
+  protected readonly pendingShareMode = signal<'current' | 'proprias' | 'parceiras' | 'despacho' | null>(null);
   /** Modo cujo botão Compartilhar está carregando no momento. */
-  protected readonly shareModeLoading = signal<'current' | 'proprias' | 'parceiras' | null>(null);
+  protected readonly shareModeLoading = signal<'current' | 'proprias' | 'parceiras' | 'despacho' | null>(null);
   protected reportBaseOptions: string[] = [];
   protected availablePropriasBases: string[] = [];
   protected availableParceirasBases: string[] = [];
@@ -5212,7 +5232,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    * busca dados no backend, gera PDFs, baixa e abre o Windows Share
    * tudo dentro da cadeia de Promise do gesto do usuário.
    */
-  protected async shareMode(mode: 'current' | 'proprias' | 'parceiras'): Promise<void> {
+  protected async shareMode(mode: 'current' | 'proprias' | 'parceiras' | 'despacho'): Promise<void> {
     if (this.shareModeLoading()) return;
     this.shareModeLoading.set(mode);
     this.exportError.set('');
@@ -5230,8 +5250,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   /** Busca dados no backend e gera File[] de PDF para o modo pedido. */
-  private async fetchAndBuildFiles(mode: 'current' | 'proprias' | 'parceiras'): Promise<{ files: File[]; sections: { report: GeneratedReport; title: string }[] }> {
-    if (mode === 'current') {
+  private async fetchAndBuildFiles(mode: 'current' | 'proprias' | 'parceiras' | 'despacho'): Promise<{ files: File[]; sections: { report: GeneratedReport; title: string; subtitle: string }[] }> {
+    if (mode === 'current' || mode === 'despacho') {
       const filters = this.buildReportFiltersPayload();
       const result = await firstValueFrom(
         this.api.exportData({
@@ -5245,8 +5265,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           filters.bases?.join(', ') || 'Todas as Bases',
           filters.teamTypes?.map(t => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
         ].join(' · ');
-      const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
-      const files = [await this.buildPdfFileForShare(section, 'atual')];
+      const section = { report: result.generatedReport, title: mode === 'despacho' ? 'Relatório de Despacho' : 'Relatório Atual', subtitle };
+      const files = [mode === 'despacho' ? await this.pdfService.generateDespachoPdfFile(section, 'relatorio-despacho') : await this.buildPdfFileForShare(section, 'atual')];
       return { files, sections: [section] };
     } else {
       const teamType: 'propria' | 'parceira' = mode === 'proprias' ? 'propria' : 'parceira';
@@ -5434,13 +5454,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    *                      botão de compartilhamento no modal (fresh user-gesture
    *                      para navigator.share).
    */
-  protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras', shareAfter = false): void {
+  protected exportWithMode(mode: 'current' | 'proprias' | 'parceiras' | 'despacho', shareAfter = false): void {
     const report = this.reportData();
     if (!report) return;
 
     const exportType = mode === 'current' ? 'atual' : mode;
 
-    if (mode === 'current') {
+    if (mode === 'current' || mode === 'despacho') {
       const filters = this.buildReportFiltersPayload();
       this.exportLoading.set(true);
       this.exportError.set('');
@@ -5453,16 +5473,24 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               filters.bases?.join(', ') || 'Todas as Bases',
               filters.teamTypes?.map((t) => t === 'propria' ? 'Próprias' : 'Parceiras').join(', ') || 'Proprias e Parceiras',
             ].join(' · ');
-          const section = { report: result.generatedReport, title: 'Relatório Atual', subtitle };
+          const section = { report: result.generatedReport, title: mode === 'despacho' ? 'Relatório de Despacho' : 'Relatório Atual', subtitle };
+          const { dateRangeLabel } = this.buildPdfFileName(section, exportType);
+          
           if (!shareAfter) {
-            this.downloadPdfDirect(section, 'atual');
+            if (mode === 'despacho') {
+              this.pdfService.downloadDespachoPdf({ ...section, dateRangeLabel }, 'relatorio-despacho');
+            } else {
+              this.downloadPdfDirect(section, 'atual');
+            }
             this.zone.run(() => {
               this.exportLoading.set(false);
               this.exportModalOpen.set(false);
             });
           } else {
             try {
-              const file = await this.buildPdfFileForShare(section, 'atual');
+              const file = mode === 'despacho' 
+                ? await this.pdfService.generateDespachoPdfFile({ ...section, dateRangeLabel }, 'relatorio-despacho')
+                : await this.buildPdfFileForShare(section, 'atual');
               this.downloadFileFromMemory(file);
               const text = this.includeAttentionMessage() ? this.buildShareText([section]) : '';
               const shared = await this.tryShare([file], text);
@@ -5473,7 +5501,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 } else {
                   this.pendingShareFiles.set([file]);
                   this.pendingShareText.set(text);
-                  this.pendingShareMode.set('current');
+                  this.pendingShareMode.set(mode);
                 }
               });
             } catch (pdfErr) {
@@ -5635,7 +5663,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
    */
   private buildPdfFileName(
     section: { report: GeneratedReport; title: string; subtitle: string },
-    exportType: 'atual' | 'proprias' | 'parceiras',
+    exportType: 'atual' | 'proprias' | 'parceiras' | 'despacho',
   ): { safeName: string; dateRangeLabel: string } {
     const monthAbbrevToNum: Record<string, string> = {
       jan: '01', fev: '02', mar: '03', abr: '04', mai: '05', jun: '06',

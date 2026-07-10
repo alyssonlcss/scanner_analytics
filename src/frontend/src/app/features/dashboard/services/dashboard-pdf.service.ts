@@ -283,11 +283,157 @@ export class DashboardPdfService {
   async generatePdfFile(section: PdfSection, safeName: string, helpers: PdfHelpers, expandedKeys?: Set<string>, reportType: 'operacional' | 'analitico' = 'operacional'): Promise<File> {
     const effectiveSection = { ...section, report: this.injectExpandedOrders(section.report, expandedKeys) };
     const docDef = reportType === 'analitico' ? this.buildAnalyticPdfDocDef(effectiveSection, helpers) : this.buildPdfDocDef(effectiveSection, helpers);
-    const blob: Blob = await pdfMake.createPdf(docDef).getBlob();
+    const pdfDocGenerator = pdfMake.createPdf(docDef);
+    const blob: Blob = await pdfDocGenerator.getBlob();
     if (!blob || blob.size === 0) {
       throw new Error('[PdfService] PDF gerado está vazio');
     }
     return new File([blob], `${safeName}.pdf`, { type: 'application/pdf' });
+  }
+
+  downloadDespachoPdf(section: PdfSection, safeName: string): void {
+    const docDef = this.buildDespachoPdfDocDef(section);
+    pdfMake.createPdf(docDef).download(`${safeName}.pdf`);
+  }
+
+  async generateDespachoPdfFile(section: PdfSection, safeName: string): Promise<File> {
+    const docDef = this.buildDespachoPdfDocDef(section);
+    const pdfDocGenerator = pdfMake.createPdf(docDef);
+    const blob: Blob = await pdfDocGenerator.getBlob();
+    if (!blob || blob.size === 0) {
+      throw new Error('[PdfService] PDF gerado está vazio');
+    }
+    return new File([blob], `${safeName}.pdf`, { type: 'application/pdf' });
+  }
+
+  private buildDespachoPdfDocDef(section: PdfSection): any {
+    const { report, title, subtitle } = section;
+    const despachoData = report.specialAnalysis?.despachoAnalysis || [];
+    
+    const fmt = (v: number | undefined | null, dec = 1): string =>
+      v != null && Number.isFinite(v) ? v.toFixed(dec).replace('.', ',') : '–';
+
+    const formatDespachoDate = (dateStr: string, suffix: string) => {
+      if (!dateStr || dateStr === '-') return '-';
+      const match = dateStr.match(/^(\d{2}\/\d{2})(?:\/\d{4})?\s+(\d{2}:\d{2})/);
+      if (match) {
+        return `${match[1]} ${match[2]} - ${suffix}`;
+      }
+      return `${dateStr} - ${suffix}`;
+    };
+
+    const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const BLUE = '#2563eb';
+    const GRAY = '#64748b';
+    const DARK = '#1e1a17';
+    const LIGHT_GRAY = '#f8fafc';
+    const BORDER = '#e2e8f0';
+
+    const content: any[] = [];
+
+    // Header
+    content.push({
+      columns: [
+        { text: 'Scanner Analytics', style: 'headerTitle', width: '*' },
+        { 
+          stack: [
+            { text: `Data de extração: ${today}`, style: 'headerDate' },
+            section.dateRangeLabel ? { text: `Período de referência: ${section.dateRangeLabel}`, style: 'headerDate', margin: [0, 2, 0, 0] } : null,
+            { text: 'Relatório de Despacho', style: 'headerDate', margin: [0, 2, 0, 0] },
+            { text: 'Autor: Alysson Pinheiro – Analista de Dados', style: 'headerDate', margin: [0, 2, 0, 0] }
+          ].filter(Boolean),
+          width: 'auto', 
+          alignment: 'right' 
+        }
+      ],
+      margin: [0, 0, 0, 15]
+    });
+    
+    content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 535, y2: 0, lineWidth: 1.5, lineColor: BLUE }], margin: [0, 0, 0, 15] });
+
+    if (despachoData.length === 0) {
+      content.push({ text: 'Nenhum dado de despacho disponível para este período.', color: GRAY, italics: true });
+    } else {
+      content.push({ text: 'Top 5 Horários com Maior Sem Ordem (Ocioso)', style: 'sectionTitle', margin: [0, 0, 0, 15] });
+      
+      despachoData.forEach((insight: any, idx: number) => {
+        const tableBody: any[] = [
+          [
+            { text: 'Equipe', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Tipo', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Data', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'OS', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Início', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Fim', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Int. Período', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: 'Duração', bold: true, fillColor: LIGHT_GRAY, borderColor: [BORDER, BORDER, BORDER, BORDER] }
+          ]
+        ];
+
+        insight.topIncidences.forEach((inc: any) => {
+          tableBody.push([
+            { text: inc.team, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: inc.teamType === 'propria' ? 'Própria' : 'Parceira', borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: inc.dateRef, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: inc.nrOrdem || '-', borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: formatDespachoDate(inc.start, inc.startReason), borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: formatDespachoDate(inc.end, 'Desp.'), borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: inc.intervalo, borderColor: [BORDER, BORDER, BORDER, BORDER] },
+            { text: inc.intervalo === 'Sim' ? `${inc.durationMin} min (c/ desc.)` : `${inc.durationMin} min`, bold: true, borderColor: [BORDER, BORDER, BORDER, BORDER] }
+          ]);
+        });
+
+        content.push({
+          stack: [
+            { text: `${idx + 1}. Faixa: ${insight.rangeStart} - ${insight.rangeEnd} | Média Sem Ordem(${insight.totalIncidences}): ${fmt(insight.averageEntreOsMin)} min`, style: 'insightTitle' },
+            { 
+              text: `Próprias mais afetadas: ${insight.mostAffectedProprias.length > 0 ? insight.mostAffectedProprias.join(', ') : 'Nenhuma'}`, 
+              style: 'affectedText'
+            },
+            { 
+              text: `Parceiras mais afetadas: ${insight.mostAffectedParceiras.length > 0 ? insight.mostAffectedParceiras.join(', ') : 'Nenhuma'}`, 
+              style: 'affectedText',
+              margin: [0, 0, 0, 8]
+            },
+            {
+              table: {
+                headerRows: 1,
+                widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                body: tableBody
+              },
+              layout: {
+                hLineWidth: (i: number, node: any) => 1,
+                vLineWidth: (i: number, node: any) => 1,
+                hLineColor: (i: number, node: any) => BORDER,
+                vLineColor: (i: number, node: any) => BORDER,
+                paddingLeft: (i: number, node: any) => 4,
+                paddingRight: (i: number, node: any) => 4,
+                paddingTop: (i: number, node: any) => 3,
+                paddingBottom: (i: number, node: any) => 3,
+              }
+            }
+          ],
+          margin: [0, 0, 0, 20],
+          unbreakable: true
+        });
+      });
+    }
+
+    return {
+      info: { title: 'Relatório de Despacho', author: 'Scanner Analytics' },
+      pageSize: 'A4',
+      pageMargins: [30, 36, 30, 36],
+      content,
+      styles: {
+        headerTitle: { fontSize: 16, bold: true, color: BLUE },
+        headerDate: { fontSize: 9, color: GRAY },
+        sectionTitle: { fontSize: 14, bold: true, color: DARK },
+        insightTitle: { fontSize: 11, bold: true, color: BLUE, margin: [0, 0, 0, 4] },
+        affectedText: { fontSize: 9, color: GRAY, italics: true },
+      },
+      defaultStyle: { font: 'Roboto', fontSize: 8, color: DARK }
+    };
   }
 
   /**

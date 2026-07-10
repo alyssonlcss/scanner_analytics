@@ -75,6 +75,30 @@ export interface ReportActionPlan {
   recommendations: string[];
 }
 
+export interface DespachoIncidence {
+  team: string;
+  teamType: string;
+  dateRef: string;
+  nrOrdem: string;
+  start: string;
+  startReason: string;
+  end: string;
+  durationMin: number;
+  lastLiberada: string;
+  intervalo: 'Sim' | 'Não';
+}
+
+export interface DespachoRangeInsight {
+  rangeId: string;
+  rangeStart: string;
+  rangeEnd: string;
+  averageEntreOsMin: number;
+  totalIncidences: number;
+  mostAffectedProprias: string[];
+  mostAffectedParceiras: string[];
+  topIncidences: DespachoIncidence[];
+}
+
 export interface OsDiaOrderEvidence {
   source: string;
   date_ref?: string;
@@ -523,6 +547,7 @@ export interface GeneratedReport {
     primeiroLoginAnalysis: PrimeiroLoginTeamAnalysis[];
     primeiroDeslocAnalysis: PrimeiroDeslocTeamAnalysis[];
     retornoBaseAnalysis: RetornoBaseTeamAnalysis[];
+    despachoAnalysis?: DespachoRangeInsight[];
   };
   outputFiles: {
     jsonPath: string;
