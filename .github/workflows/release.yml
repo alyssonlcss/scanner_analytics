@@ -1,0 +1,35 @@
+name: Release Automation
+
+on:
+  push:
+    tags:
+      - 'v*' # Dispara quando uma tag começando com 'v' for criada (ex: v1.1.0)
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão necessária para criar a Release no GitHub
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Extrair Notas da Release do CHANGELOG.md
+        id: extract_release_notes
+        run: |
+          # Pega a versão da tag (ex: v1.1.0 -> 1.1.0)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Buscando versão $VERSION no CHANGELOG.md..."
+          
+          # Lógica para copiar todas as linhas abaixo da versão atual até encontrar o próximo "## ["
+          awk -v ver="## \\[$VERSION\\]" '/^## \[/ { if (p) { exit }; if ($0 ~ ver) { p=1; next } } p { print }' CHANGELOG.md > release_notes.txt
+          
+          echo "Conteúdo extraído com sucesso!"
+
+      - name: Criar Release Oficial no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.txt
+          generate_release_notes: false # Não queremos as geradas automaticamente, queremos as nossas do Changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
