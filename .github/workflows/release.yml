@@ -51,10 +51,9 @@ jobs:
           
           echo "Conteúdo extraído com sucesso!"
 
-      - name: Criar Release Oficial no GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release_notes.txt
-          generate_release_notes: false # Não queremos as geradas automaticamente, queremos as nossas do Changelog
+      - name: Criar ou Atualizar Release no GitHub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tenta criar a release do zero. Se ela já existir (ou foi re-taggada), a criação falha e o script executa o edit para forçar a sobrescrita do texto!
+          gh release create ${{ github.ref_name }} --notes-file release_notes.txt || gh release edit ${{ github.ref_name }} --notes-file release_notes.txt
