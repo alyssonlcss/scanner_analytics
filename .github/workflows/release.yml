@@ -17,12 +17,37 @@ jobs:
       - name: Extrair Notas da Release do CHANGELOG.md
         id: extract_release_notes
         run: |
-          # Pega a versão da tag (ex: v1.1.0 -> 1.1.0)
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "Buscando versão $VERSION no CHANGELOG.md..."
-          
-          # Lógica para copiar todas as linhas abaixo da versão atual até encontrar o próximo "## ["
-          awk -v ver="## \\[$VERSION\\]" '/^## \[/ { if (p) { exit }; if ($0 ~ ver) { p=1; next } } p { print }' CHANGELOG.md > release_notes.txt
+          cat << 'EOF' > extract.js
+          const fs = require('fs');
+          const version = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          console.log('Buscando versão ' + version + ' no CHANGELOG.md...');
+          const content = fs.readFileSync('CHANGELOG.md', 'utf8').replace(/\r\n/g, '\n');
+          const lines = content.split('\n');
+          let capturing = false;
+          let notes = [];
+          for (let line of lines) {
+            if (line.startsWith('## [')) {
+              if (line.includes('[' + version + ']')) {
+                capturing = true;
+                continue;
+              } else if (capturing) {
+                break;
+              }
+            }
+            if (capturing) {
+              notes.push(line);
+            }
+          }
+          const finalNotes = notes.join('\n').trim();
+          if (finalNotes) {
+            fs.writeFileSync('release_notes.txt', finalNotes);
+            console.log('Conteúdo extraído com sucesso!');
+          } else {
+            fs.writeFileSync('release_notes.txt', 'Notas não encontradas no CHANGELOG.md');
+            console.log('Nenhuma nota encontrada.');
+          }
+          EOF
+          node extract.js
           
           echo "Conteúdo extraído com sucesso!"
 
