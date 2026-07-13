@@ -3,7 +3,7 @@
 Todos os recursos notáveis, correções e melhorias neste projeto serão documentados neste arquivo.
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
-## [1.1.1] - 2026-07-10
+## [1.1.0] - 2026-07-10
 
 Esta release consolida o novo módulo analítico "Relatório de Despacho", agregando algoritmos de inteligência para detecção avançada de ociosidades operacionais.
 
