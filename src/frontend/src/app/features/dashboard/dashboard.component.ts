@@ -5357,6 +5357,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
         let sumPrep = 0, countPrep = 0, maxPrep = 0;
         let sumSemOs = 0, countSemOs = 0, maxSemOs = 0;
+        let maxSemOsSubFlagLabel = '';
         let teveIntervalo4a6 = false;
 
         for (const order of allOrders) {
@@ -5388,7 +5389,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           if (order.flags?.includes('sem_os_alto') && order.sem_os_total_min) {
             sumSemOs += order.sem_os_total_min;
             countSemOs++;
-            if (order.sem_os_total_min > maxSemOs) maxSemOs = order.sem_os_total_min;
+            if (order.sem_os_total_min > maxSemOs) {
+              maxSemOs = order.sem_os_total_min;
+              maxSemOsSubFlagLabel = '';
+              if (order.sem_os_details && order.sem_os_details.length > 0) {
+                const maxDetail = order.sem_os_details.reduce((prev: any, curr: any) => (prev.min > curr.min) ? prev : curr);
+                maxSemOsSubFlagLabel = maxDetail.label || '';
+                if (maxSemOsSubFlagLabel === 'Antes Log Off') maxSemOsSubFlagLabel = 'Retorno Excedente';
+                if (!maxSemOsSubFlagLabel) {
+                  if (maxDetail.type === 'inicio_jornada') maxSemOsSubFlagLabel = 'Início de Jornada';
+                  else if (maxDetail.type === 'entre_ordens') maxSemOsSubFlagLabel = 'Entre OS';
+                  else if (maxDetail.type === 'fim_jornada') maxSemOsSubFlagLabel = 'Fim de Jornada';
+                  else if (maxDetail.type === 'intervalo_deslocamento') maxSemOsSubFlagLabel = 'Intervalo em Deslocamento';
+                  else maxSemOsSubFlagLabel = maxDetail.type || '';
+                }
+              }
+            }
           }
         }
 
@@ -5406,7 +5422,8 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             infos.push(`_Partida Média:_ *${Math.round(sumPrep / countPrep)}m* (Max: *${Math.round(maxPrep)}m*)`);
           }
           if (countSemOs > 0 && maxSemOs > 15) {
-            infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*)`);
+            const maxLabelStr = maxSemOsSubFlagLabel ? ` - ${maxSemOsSubFlagLabel}` : '';
+            infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*${maxLabelStr})`);
           }
         } else {
           const prepOrders = flaggedOrders.filter((o: any) => o.flags?.includes('temp_prep_alto') && (o.temp_prep_os_min || 0) > 15);
@@ -5418,7 +5435,23 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           const semOsOrders = flaggedOrders.filter((o: any) => o.flags?.includes('sem_os_alto') && (o.sem_os_total_min || 0) > 15);
           if (semOsOrders.length > 0) {
             semOsOrders.sort((a: any, b: any) => (b.sem_os_total_min || 0) - (a.sem_os_total_min || 0));
-            const top = semOsOrders.slice(0, 3).map((o: any) => `*${Math.round(o.sem_os_total_min!)}m* (${o.date_ref?.substring(0, 5) || '?'})`).join(', ');
+            const top = semOsOrders.slice(0, 3).map((o: any) => {
+              let subFlag = '';
+              if (o.sem_os_details && o.sem_os_details.length > 0) {
+                const maxDetail = o.sem_os_details.reduce((prev: any, curr: any) => (prev.min > curr.min) ? prev : curr);
+                subFlag = maxDetail.label || '';
+                if (subFlag === 'Antes Log Off') subFlag = 'Retorno Excedente';
+                if (!subFlag) {
+                  if (maxDetail.type === 'inicio_jornada') subFlag = 'Início de Jornada';
+                  else if (maxDetail.type === 'entre_ordens') subFlag = 'Entre OS';
+                  else if (maxDetail.type === 'fim_jornada') subFlag = 'Fim de Jornada';
+                  else if (maxDetail.type === 'intervalo_deslocamento') subFlag = 'Int. Desloc.';
+                  else subFlag = maxDetail.type || '';
+                }
+              }
+              const subFlagStr = subFlag ? ` - ${subFlag}` : '';
+              return `*${Math.round(o.sem_os_total_min!)}m* (${o.date_ref?.substring(0, 5) || '?'}${subFlagStr})`;
+            }).join(', ');
             infos.push(`_Sem OS:_ ${top}`);
           }
         }
