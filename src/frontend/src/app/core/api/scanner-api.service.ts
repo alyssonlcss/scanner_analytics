@@ -126,7 +126,7 @@ export interface OsDiaOrderEvidence {
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
-    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    type: 'inicio_jornada' | 'entre_ordens' | 'intervalo_deslocamento';
     min: number;
     from?: string;
     to?: string;
@@ -142,7 +142,13 @@ export interface OsDiaOrderEvidence {
     body?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto' | 'triagem_alto' | 'primeiro_desloc_alto'>;
+  retorno_excedente_min?: number;
+  retorno_excedente_details?: {
+    label: string;
+    body: string;
+    min: number;
+  };
+  flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto' | 'triagem_alto' | 'primeiro_desloc_alto' | 'retorno_excedente'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
   /** True when TR exceeds the global average repair time AND exceeds the M300 standard time. */
@@ -264,7 +270,7 @@ export interface UtilizacaoOrderEvidence {
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
-    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    type: 'inicio_jornada' | 'entre_ordens' | 'intervalo_deslocamento';
     min: number;
     from?: string;
     to?: string;
@@ -278,7 +284,13 @@ export interface UtilizacaoOrderEvidence {
     body?: string;
   }>;
   sem_os_total_min?: number;
-  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd' | 'triagem_alto' | 'primeiro_desloc_alto'>;
+  retorno_excedente_min?: number;
+  retorno_excedente_details?: {
+    label: string;
+    body: string;
+    min: number;
+  };
+  flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'tr_excede_hd' | 'triagem_alto' | 'primeiro_desloc_alto' | 'retorno_excedente'>;
   /** Pre-computed alert text keyed by flag code. */
   alertTexts?: Record<string, string>;
   /** Gap from fim_intervalo to despachada when > 10 min and not covered by sem_os_details. */

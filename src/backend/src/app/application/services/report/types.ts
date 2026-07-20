@@ -27,6 +27,7 @@ export interface TeamMetricSummary {
   records: number;
   tempPrepJornada: number;
   semOrdemJornada: number;
+  retornoExcedenteJornada: number;
 }
 
 export interface KpiRankItem {
@@ -170,8 +171,10 @@ export interface TempSemOsRow {
   dateRef: string;
   tempPrep: number;
   semOsEntreOs: number;
+  retornoExcedente: number;
   tempPrepJornada: number;
   semOrdemJornada: number;
+  retornoExcedenteJornada: number;
 }
 
 export interface OsDiaOrderEvidence {
@@ -201,7 +204,7 @@ export interface OsDiaOrderEvidence {
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
-    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    type: 'inicio_jornada' | 'entre_ordens' | 'intervalo_deslocamento';
     min: number;
     from?: string;
     to?: string;
@@ -220,6 +223,19 @@ export interface OsDiaOrderEvidence {
     /** Pre-computed body text describing the detail. */
     body?: string;
   }>;
+  retorno_excedente_details?: {
+    type: 'retorno_excedente';
+    min: number;
+    from?: string;
+    to?: string;
+    global_avg_min?: number;
+    excess_min?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
+    label?: string;
+    body?: string;
+  };
+  retorno_excedente_min?: number;
   sem_os_total_min?: number;
   flags: Array<'tr_excede_hd' | 'tl_excede_hd' | 'temp_prep_alto' | 'sem_os_alto' | 'retorno_excedente' | 'antes_log_off_alto' | 'triagem_alto' | 'primeiro_desloc_alto'>;
   /** Pre-computed alert text per flag code. */
@@ -255,6 +271,7 @@ export interface OsDiaTeamAnalysis {
   globalAvgTlMin: number;
   tempPrepTotalMin: number;
   semOrdemTotalMin: number;
+  retornoExcedenteTotalMin: number;
   totalOrders: number;
   totalJornadas: number;
   idleDays: number;
@@ -266,6 +283,7 @@ export interface OsDiaTeamAnalysis {
     countTlExceeds: number;
     countTempPrepAlto: number;
     countSemOsAlto: number;
+    countRetornoExcedente: number;
   };
   idleAnalysis?: {
     idleMin: number;
@@ -346,7 +364,7 @@ export interface UtilizacaoOrderEvidence {
   tempo_padrao_min?: number;
   temp_prep_os_min?: number;
   sem_os_details?: Array<{
-    type: 'inicio_jornada' | 'entre_ordens' | 'fim_jornada' | 'intervalo_deslocamento';
+    type: 'inicio_jornada' | 'entre_ordens' | 'intervalo_deslocamento';
     min: number;
     from?: string;
     to?: string;
@@ -361,6 +379,19 @@ export interface UtilizacaoOrderEvidence {
     /** Label for the from-point (e.g. 'Lib. Anterior', 'Despachada', 'Fim Intervalo'). */
     from_label?: string;
   }>;
+  retorno_excedente_details?: {
+    type: 'retorno_excedente';
+    min: number;
+    from?: string;
+    to?: string;
+    global_avg_min?: number;
+    excess_min?: number;
+    retorno_base_discounted?: number;
+    retorno_base_used_row?: boolean;
+    label?: string;
+    body?: string;
+  };
+  retorno_excedente_min?: number;
   sem_os_total_min?: number;
   flags: Array<'temp_prep_alto' | 'sem_os_alto' | 'retorno_excedente' | 'antes_log_off_alto' | 'tr_excede_hd' | 'triagem_alto' | 'primeiro_desloc_alto'>;
   alertTexts?: Record<string, string>;
@@ -390,6 +421,7 @@ export interface UtilizacaoTeamAnalysis {
   hdTotalMin: number;
   tempPrepTotalMin: number;
   semOrdemTotalMin: number;
+  retornoExcedenteTotalMin: number;
   totalOrders: number;
   totalJornadas: number;
   idleDays: number;
@@ -400,6 +432,7 @@ export interface UtilizacaoTeamAnalysis {
   summary: {
     countTempPrepAlto: number;
     countSemOsAlto: number;
+    countRetornoExcedente: number;
   };
   idleAnalysis?: {
     idleMin: number;

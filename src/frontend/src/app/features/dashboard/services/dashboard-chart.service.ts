@@ -17,6 +17,7 @@ export class DashboardChartService {
     tl_excede_hd:          '#7c3aed',
     temp_prep_alto:        '#2563eb',
     sem_os_alto:           '#c0122d',
+    retorno_excedente:     '#0f766e',
     deslocamento_curto:    '#0891b2',
     tempo_padrao_vazio:    '#6b7280',
     tr_muito_baixo:        '#db2777',
@@ -36,14 +37,12 @@ export class DashboardChartService {
   readonly SEM_OS_SUB_COLORS: Record<string, string> = {
     inicio_jornada:         '#ef4444',
     entre_ordens:           '#b91c1c',
-    fim_jornada:            '#7f1d1d',
     intervalo_deslocamento: '#f97316',
   };
 
   readonly SEM_OS_SUB_LABELS: Record<string, string> = {
     inicio_jornada:         'Início da Jornada',
     entre_ordens:           'Entre Ordens',
-    fim_jornada:            'Fim da Jornada',
     intervalo_deslocamento: 'Desl. de Intervalo',
   };
 
@@ -94,6 +93,7 @@ export class DashboardChartService {
               else if (f === 'tl_excede_hd') min = order.tl_ordem_min;
               else if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
               else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              else if (f === 'retorno_excedente') min = order.retorno_excedente_min ?? 0;
               bump(flagData, f, min);
               if (f === 'sem_os_alto' && order.sem_os_details) {
                 for (const d of order.sem_os_details) {
@@ -127,6 +127,7 @@ export class DashboardChartService {
               let min = 0;
               if (f === 'temp_prep_alto') min = order.temp_prep_os_min ?? 0;
               else if (f === 'sem_os_alto') min = order.sem_os_total_min ?? 0;
+              else if (f === 'retorno_excedente') min = order.retorno_excedente_min ?? 0;
               bump(flagData, f, min);
               if (f === 'sem_os_alto' && order.sem_os_details) {
                 for (const d of order.sem_os_details) {

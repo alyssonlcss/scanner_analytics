@@ -28,15 +28,15 @@ export function semOsDetailText(d: {
         const pctEO = Math.round((mEO - 10) / 10 * 100);
         return `Entre OS: ${mEO} min sem nova OS — Lib. Anterior (${d.from ?? '—'})${d.desp_anterior ? ' · Desp. Anterior (' + d.desp_anterior + ')' : ''} até Despachada (${d.to ?? '—'})${d.interval_discounted ? ' — intervalo descontado' : ''} — ${pctEO}% acima do limite (10 min)${fmtAvg(d.above_avg_pct, d.global_avg_min)}.`;
       }
-      case 'fim_jornada': {
+      case 'retorno_excedente': {
         const fromLabel = d.from_label ?? 'última Liberada';
         const excessMin: number | undefined = (d as any).excess_min;
         const globalAvgMin: number | undefined = (d as any).global_avg_min;
         if (d.retorno_base_discounted != null) {
           if (excessMin != null) {
-            // Case C: row present + excess — label must be "Antes Log Off" (the flag), body shows excess first then total
+            // Case C: row present + excess — label must be "Retorno Excedente"
             const globalPart = globalAvgMin != null ? ` (${nfBr(globalAvgMin)} min)` : '';
-            return `Antes Log Off: ${nfBr(excessMin)} min acima da média geral de Retorno a base${globalPart} — Retorno a base: ${nfBr(d.min)} min entre ${fromLabel} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
+            return `Retorno Excedente: ${nfBr(excessMin)} min acima da média geral de Retorno a base${globalPart} — Retorno a base: ${nfBr(d.min)} min entre ${fromLabel} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
           }
           // Case B: row present, no excess — neutral info segment
           return `Retorno a base: ${nfBr(d.min)} min entre ${fromLabel} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'}).`;
@@ -44,7 +44,7 @@ export function semOsDetailText(d: {
         const excessText = excessMin != null
           ? ` — ${nfBr(excessMin)} min acima da média geral de Retorno a base${globalAvgMin != null ? ' (' + nfBr(globalAvgMin) + ' min)' : ''}`
           : '';
-        return `Antes Log Off: ${nfBr(d.min)} min entre ${fromLabel} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${excessText}.`;
+        return `Retorno Excedente: ${nfBr(d.min)} min entre ${fromLabel} (${d.from ?? '—'}) e Log Off (${d.to ?? '—'})${excessText}.`;
       }
       case 'intervalo_deslocamento': {
         const mID = Math.round(d.min);
@@ -110,6 +110,9 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
           case 'sem_os_alto':
             alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;
+          case 'retorno_excedente':
+            alertTexts[flag] = `${Math.round(ev.retorno_excedente_min ?? 0)} min excedentes de Retorno a Base no fim da jornada. Esse tempo não produtivo é somado ao tempo ocioso da equipe.`;
+            break;
           case 'triagem_alto': {
             const fmtTs = (raw: string | undefined): string => {
               if (!raw) return '—';
@@ -159,10 +162,22 @@ export function enrichOsDiaEvidence(orders: OsDiaOrderEvidence[]): OsDiaOrderEvi
         }
       }
 
+      let enrichedRetornoExcedente: typeof ev.retorno_excedente_details | undefined;
+      if (ev.retorno_excedente_details) {
+        const text = semOsDetailText(ev.retorno_excedente_details as any);
+        const sep = text.indexOf(': ');
+        enrichedRetornoExcedente = {
+          ...ev.retorno_excedente_details,
+          label: sep > -1 ? text.slice(0, sep) : text,
+          body: sep > -1 ? text.slice(sep + 2) : ''
+        };
+      }
+
       return {
         ...ev,
         alertTexts,
         sem_os_details: enrichedDetails ?? ev.sem_os_details,
+        retorno_excedente_details: enrichedRetornoExcedente ?? ev.retorno_excedente_details,
         ...(entreOsAfterIntervalo ? { entreOsAfterIntervalo } : {}),
       };
     });
@@ -268,6 +283,9 @@ export function enrichUtilizacaoEvidence(orders: UtilizacaoOrderEvidence[]): Uti
           case 'sem_os_alto':
             alertTexts[flag] = `${Math.round(ev.sem_os_total_min ?? 0)} min sem OS registrada — acima do limite de 10 min. Esse tempo representa intervalos ociosos em que o técnico não estava atendendo nem a caminho de um chamado.`;
             break;
+          case 'retorno_excedente':
+            alertTexts[flag] = `${Math.round(ev.retorno_excedente_min ?? 0)} min excedentes de Retorno a Base no fim da jornada. Esse tempo não produtivo é somado ao tempo ocioso da equipe.`;
+            break;
           case 'triagem_alto': {
             const fmtTs2 = (raw: string | undefined): string => {
               if (!raw) return '—';
@@ -302,10 +320,22 @@ export function enrichUtilizacaoEvidence(orders: UtilizacaoOrderEvidence[]): Uti
         return { ...d, label: sep > -1 ? text.slice(0, sep) : text, body: sep > -1 ? text.slice(sep + 2) : '' };
       });
 
+      let enrichedRetornoExcedente: typeof ev.retorno_excedente_details | undefined;
+      if (ev.retorno_excedente_details) {
+        const text = semOsDetailText(ev.retorno_excedente_details as any);
+        const sep = text.indexOf(': ');
+        enrichedRetornoExcedente = {
+          ...ev.retorno_excedente_details,
+          label: sep > -1 ? text.slice(0, sep) : text,
+          body: sep > -1 ? text.slice(sep + 2) : ''
+        };
+      }
+
       return {
         ...ev,
         alertTexts,
         sem_os_details: enrichedDetails ?? ev.sem_os_details,
+        retorno_excedente_details: enrichedRetornoExcedente ?? ev.retorno_excedente_details,
       };
     });
   }

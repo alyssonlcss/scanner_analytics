@@ -613,6 +613,9 @@ type SavedFilterState = {
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
                                 </li>
+                                <li *ngIf="ev.flags.includes('retorno_excedente')" class="osdia-ev-alert">
+                                  <strong>Retorno Excedente:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['retorno_excedente'] ?? '')"></span><ng-container *ngIf="ev.retorno_excedente_details?.body"> &mdash; <span [innerHTML]="highlightMin(ev.retorno_excedente_details.body)"></span></ng-container>
+                                </li>
                                 
                                 
                                 <li *ngIf="ev.nr_ordem_despacho_anterior" class="osdia-ev-alert osdia-ev-alert--warn">
@@ -865,6 +868,9 @@ type SavedFilterState = {
                                     <li *ngFor="let d of alertSemOsDetails(ev.sem_os_details)"><em class="osdia-sem-os-label">{{ semOsDetailLabel(d) }}:</em> <span [innerHTML]="highlightMin(semOsDetailBody(d))"></span></li>
                                     <li *ngIf="entreOsAfterIntervalo(ev) as eo"><em class="osdia-sem-os-label">Entre OS:</em> <span [innerHTML]="highlightMin(formatEntreOsText(eo))"></span></li>
                                   </ol>
+                                </li>
+                                <li *ngIf="ev.flags.includes('retorno_excedente')" class="osdia-ev-alert">
+                                  <strong>Retorno Excedente:</strong> <span [innerHTML]="highlightMin(ev.alertTexts?.['retorno_excedente'] ?? '')"></span><ng-container *ngIf="ev.retorno_excedente_details?.body"> &mdash; <span [innerHTML]="highlightMin(ev.retorno_excedente_details.body)"></span></ng-container>
                                 </li>
                                 
                                 
@@ -5357,7 +5363,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
         let sumPrep = 0, countPrep = 0, maxPrep = 0;
         let sumSemOs = 0, countSemOs = 0, maxSemOs = 0;
+        let sumRetorno = 0, countRetorno = 0, maxRetorno = 0;
         let maxSemOsSubFlagLabel = '';
+        let maxRetornoSubFlagLabel = '';
         let teveIntervalo4a6 = false;
 
         for (const order of allOrders) {
@@ -5395,15 +5403,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               if (order.sem_os_details && order.sem_os_details.length > 0) {
                 const maxDetail = order.sem_os_details.reduce((prev: any, curr: any) => (prev.min > curr.min) ? prev : curr);
                 maxSemOsSubFlagLabel = maxDetail.label || '';
-                if (maxSemOsSubFlagLabel === 'Antes Log Off') maxSemOsSubFlagLabel = 'Retorno Excedente';
                 if (!maxSemOsSubFlagLabel) {
                   if (maxDetail.type === 'inicio_jornada') maxSemOsSubFlagLabel = 'Início de Jornada';
                   else if (maxDetail.type === 'entre_ordens') maxSemOsSubFlagLabel = 'Entre OS';
-                  else if (maxDetail.type === 'fim_jornada') maxSemOsSubFlagLabel = 'Fim de Jornada';
                   else if (maxDetail.type === 'intervalo_deslocamento') maxSemOsSubFlagLabel = 'Intervalo em Deslocamento';
                   else maxSemOsSubFlagLabel = maxDetail.type || '';
                 }
               }
+            }
+          }
+          if (order.flags?.includes('retorno_excedente') && order.retorno_excedente_min) {
+            sumRetorno += order.retorno_excedente_min;
+            countRetorno++;
+            if (order.retorno_excedente_min > maxRetorno) {
+              maxRetorno = order.retorno_excedente_min;
+              maxRetornoSubFlagLabel = order.retorno_excedente_details?.label || '';
             }
           }
         }
@@ -5425,6 +5439,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             const maxLabelStr = maxSemOsSubFlagLabel ? ` - ${maxSemOsSubFlagLabel}` : '';
             infos.push(`_Sem Ordem de Serviço Média:_ *${Math.round(sumSemOs / countSemOs)}m* (Max: *${Math.round(maxSemOs)}m*${maxLabelStr})`);
           }
+          if (countRetorno > 0 && maxRetorno > 15) {
+            const maxLabelStr = maxRetornoSubFlagLabel ? ` - ${maxRetornoSubFlagLabel}` : '';
+            infos.push(`_Retorno Excedente Médio:_ *${Math.round(sumRetorno / countRetorno)}m* (Max: *${Math.round(maxRetorno)}m*${maxLabelStr})`);
+          }
         } else {
           const prepOrders = flaggedOrders.filter((o: any) => o.flags?.includes('temp_prep_alto') && (o.temp_prep_os_min || 0) > 15);
           if (prepOrders.length > 0) {
@@ -5440,7 +5458,6 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               if (o.sem_os_details && o.sem_os_details.length > 0) {
                 const maxDetail = o.sem_os_details.reduce((prev: any, curr: any) => (prev.min > curr.min) ? prev : curr);
                 subFlag = maxDetail.label || '';
-                if (subFlag === 'Antes Log Off') subFlag = 'Retorno Excedente';
                 if (!subFlag) {
                   if (maxDetail.type === 'inicio_jornada') subFlag = 'Início de Jornada';
                   else if (maxDetail.type === 'entre_ordens') subFlag = 'Entre OS';
@@ -6593,15 +6610,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-  protected getFimJornadaDetail(ev: OsDiaOrderEvidence): NonNullable<OsDiaOrderEvidence['sem_os_details']>[number] | null {
-    return ev.sem_os_details?.find((d: NonNullable<OsDiaOrderEvidence['sem_os_details']>[number]) => d.type === 'fim_jornada') ?? null;
+  protected getFimJornadaDetail(ev: OsDiaOrderEvidence): any | null {
+    return null;
   }
 
   /** Returns the body text for the 'antes_log_off_alto' orange warn item. */
   protected antesLogOffAltoText(ev: OsDiaOrderEvidence): string {
-    const fj = this.getFimJornadaDetail(ev);
-    if (!fj) return '';
-    return this.semOsDetailBody(fj as any);
+    return '';
   }
 
   protected isOptionSelected(filter: SelectFilterState, option: string): boolean {

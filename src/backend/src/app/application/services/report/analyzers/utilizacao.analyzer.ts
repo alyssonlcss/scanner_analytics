@@ -205,6 +205,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
     const teamTotalOrders = new Map<string, number>();
     const teamTempPrepSum = new Map<string, number>();
     const teamSemOrdemSum = new Map<string, number>();
+    const teamRetornoExcedenteSum = new Map<string, number>();
     const teamDayCount = new Map<string, number>();
     const teamDailyIdles = new Map<string, number[]>();
     const teamHorasExtrasSum = new Map<string, number>();
@@ -419,9 +420,16 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       for (const v of semOsValues) {
         if (Number.isFinite(v) && v > 0) teamSemOrdemSum.set(team, (teamSemOrdemSum.get(team) ?? 0) + v);
       }
+      let dayRetornoExcedente = 0;
+      if (Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 70) {
+        const excess = round2(semOsFimDirectGapMin - 70);
+        teamRetornoExcedenteSum.set(team, (teamRetornoExcedenteSum.get(team) ?? 0) + excess);
+        dayRetornoExcedente = excess;
+      }
       const dayIdleTotal =
         tempPrepValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0) +
-        semOsValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0);
+        semOsValues.reduce((s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0), 0) +
+        dayRetornoExcedente;
       if (dayIdleTotal > 0) {
         const arr = teamDailyIdles.get(team) ?? [];
         arr.push(dayIdleTotal);
@@ -728,7 +736,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
           });
         }
 
-        const semOsTotalMin = Number.isFinite(semOsMin) && semOsMin > 0 ? round2(semOsMin) : undefined;
+        const semOsTotalMin = semOsDetails.length > 0 ? round2(semOsDetails.reduce((s, d) => s + d.min, 0)) : undefined;
 
         // If no sem_os sub-flag qualified individually, suppress sem_os_alto to avoid an
         // empty "Sem Ordem/OS:" header in the report.
@@ -785,13 +793,12 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         if (logOffStr) {
           const retornoExcedenteThreshold = Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 70;
           const fimDeslAbove = Number.isFinite(semOsFimDeslIntervalMin) && semOsFimDeslIntervalMin >= SEM_OS_THRESHOLD_MIN + TOLERANCE_MIN;
-          const semOsAbove = fimDeslAbove || retornoExcedenteThreshold;
-          const fimDetail: NonNullable<UtilizacaoOrderEvidence['sem_os_details']>[number] = {
-            type: 'fim_jornada',
+          const semOsAbove = fimDeslAbove;
+          const retornoDetail: NonNullable<UtilizacaoOrderEvidence['retorno_excedente_details']> = {
+            type: 'retorno_excedente',
             min:  Number.isFinite(semOsFimDirectGapMin) && semOsFimDirectGapMin > 0 ? round2(semOsFimDirectGapMin) : 0,
             from: semOsFimFrom ?? liberadaStr,
             to:   logOffStr,
-            from_label: semOsFimFromLabel,
             retorno_base_discounted: semOsFimRetornoBaseRowVal > 0 ? semOsFimRetornoBaseRowVal : undefined,
             retorno_base_used_row:   semOsFimRetornoBaseUsedRow || undefined,
             excess_min: retornoExcedenteThreshold ? round2(semOsFimDirectGapMin - 70) : undefined,
@@ -811,19 +818,20 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
           const existingEvidence = evidences.find((e) => e.nr_ordem === lastNrOrdem);
           if (existingEvidence) {
+            existingEvidence.retorno_excedente_details = retornoDetail;
+            existingEvidence.retorno_excedente_min = retornoDetail.excess_min ?? 0;
             const details = existingEvidence.sem_os_details ?? [];
-            details.push(fimDetail);
             if (fimDeslDetail) details.push(fimDeslDetail);
-            existingEvidence.sem_os_details = details;
+            existingEvidence.sem_os_details = details.length > 0 ? details : undefined;
             if (semOsAbove) {
-              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => {
-                if (d.type === 'fim_jornada') {
-                  return s + (d.excess_min ?? 0);
-                }
-                return s + d.min;
-              }, 0));
+              existingEvidence.sem_os_total_min = round2(details.reduce((s, d) => s + d.min, 0));
               if (!existingEvidence.flags.includes('sem_os_alto')) {
                 existingEvidence.flags.push('sem_os_alto');
+              }
+            }
+            if (retornoExcedenteThreshold) {
+              if (!existingEvidence.flags.includes('retorno_excedente')) {
+                existingEvidence.flags.push('retorno_excedente');
               }
             }
             // Show interval chip when interval is in the fim window
@@ -831,7 +839,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               existingEvidence.inicio_intervalo = fimInicioIntervalo;
               existingEvidence.fim_intervalo    = fimFimIntervalo;
             }
-          } else if (semOsAbove || retornoExcedenteThreshold || ((tempPrepValues[ordered.length - 1] ?? 0) + (fimDetail?.min ?? 0) + (fimDeslDetail?.min ?? 0)) > 0) {
+          } else if (semOsAbove || retornoExcedenteThreshold || ((tempPrepValues[ordered.length - 1] ?? 0) + (retornoDetail.min ?? 0) + (fimDeslDetail?.min ?? 0)) > 0) {
             const i = ordered.length - 1;
             const row = lastRow;
             const trOrdemMin = trOrdemCol ? (parseNumber(String(row[trOrdemCol] ?? '')) ?? 0) : 0;
@@ -841,7 +849,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             const hdPctTl = hdTotalMin > 0 ? round2((tlOrdemMin / hdTotalMin) * 100) : 0;
             const tempoPadraoRaw = tempoPadraoCol ? parseNumber(String(row[tempoPadraoCol] ?? '')) : null;
             const prevRow = i > 0 ? ordered[i - 1] : null;
-            const allFimDetails = [fimDetail, ...(fimDeslDetail ? [fimDeslDetail] : [])];
+            const allFimDetails = fimDeslDetail ? [fimDeslDetail] : [];
             evidences.push({
               date_ref:          dateCol ? String(row[dateCol] ?? '').trim() || undefined : undefined,
               nr_ordem:          lastNrOrdem,
@@ -864,17 +872,15 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
               hd_pct_tr:         hdPctTr,
               hd_pct_tl:         hdPctTl,
               tempo_padrao_min:  tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) ? round2(tempoPadraoRaw) : undefined,
-              sem_os_details:    allFimDetails,
-              sem_os_total_min:  semOsAbove ? round2(allFimDetails.reduce((s, d) => {
-                if (d.type === 'fim_jornada') {
-                  return s + (d.excess_min ?? 0);
-                }
-                return s + d.min;
-              }, 0)) : undefined,
+              sem_os_details:    allFimDetails.length > 0 ? allFimDetails : undefined,
+              sem_os_total_min:  semOsAbove ? round2(allFimDetails.reduce((s, d) => s + d.min, 0)) : undefined,
+              retorno_excedente_details: retornoDetail,
+              retorno_excedente_min: retornoDetail.excess_min ?? 0,
               ocioso_min:        ocisoValues[i],
               temp_prep_os_min:  tempPrepValues[i],
               flags:             [
                 ...(semOsAbove ? ['sem_os_alto' as const] : []),
+                ...(retornoExcedenteThreshold ? ['retorno_excedente' as const] : []),
                 ...((
                   hdTotalMin > 0 && trOrdemMin > hdTotalMin * OS_DIA_PCT_THRESHOLD &&
                   tempoPadraoRaw !== null && Number.isFinite(tempoPadraoRaw) && tempoPadraoRaw > 0 &&
@@ -887,8 +893,11 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
             const basicOrders = teamAllBasicUtil.get(team) ?? [];
             const basicOrder = basicOrders.find((o) => o.nr_ordem === lastNrOrdem);
             if (basicOrder) {
-              basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDetail);
-              if (fimDeslDetail) basicOrder.sem_os_details.push(fimDeslDetail);
+              basicOrder.retorno_excedente_details = retornoDetail;
+              basicOrder.retorno_excedente_min = retornoDetail.excess_min ?? 0;
+              if (fimDeslDetail) {
+                basicOrder.sem_os_details = (basicOrder.sem_os_details ?? []).concat(fimDeslDetail);
+              }
             }
           }
         }
@@ -926,8 +935,8 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
 
       // Ordenação estritamente decrescente pelo tempo total ocioso
       allMerged.sort((a, b) => {
-        const fjA = a.flags?.includes('retorno_excedente') ? (a.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
-        const fjB = b.flags?.includes('retorno_excedente') ? (b.sem_os_details?.find((d) => d.type === 'fim_jornada')?.min ?? 0) : 0;
+        const fjA = a.flags?.includes('retorno_excedente') ? (a.retorno_excedente_min ?? 0) : 0;
+        const fjB = b.flags?.includes('retorno_excedente') ? (b.retorno_excedente_min ?? 0) : 0;
         const idleA = (a.ocioso_min ?? 0) + (a.temp_prep_os_min ?? 0) + (a.sem_os_total_min ?? 0) + fjA;
         const idleB = (b.ocioso_min ?? 0) + (b.temp_prep_os_min ?? 0) + (b.sem_os_total_min ?? 0) + fjB;
         return idleB - idleA;
@@ -937,7 +946,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       const finalExtra: UtilizacaoOrderEvidence[] = [];
 
       for (const o of allMerged) {
-        if (finalFlagged.length < 10 && ((o.flags?.length ?? 0) > 0 || ((o.ocioso_min ?? 0) + (o.temp_prep_os_min ?? 0) + (o.sem_os_total_min ?? 0)) > 0)) {
+        if (finalFlagged.length < 10 && ((o.flags?.length ?? 0) > 0 || ((o.ocioso_min ?? 0) + (o.temp_prep_os_min ?? 0) + (o.sem_os_total_min ?? 0) + (o.flags?.includes('retorno_excedente') ? (o.retorno_excedente_min ?? 0) : 0)) > 0)) {
           finalFlagged.push(o);
         } else if (finalFlagged.length + finalExtra.length < 50) {
           finalExtra.push(o);
@@ -952,8 +961,9 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
       const totalOrders   = teamTotalOrders.get(team) ?? 0;
       const tempPrepTotal = round2((teamTempPrepSum.get(team) ?? 0) / dayCount);
       const semOrdemTotal = round2((teamSemOrdemSum.get(team) ?? 0) / dayCount);
+      const retornoExcedenteTotal = round2((teamRetornoExcedenteSum.get(team) ?? 0) / dayCount);
 
-      const idleMin = round2(tempPrepTotal + semOrdemTotal);
+      const idleMin = round2(tempPrepTotal + semOrdemTotal + retornoExcedenteTotal);
       const idlePct = avgHdTotal > 0 ? round2((idleMin / avgHdTotal) * 100) : 0;
       const allDailyIdles = teamDailyIdles.get(team) ?? [];
       const totalIdleSum  = allDailyIdles.reduce((a, b) => a + b, 0);
@@ -981,6 +991,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         hdTotalMin:       avgHdTotal,
         tempPrepTotalMin: tempPrepTotal,
         semOrdemTotalMin: semOrdemTotal,
+        retornoExcedenteTotalMin: retornoExcedenteTotal,
         totalOrders,
         totalJornadas:    allJornadas.length,
         idleDays,
@@ -991,6 +1002,7 @@ export function analyzeUtilizacao(deslocRows: CsvRow[], kpis: KpiInsight[]): Uti
         summary: {
           countTempPrepAlto: enrichedFlaggedOrders.filter((e) => e.flags.includes('temp_prep_alto')).length,
           countSemOsAlto:    enrichedFlaggedOrders.filter((e) => e.flags.includes('sem_os_alto')).length,
+          countRetornoExcedente: enrichedFlaggedOrders.filter((e) => e.flags.includes('retorno_excedente')).length,
         },
         idleAnalysis,
       });

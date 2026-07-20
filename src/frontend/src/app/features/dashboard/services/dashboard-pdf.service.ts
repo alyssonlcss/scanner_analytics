@@ -1033,9 +1033,9 @@ export class DashboardPdfService {
                 ]));
               }
               if (ev.flags?.includes('retorno_excedente')) {
-                const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
-                if (fjDetail) {
-                  const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
+                const rDetail = ev.retorno_excedente_details;
+                if (rDetail) {
+                  const fjBody = rDetail.body;
                   orderItems.push(alertWarnItem(`Retorno Excedente: ${fjBody}`));
                 }
               }
@@ -1194,9 +1194,9 @@ export class DashboardPdfService {
               ]));
             }
             if (ev.flags?.includes('retorno_excedente')) {
-              const fjDetail = (ev.sem_os_details as any[] | undefined)?.find((d: any) => d.type === 'fim_jornada');
-              if (fjDetail) {
-                const fjBody = helpers.semOsDetailBody(fjDetail, ev.nr_ordem_despacho_anterior);
+              const rDetail = ev.retorno_excedente_details;
+              if (rDetail) {
+                const fjBody = rDetail.body;
                 orderItems.push(alertWarnItem(`Retorno Excedente: ${fjBody}`));
               }
             }

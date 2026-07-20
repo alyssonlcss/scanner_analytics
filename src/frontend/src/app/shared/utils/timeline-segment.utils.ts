@@ -81,7 +81,7 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
   addPt('liberada', ev.liberada, 'Liberada');
   addPt('inicio_intervalo', ev.inicio_intervalo, 'Início Intervalo');
   addPt('fim_intervalo', ev.fim_intervalo, 'Fim Intervalo');
-  const fimJornada = ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
+  const fimJornada = ev.retorno_excedente_details || ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
   if (fimJornada?.to) addPt('log_off', fimJornada.to, 'Log Off');
 
   const seen = new Set<string>();
@@ -205,41 +205,42 @@ export function buildTimelineSegments(ev: any, hidePartida: boolean, trimToACami
         }
         flags.push(fText + '.');
       }
-    } else if ((label.startsWith('1º Desp.') || ['Entre OS', 'Desl. Intervalo', 'Retorno Vazio', 'Retorno a Base'].includes(label)) && ev.sem_os_details) {
-      const detType: Record<string, string> = {
-        'Desl. Intervalo': 'intervalo_deslocamento',
-        'Retorno Vazio': 'fim_jornada',
-        'Retorno a Base': 'fim_jornada'
-      };
-      const md = ev.sem_os_details?.find((s: any) => {
-        const is1st = label.startsWith('1º Desp.');
-        const lType = is1st ? 'inicio_jornada' : detType[label];
-        if (s.type !== lType) return false;
-        if (is1st || label === 'Retorno Vazio' || label === 'Retorno a Base') return s.to === p2.raw;
-        return s.from === p1.raw && s.to === p2.raw;
-      });
+    } else if (label.startsWith('1º Desp.') || ['Entre OS', 'Desl. Intervalo', 'Retorno Vazio', 'Retorno a Base'].includes(label)) {
+      let md: any = null;
+      if (label === 'Retorno Vazio' || label === 'Retorno a Base') {
+        const r = ev.retorno_excedente_details || ev.sem_os_details?.find((s: any) => s.type === 'fim_jornada');
+        if (r && r.to === p2.raw) md = r;
+      } else if (ev.sem_os_details) {
+        const detType: Record<string, string> = { 'Desl. Intervalo': 'intervalo_deslocamento' };
+        md = ev.sem_os_details.find((s: any) => {
+          const is1st = label.startsWith('1º Desp.');
+          const lType = is1st ? 'inicio_jornada' : detType[label];
+          if (s.type !== lType) return false;
+          if (is1st) return s.to === p2.raw;
+          return s.from === p1.raw && s.to === p2.raw;
+        });
+      }
+      
       if ((label.startsWith('1º Desp.') || label === 'Retorno Vazio' || label === 'Retorno a Base') && md) durationMin = Math.max(md.min, 1);
       if (md) {
-        if (detType[label] === 'fim_jornada') {
-          if ((md as any).retorno_base_discounted != null) {
+        if (label === 'Retorno Vazio' || label === 'Retorno a Base') {
+          if (md.retorno_base_discounted != null) {
             label = 'Retorno a base';
-            const excessM: number | undefined = (md as any).excess_min;
-              if (excessM != null) excessMinVal = excessM;
+            const excessM: number | undefined = md.excess_min;
+            if (excessM != null) excessMinVal = excessM;
             if (excessM != null) {
               subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
               flags.push('acima_media');
             }
-          } else if ((md as any).excess_min != null) {
-            // Case B: row empty + excess - show excess as subtitle
-            const excessM = (md as any).excess_min;
-              if (excessM != null) excessMinVal = excessM;
+          } else if (md.excess_min != null) {
+            const excessM = md.excess_min;
+            if (excessM != null) excessMinVal = excessM;
             subtitle = `Retorno Excedente: ${Math.round(excessM)}min`;
             flags.push('acima_media');
           }
         } else {
           const SEM_OS_LIMIT = 10;
           const g: number | undefined = md.global_avg_min;
-          // Flag if above global avg (when known) or above the minimum threshold (covers fimDeslDetail)
           const isAbove = g !== undefined && g > 0
             ? (durationMin > g && durationMin > SEM_OS_LIMIT)
             : (md.min >= SEM_OS_LIMIT + 0.1);

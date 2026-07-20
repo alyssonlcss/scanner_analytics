@@ -57,6 +57,7 @@ export function calculateTempPrepSemOs(rows: CsvRow[], retornoBaseAvgMin: number
 
       const tempPrepValues: number[] = [];
       const semOsValues: number[] = [];
+      let retornoExcedenteJornada = 0;
       let isInterACaminho = false;
       let isInterOrdem = false;
 
@@ -162,7 +163,7 @@ export function calculateTempPrepSemOs(rows: CsvRow[], retornoBaseAvgMin: number
             gapMin -= retornoBaseDiscount;
           }
           if (gapMin > 0) {
-            semOsValues.push(gapMin);
+            retornoExcedenteJornada = gapMin;
           }
         }
       }
@@ -176,8 +177,10 @@ export function calculateTempPrepSemOs(rows: CsvRow[], retornoBaseAvgMin: number
           dateRef,
           tempPrep: tempPrepValues[i] ?? Number.NaN,
           semOsEntreOs: semOsValues[i] ?? Number.NaN,
+          retornoExcedente: i === ordered.length - 1 ? retornoExcedenteJornada : 0,
           tempPrepJornada,
           semOrdemJornada,
+          retornoExcedenteJornada,
         });
       }
     }
@@ -359,7 +362,7 @@ export function calculateSemOsValue(input: {
 
 export function buildTeamMetrics(rows: TempSemOsRow[]): TeamMetricSummary[] {
     // Collect unique (team, dateRef) — jornada values are the same for every row within a group
-    const dayTotals = new Map<string, { team: string; tempPrepJornada: number; semOrdemJornada: number }>();
+    const dayTotals = new Map<string, { team: string; tempPrepJornada: number; semOrdemJornada: number; retornoExcedenteJornada: number }>();
 
     for (const row of rows) {
       const dayKey = `${row.team}\x00${row.dateRef}`;
@@ -368,6 +371,7 @@ export function buildTeamMetrics(rows: TempSemOsRow[]): TeamMetricSummary[] {
           team: row.team,
           tempPrepJornada: Number.isFinite(row.tempPrepJornada) ? row.tempPrepJornada : 0,
           semOrdemJornada: Number.isFinite(row.semOrdemJornada) ? row.semOrdemJornada : 0,
+          retornoExcedenteJornada: Number.isFinite(row.retornoExcedenteJornada) ? row.retornoExcedenteJornada : 0,
         });
       }
     }
@@ -381,11 +385,13 @@ export function buildTeamMetrics(rows: TempSemOsRow[]): TeamMetricSummary[] {
         records: 0,
         tempPrepJornada: 0,
         semOrdemJornada: 0,
+        retornoExcedenteJornada: 0,
       };
 
       current.records += 1;
       current.tempPrepJornada += day.tempPrepJornada;
       current.semOrdemJornada += day.semOrdemJornada;
+      current.retornoExcedenteJornada += day.retornoExcedenteJornada;
       grouped.set(day.team, current);
     }
 
@@ -394,7 +400,8 @@ export function buildTeamMetrics(rows: TempSemOsRow[]): TeamMetricSummary[] {
         ...item,
         tempPrepJornada: round2(item.tempPrepJornada / Math.max(item.records, 1)),
         semOrdemJornada: round2(item.semOrdemJornada / Math.max(item.records, 1)),
+        retornoExcedenteJornada: round2(item.retornoExcedenteJornada / Math.max(item.records, 1)),
       }))
-      .sort((a, b) => b.semOrdemJornada - a.semOrdemJornada);
+      .sort((a, b) => (b.semOrdemJornada + b.retornoExcedenteJornada) - (a.semOrdemJornada + a.retornoExcedenteJornada));
   }
 
