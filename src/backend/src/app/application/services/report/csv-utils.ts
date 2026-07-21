@@ -93,12 +93,7 @@ export function applyIntervalDiscount(value: number, intervaloMinutes: number | 
     return value;
   }
 
-  let adjusted = value - Math.min(intervaloMinutes, 60);
-  const excedente = intervaloMinutes - 60;
-
-  if (excedente > 0) {
-    adjusted += excedente;
-  }
+  const adjusted = value - Math.min(intervaloMinutes, 70);
 
   if (adjusted < 0) {
     return 0;
